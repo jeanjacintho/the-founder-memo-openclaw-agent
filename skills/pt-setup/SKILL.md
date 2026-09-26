@@ -1,6 +1,6 @@
 ---
 name: pt-setup
-description: First-run interview over chat — settle the morning delivery hour, ask about a printer and probe it once through Latch, ask whether today's mail should join as a letters desk, then resolve the owner's timezone from Latch location. Use on the owner's first DM, including greetings (oi, oi de novo, hi, hello, hey), while pt/config.json is missing owner.timezone, delivery.hour or printer.configured. Never ask their timezone, name, or a personal profile. Never in a group, never in someone else's DM, and never to change one already-stored setting.
+description: First-run interview over chat — settle the morning delivery hour, ask about printing and mail, then resolve the owner's timezone from Latch or an explicit owner answer when Latch is unavailable. Use on the owner's first DM while pt/config.json is missing owner.timezone, delivery.hour or printer.configured. Never ask their name or a personal profile. Never in a group, never in someone else's DM, and never to change one already-stored setting.
 ---
 
 # pt-setup — the first conversation
@@ -9,8 +9,8 @@ This is a conversation, not a form. `/var/lib/plow/pt/config.json` and
 `/var/lib/plow/pt/.setup-draft.json` are the **only** record of how far
 it got — not the Plow Chat thread. Older messages about a printer or
 letters after a wiped session are leftover; if the draft is missing,
-start at the delivery hour. Do **not** ask their timezone — Latch location
-at the end supplies `owner.timezone`. (`mail.configured` is asked in this
+start at the delivery hour. Resolve `owner.timezone` at the close step:
+prefer Latch location, or an explicit owner answer when it is unavailable. (`mail.configured` is asked in this
 interview too, but a missing mail key is a valid older install — treat it
 as false, do not restart setup for it.) Never re-ask something the draft
 or config already holds.
@@ -155,7 +155,10 @@ English:
 
 > 🖨️ Is there a printer on your Mac? (yes / no)
 
-**2b. On their next message**, whatever they answered, **probe once
+**2b. On their next message**, if they decline printing, record
+`printer.configured=false` with `record_setup.py` and continue to its next
+question without accessing their Mac. Do not turn printing on merely because
+a printer might exist. If they want printing, **probe once
 through Latch before recording `printer.configured`** — the same
 discipline ld-setup applies to the Pi bring-up; a yes/no alone is a
 configured printer that fails on every nightly run. First tool call of
@@ -414,9 +417,9 @@ into the close step below (this one has no separate question to send;
 
 **The moment `NEXT_QUESTION` says `close`, do only the three numbered
 steps below — nothing else.** Do not open other skills (the daily run
-loads them itself), and never ask the owner for a city — not in a reply, not
-through any tool. If step 1 hasn't produced a timezone, the answer is its "can't be
-scheduled yet" message, not a question back to the owner.
+loads them itself). Never infer a timezone from a city, phone number, or
+the container clock; use Latch or the owner's explicit IANA timezone.
+Never ask the owner for a city — not in a reply, not through any tool.
 
 Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
 
@@ -425,9 +428,14 @@ Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
    `["ipapi.co", "ipwho.is", "ifconfig.co"]`, then steps 2–3 of
    `pt-research/references/desks.md` §1 (the provider fallback order and
    which field is the timezone), then `plow_browser_close`. If no provider
-   loads, or none gives a usable IANA timezone, say the paper cannot be
-   scheduled until the Mac can report where they are — do not invent a
-   zone, do not ask them to type one.
+   loads, Latch is unavailable, or the owner declines Mac access, use an
+   IANA timezone the owner explicitly supplied in this setup conversation.
+   If none was supplied, ask for it (for example, `America/Cancun`) and stop
+   until they answer. Do not repeatedly retry unavailable Latch. Pass the
+   explicit answer to step 2; its existing validator rejects unknown zones.
+   On rejection, explain the error and ask for a valid IANA timezone.
+   This permits setup for chat delivery; it does not grant Mac access or
+   make Mac-dependent research, calendar, mail, or printing available.
 2. **Write** `/var/lib/plow/pt/config.json` — with this exact bare
    invocation, never by composing the JSON yourself, never with the write tool:
 

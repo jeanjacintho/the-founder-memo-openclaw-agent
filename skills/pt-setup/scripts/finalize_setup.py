@@ -19,7 +19,7 @@ Usage:
 
     finalize_setup.py <config.json path> --owner-tz <IANA zone>
 
-The zone is step 1's answer (from the browser). The hour is the draft's, the
+The zone is step 1's answer (from Latch or explicitly from the owner). The hour is the draft's, the
 owner's own wall clock; register_crons.py moves it onto the container's
 clock when it registers. Prints CONFIG:written
 plus the delivery line on success; on failure prints why, on stderr, and

@@ -8,6 +8,10 @@ An [OpenClaw](https://github.com/openclaw/openclaw) agent on
 chatbot. It is one person's paper: the sections you asked for, at the hour you
 named, in the language you write.
 
+If Latch is unavailable during setup, you can provide your IANA timezone
+(for example, `America/Cancun`) and decline printing. Mac-dependent research,
+mail, calendar access and printing still require a connected, authorized Mac.
+
 ## What it is
 
 The product is a **compact Letter paper**. It can open with **what Patrick

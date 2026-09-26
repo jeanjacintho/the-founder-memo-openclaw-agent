@@ -36,6 +36,17 @@ def seed(tmp_path, draft=None):
 
 
 class TestWritesAValidConfig:
+    def test_explicit_timezone_keeps_private_sources_and_printing_disabled(self, tmp_path):
+        draft = dict(COMPLETE, printer={"configured": False}, mail={"configured": False},
+                     signals={"group_chat": False, "email": False, "imessage": False})
+        config = seed(tmp_path, draft)
+        assert finalize.main(["finalize_setup.py", str(config), "--owner-tz", "America/Cancun"]) == 0
+        written = json.loads(config.read_text())
+        assert written["owner"]["timezone"] == "America/Cancun"
+        assert written["printer"] == {"configured": False, "name": None}
+        assert written["mail"]["configured"] is False
+        assert not any(written["signals"].values())
+
     def test_writes_config_that_passes_the_gate(self, tmp_path, capsys):
         config = seed(tmp_path)
         rc = finalize.main(
@@ -136,4 +147,3 @@ class TestCarriesTheLanguage:
         config = seed(tmp_path)
         finalize.main(["finalize_setup.py", str(config), "--owner-tz", "America/Sao_Paulo"])
         assert "language" not in json.loads(config.read_text())["owner"]
-
