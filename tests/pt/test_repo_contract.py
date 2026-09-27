@@ -1122,7 +1122,10 @@ class TestDeployment:
 
     def test_base_config_pins_the_paper_model_and_its_limits(self):
         config = (REPO / "boot" / "config.ts").read_text()
-        assert 'primary: "plow/openai/gpt-6-luna", fallbacks: []' in config
+        assert "model: { primary: llm.primary, fallbacks: llm.fallbacks }" in config
+        llm = (REPO / "boot" / "llm.ts").read_text()
+        assert 'PLOW_MODEL = "plow/openai/gpt-6-luna"' in llm
+        assert 'PLOW_ROUTE: LlmRoute = { provider: "plow", primary: PLOW_MODEL, fallbacks: [] }' in llm
         assert '{ id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000' in config
         assert 'models: [\n        { id: "openai/gpt-6-luna"' in config
         retired_models = (
@@ -1131,9 +1134,10 @@ class TestDeployment:
         )
         for retired_model in retired_models:
             assert retired_model not in config
-        # Scheduled papers are pinned to the same sole model as the chat agent.
+        # Scheduled papers are pinned to the chat agent's own model, which boot
+        # exports as PT_MODEL; Plow's Luna when nothing moved the install.
         backend = (ROOT / "pt-dashboard" / "scripts" / "cron_backend.py").read_text()
-        assert 'MODEL = "plow/openai/gpt-6-luna"' in backend
+        assert 'MODEL = os.environ.get("PT_MODEL") or "plow/openai/gpt-6-luna"' in backend
         soul = (AGENTS).read_text()
         assert "GPT-6 Luna (`openai/gpt-6-luna`)" in soul
         assert 'pathPrepend: ["/opt/plow/pt-venv/bin"]' in config

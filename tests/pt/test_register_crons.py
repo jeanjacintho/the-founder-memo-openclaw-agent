@@ -950,3 +950,22 @@ def test_no_prompt_asks_the_model_to_work_out_a_date():
         assert "<today" not in prompt and "<date>" not in prompt
         assert prompt.count("--name paper-workspace --today") == 3  # acquire, release on refusal, release
     assert "check-paper --deliver-at main --as-of today" in crons.paper_prompt()
+
+
+def test_jobs_follow_the_model_boot_exports(monkeypatch):
+    # Boot exports the chat's model as PT_MODEL; an install moved to the
+    # owner's OpenAI account registers the paper there too, and a job still
+    # registered under Plow reads as drift, so the next register moves it.
+    monkeypatch.setenv("PT_MODEL", "openai/gpt-6-luna")
+    moved = load_module("cron_backend_moved", "pt-dashboard/scripts/cron_backend.py")
+    assert moved.MODEL == "openai/gpt-6-luna"
+    monkeypatch.setattr(crons, "MODEL", moved.MODEL)
+    job = {"name": "pt-daily-edition", "schedule": "15 6 * * *", "tz": TZ, "prompt": "same"}
+    on_plow = {"schedule": "15 6 * * *", "tz": TZ, "prompt": "same", "model": "plow/openai/gpt-6-luna", "command": None}
+    assert crons.job_drift(job, on_plow) is True
+    assert crons.job_drift(job, {**on_plow, "model": "openai/gpt-6-luna"}) is False
+
+
+def test_without_pt_model_jobs_stay_on_plow(monkeypatch):
+    monkeypatch.delenv("PT_MODEL", raising=False)
+    assert load_module("cron_backend_default", "pt-dashboard/scripts/cron_backend.py").MODEL == "plow/openai/gpt-6-luna"

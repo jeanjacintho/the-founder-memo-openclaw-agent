@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import JSON5 from "json5";
 import { renderConfig, syncConfig, type Identity } from "../boot/config.ts";
+import { llmRoute } from "../boot/llm.ts";
 
 const identity: Identity = {
   agent: { name: "Juniper" },
@@ -89,6 +90,26 @@ test("GPT-6 Luna is the only configured model, with explicit capacity and pricin
     id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
     cost: { input: 0.10, output: 0.50 },
   }]);
+  assert.equal("models" in config.agents.defaults, false, "Plow's route adds no per-model runtime policy");
+  assert.equal("modelPolicy" in config.agents.defaults, false);
+  assert.equal("utilityModel" in config.agents.defaults, false);
+});
+
+test("an OpenAI route keeps Plow's Luna as its fallback and runs on OpenClaw's own runtime", () => {
+  const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route);
+  assert.deepEqual(config.agents.defaults.model, { primary: "openai/gpt-6-luna", fallbacks: ["plow/openai/gpt-6-luna"] });
+  assert.deepEqual(config.agents.defaults.models, { "openai/*": { agentRuntime: { id: "openclaw" } } });
+  assert.deepEqual(config.agents.defaults.modelPolicy, { allow: [] });
+  assert.equal(config.agents.defaults.utilityModel, "openai/gpt-6-luna");
+  // Plow stays configured: it is the fallback, and the chat's own provider entry.
+  assert.equal(config.models.providers.plow.models[0].id, "openai/gpt-6-luna");
+});
+
+test("an OpenRouter route needs no runtime policy of its own", () => {
+  const config = renderConfig(identity, "http://api:8000",
+    llmRoute({ AGENT_PROVIDER: "openrouter", AGENT_MODEL: "openai/gpt-6-luna" }, undefined).route);
+  assert.deepEqual(config.agents.defaults.model, { primary: "openrouter/openai/gpt-6-luna", fallbacks: ["plow/openai/gpt-6-luna"] });
+  assert.equal("models" in config.agents.defaults, false);
 });
 
 test("the configured Plow provider permits an operator-controlled private endpoint", () => {

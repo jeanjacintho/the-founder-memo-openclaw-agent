@@ -73,6 +73,7 @@ RUN probe="import yaml, weasyprint, sys; assert sys.version_info[:2] == (3, 13),
 
 COPY boot /opt/plow/boot
 COPY boot/gateway-password.sh /etc/profile.d/plow-openclaw.sh
+COPY boot/plow-llm.sh /usr/local/bin/plow-llm
 RUN printf '\n. /etc/profile.d/plow-openclaw.sh\n' >> /home/node/.bashrc
 COPY plugin /opt/plow/plugin
 COPY prompt /opt/plow/prompt
