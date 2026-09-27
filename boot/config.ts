@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import JSON5 from "json5";
+import { PLOW_ROUTE, type LlmRoute } from "./llm.ts";
 
 export type Participant =
   | { type: "member"; uid: string; role: string }
@@ -12,7 +13,7 @@ export type Identity = {
   mcp_url?: string | null;
 };
 
-export function renderConfig(identity: Identity, apiBase: string) {
+export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE) {
   const name = identity.agent?.name;
   if (typeof name !== "string" || !name.trim()) throw new Error(`Identity has no usable agent.name: ${JSON.stringify(name)}`);
   const email = identity.chats.flatMap(chat => chat.participants).find(p =>
@@ -41,7 +42,17 @@ export function renderConfig(identity: Identity, apiBase: string) {
       // The paper's AGENTS.md plus up to 8,000 characters of Latch instructions is
       // past OpenClaw's 20,000-character default; truncation drops its last rules.
       bootstrapMaxChars: 40_000,
-      model: { primary: "plow/openai/gpt-6-luna", fallbacks: [] }, sandbox: { mode: "off" },
+      model: { primary: llm.primary, fallbacks: llm.fallbacks }, sandbox: { mode: "off" },
+      // Off Plow, titles and recaps use the chosen model too: OpenAI's own
+      // small-model default is a model the owner did not pick.
+      ...(llm.provider === "plow" ? {} : { utilityModel: llm.primary }),
+      // Signed in with the owner's own account, an openai/* model may otherwise
+      // run on the native Codex harness, which skips this plugin's hooks and the
+      // per-sender tool policy. The empty allow list keeps the entry from reading
+      // as a legacy model restriction, so Plow's fallback stays selectable.
+      ...(llm.provider === "openai" ? {
+        models: { "openai/*": { agentRuntime: { id: "openclaw" } } }, modelPolicy: { allow: [] },
+      } : {}),
       // The advisor tournament spawns up to six critics at once; children never spawn.
       // Delegation stays a suggestion so owner chat turns are not pushed into sub-agents.
       subagents: { maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest" },

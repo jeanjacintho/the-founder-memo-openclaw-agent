@@ -3,6 +3,7 @@ import { readFile, mkdir, writeFile, rm, chmod } from "node:fs/promises";
 import { startAgentIndex } from "./agent-index.js";
 import { renderConfig, syncConfig } from "./config.js";
 import { identityFromApi } from "./identity.js";
+import { llmRoute } from "./llm.js";
 import { installBootLog } from "./log.js";
 import { newspaperEnv } from "./newspaper-env.js";
 import { renderPrompt } from "./prompt.js";
@@ -17,8 +18,13 @@ try {
   process.env.OPENCLAW_GATEWAY_PASSWORD = randomBytes(32).toString("hex");
   process.env.PLOW_MCP_BRIDGE_TOKEN = randomBytes(32).toString("hex");
   const identity = await identityFromApi(base, process.env.PLOW_AGENT_TOKEN);
-  const config = renderConfig(identity, base);
-  Object.assign(process.env, newspaperEnv(identity));
+  const { route, problem } = llmRoute();
+  if (problem) console.error(`plow-boot: llm: ${problem}`);
+  console.log(`plow-boot: llm ${route.provider} ${route.primary}${route.fallbacks.length ? ` (fallback ${route.fallbacks.join(", ")})` : ""}`);
+  const config = renderConfig(identity, base, route);
+  // PT_MODEL is the model the paper's scheduled jobs are registered with, so
+  // they follow the chat to the same provider.
+  Object.assign(process.env, newspaperEnv(identity), { PT_MODEL: route.primary });
   await mkdir("/var/lib/plow/workspace", { recursive: true });
   await mkdir("/var/lib/plow/pt", { recursive: true, mode: 0o700 });
   await writeFile("/var/lib/plow/gateway-password", process.env.OPENCLAW_GATEWAY_PASSWORD + "\n", { mode: 0o600 });

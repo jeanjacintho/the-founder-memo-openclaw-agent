@@ -109,7 +109,7 @@ once. The wiki is `~/Plow/wiki/projects/theplowtimes/`.
   its answer; groups get answers, never setup questions.
 - **Schedule.** Every paper is an OpenClaw scheduler job
   (`openclaw cron`), registered by `pt-dashboard/scripts/register_crons.py`
-  from your topics: an isolated turn on `z-ai/glm-5.2`, in **your**
+  from your topics: an isolated turn on the chat's own model, in **your**
   timezone (`--tz`), with no automatic delivery — the paper posts itself as a
   PDF. Jobs live in the state volume and survive restarts and
   `docker compose up --build`; on a fresh volume, setup (or any schedule
@@ -117,6 +117,37 @@ once. The wiki is `~/Plow/wiki/projects/theplowtimes/`.
 - **Scripts.** The `pt-*` skills' Python scripts run on Python 3.13 with
   WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The paper's state is
   `/var/lib/plow/pt` (config, topics, run scratch).
+
+## Model
+
+Every install runs on Plow's GPT-6 Luna (`plow/openai/gpt-6-luna`). A
+one-click install has nothing to configure and never leaves it.
+
+The owner of one install can move all of its inference (chat, sub-agents
+and the scheduled papers) to their own OpenAI account. In a login shell on
+the agent (`docker compose exec agent bash -l`, or SSH on the VM):
+
+```sh
+plow-llm openai
+```
+
+It signs in with a device code, checks that the account offers
+`gpt-6-luna`, leaves a marker in the state volume, and registers the paper's
+jobs again under the new model. Restart the agent to apply it. The sign-in
+and the marker live in the state volume, so rebuilds and image updates keep
+them. `plow-llm plow` moves back, and `plow-llm status` shows what the next
+boot will choose.
+
+Plow's Luna stays configured as the fallback: a spent quota or an expired
+sign-in answers from Plow instead of failing. `AGENT_PROVIDER` (`plow`,
+`openai`, `openrouter`) and `AGENT_MODEL` choose a provider from the
+environment instead and outrank the marker; OpenAI then takes
+`OPENAI_API_KEY` or the sign-in, and OpenRouter `OPENROUTER_API_KEY`. After
+changing them, restart and run `plow-llm sync` to move the scheduled jobs.
+
+The sign-in is a real credential for your account, kept in the state volume
+where the agent's own tools can read it. Use it on an install only you
+talk to.
 
 ## Moving a paper from the Hermes edition
 
