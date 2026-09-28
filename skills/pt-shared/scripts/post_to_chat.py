@@ -63,6 +63,7 @@ import os
 import re
 import shutil
 import sys
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -137,6 +138,114 @@ DASHBOARD_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "pt-dashboar
 
 def outbox_dir():
     return pt_home() / "outbox"
+
+
+def delivery_recovery_dir():
+    return pt_home() / "delivery-recovery"
+
+
+def _write_delivery_state(ticket, state):
+    temporary = ticket.with_name(f".{ticket.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, ticket)
+
+
+def persist_posted_delivery(edition_json, pdf, text_file, delivered_at):
+    """Snapshot a posted edition and its remaining finalizers before running any."""
+    if not edition_json or not Path(edition_json).is_file():
+        return None
+    root = delivery_recovery_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    folder = root / f"{delivered_at:%Y%m%dT%H%M%S}-{uuid.uuid4().hex}"
+    folder.mkdir()
+    edition_json = Path(edition_json)
+    shutil.copyfile(edition_json, folder / "edition.json")
+    actual_pdf = Path(pdf) if pdf else edition_json.parent / "edition.pdf"
+    if actual_pdf.is_file():
+        shutil.copyfile(actual_pdf, folder / "edition.pdf")
+    actual_text = Path(text_file) if text_file else edition_json.parent / "edition.companion.txt"
+    if actual_text.is_file():
+        shutil.copyfile(actual_text, folder / "edition.companion.txt")
+    try:
+        sections = json.loads((folder / "edition.json").read_text(encoding="utf-8")).get("sections") or []
+    except (OSError, ValueError, AttributeError):
+        sections = []
+    for section in sections:
+        topic_id = section.get("topic_id") if isinstance(section, dict) else None
+        source = _notes_source(edition_json.parent, topic_id) if topic_id else None
+        if source:
+            (folder / topic_id).mkdir(exist_ok=True)
+            shutil.copyfile(source, folder / topic_id / "notes.json")
+    state = {
+        "delivered_at": delivered_at.isoformat(),
+        "edition_json": "edition.json",
+        "pdf": "edition.pdf" if (folder / "edition.pdf").is_file() else None,
+        "print_path": "edition.pdf" if (folder / "edition.pdf").is_file() else str(actual_pdf),
+        "finalizers_pending": ["topics", "print", "record"],
+    }
+    ticket = folder / "delivery.json"
+    _write_delivery_state(ticket, state)
+    return ticket
+
+
+def recover_delivery(ticket, *, notify_print_failure=False):
+    """Run only persisted finalizers; this path never posts the edition again."""
+    ticket = Path(ticket)
+    folder = ticket.parent
+    if not ticket.exists():
+        return []
+    lock_path = folder / ".recovery.lock"
+    try:
+        lock_file = open(lock_path, "a")
+    except FileNotFoundError:
+        # Another worker completed this ticket between the existence check
+        # and acquiring its per-delivery lock.
+        return []
+    with lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            state = json.loads(ticket.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return ["invalid delivery recovery state"]
+        pending = list(state.get("finalizers_pending") or [])
+        edition_json = str(folder / state["edition_json"])
+        delivered_at = datetime.fromisoformat(state["delivered_at"])
+        failures = []
+        for finalizer in ("topics", "print", "record"):
+            if finalizer not in pending:
+                continue
+            if finalizer == "topics":
+                result = _best_effort(run_finalize_topics, (edition_json,), "topics not finalized")
+                print(result)
+                succeeded = not result.startswith("topics not finalized")
+            elif finalizer == "print":
+                print_path = state.get("print_path")
+                line = print_page(str(folder / print_path) if print_path == "edition.pdf" else print_path) if print_path else None
+                if line:
+                    print(line)
+                    if notify_print_failure:
+                        try:
+                            base, uid, token = resolve_chat()
+                            post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", {"body": line})
+                        except SystemExit as exc:
+                            print(f"print-failure notice not posted: {exc}", file=sys.stderr)
+                # Printing can have an unknown outcome; never auto-print twice.
+                succeeded = True
+            else:
+                result = _best_effort(
+                    run_record_edition, (edition_json, delivered_at), "edition not recorded"
+                )
+                print(result)
+                succeeded = "edition not recorded" not in result
+            if succeeded:
+                pending.remove(finalizer)
+                state["finalizers_pending"] = pending
+                _write_delivery_state(ticket, state)
+            else:
+                failures.append(finalizer)
+        if not pending:
+            shutil.rmtree(folder, ignore_errors=True)
+        return failures
 
 
 def deliver_job_runs():
@@ -481,10 +590,27 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         delivered_at = owner_now()
         post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", body)
-    if on_posted:
-        on_posted()
     posted_path = pdf or text_file
     edition_json = str(Path(posted_path).parent / "edition.json") if posted_path else None
+    recovery_ticket = persist_posted_delivery(edition_json, pdf, text_file, delivered_at)
+    if on_posted:
+        on_posted()
+    if recovery_ticket:
+        suffix = " + companion" if pdf and text else " only" if pdf else ""
+        print(f"chat edition posted (pdf{suffix}) {pdf}" if pdf else f"chat edition posted ({len(text)} chars)")
+        recoveries = recover_delivery(recovery_ticket, notify_print_failure=True)
+        if recoveries:
+            hints = []
+            if "topics" in recoveries:
+                hints.append("topics.py finalize-edition <edition.json>")
+            if "record" in recoveries:
+                hints.append(f"record_edition.py <edition.json> --now {delivered_at.isoformat()}")
+            if "print" in recoveries:
+                hints.append("print_edition.py <edition.pdf>")
+            sys.exit("error: post-delivery finalization failed; recover with "
+                     + "; ".join(hints) + "; do not repost")
+        return
+
     topics_result = (
         _best_effort(run_finalize_topics, (edition_json,), "topics not finalized")
         if edition_json else "skipped: no posted file"
@@ -528,10 +654,17 @@ def main_flush():
     already running owns the outbox, and the next minute's run picks up the
     rest). An entry with no delivery.json was posted and is waiting on its
     recovery command; it is never posted again."""
+    failed = False
+    recovery_root = delivery_recovery_dir()
+    if recovery_root.is_dir():
+        for ticket in sorted(recovery_root.glob("*/delivery.json")):
+            failures = recover_delivery(ticket, notify_print_failure=True)
+            if failures:
+                print(f"{ticket.parent.name}: pending finalizers: {', '.join(failures)}", file=sys.stderr)
+                failed = True
     outbox = outbox_dir()
     if not outbox.is_dir():
-        return 0
-    failed = False
+        return 1 if failed else 0
     with open(outbox / ".flush.lock", "a") as lock_file:
         try:
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -557,6 +690,8 @@ def main_flush():
             except SystemExit as exc:
                 print(f"{entry.name}: {exc}", file=sys.stderr)
                 failed = True
+                if not ticket.exists():
+                    shutil.rmtree(entry, ignore_errors=True)
                 continue
             shutil.rmtree(entry, ignore_errors=True)
     return 1 if failed else 0

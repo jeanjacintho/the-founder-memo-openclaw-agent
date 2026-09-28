@@ -390,6 +390,32 @@ class TestOutboxDelivery:
                                           "--text-file", str(run / "edition.companion.txt"), "--hold-until", hhmm])
         post.main()
 
+    def test_flush_recovers_persisted_post_without_reposting(self, tmp_path, monkeypatch):
+        home = tmp_path / "pt"
+        recovery = home / "delivery-recovery" / "posted-1"
+        recovery.mkdir(parents=True)
+        (home / "config.json").write_text(json.dumps({"owner": {"timezone": "America/Sao_Paulo"}}))
+        (recovery / "edition.json").write_text(json.dumps({"date": "2026-09-25", "sections": []}))
+        (recovery / "edition.pdf").write_bytes(b"%PDF posted edition")
+        (recovery / "delivery.json").write_text(json.dumps({
+            "delivered_at": MORNING.isoformat(),
+            "edition_json": "edition.json",
+            "pdf": "edition.pdf",
+            "print_path": "edition.pdf",
+            "finalizers_pending": ["topics", "print", "record"],
+        }))
+        monkeypatch.setenv("PT_HOME", str(home))
+        order, posts = [], []
+        monkeypatch.setattr(post, "run_finalize_topics", lambda path: order.append(("topics", Path(path).name)) or "FINALIZED")
+        monkeypatch.setattr(post, "print_page", lambda path: order.append(("print", Path(path).name)) or None)
+        monkeypatch.setattr(post, "run_record_edition", lambda path, at: order.append(("record", Path(path).name)) or "RECORDED")
+        monkeypatch.setattr(post, "post_json", lambda *args, **kwargs: posts.append(args))
+
+        assert post.main_flush() == 0
+        assert order == [("topics", "edition.json"), ("print", "edition.pdf"), ("record", "edition.json")]
+        assert posts == [], "recovery must not repost the already delivered edition"
+        assert not recovery.exists(), "completed recovery state is removed"
+
     def test_an_hour_already_passed_posts_now_and_leaves_no_outbox(self, tmp_path, monkeypatch):
         home, run, posts, _ = self._setup(tmp_path, monkeypatch)
         self._at(monkeypatch, 9, 45)
