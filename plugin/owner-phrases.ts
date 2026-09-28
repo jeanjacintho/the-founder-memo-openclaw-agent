@@ -11,6 +11,11 @@ export const TURN_FAILED = {
   pt: "Não consegui terminar de tratar sua última mensagem. Parte do pedido pode já ter acontecido — confira antes de mandar de novo.",
 };
 
+export const EDITION_FAILED = {
+  en: "The edition was not delivered because a required run step failed.",
+  pt: "A edição não foi entregue porque uma etapa necessária da execução falhou.",
+};
+
 const ptHome = () => process.env.PT_HOME || "/var/lib/plow/pt";
 
 async function readJson(path: string): Promise<unknown> {
@@ -38,4 +43,12 @@ export async function turnFailedNotice(): Promise<string> {
   const written = stored?.phrases?.["turn.failed"];
   if (language && stored?.language === language && typeof written === "string" && written.trim()) return written;
   return isPortuguese(language) ? TURN_FAILED.pt : TURN_FAILED.en;
+}
+
+export async function editionFailedNotice(): Promise<string> {
+  const language = await ownerLanguage();
+  const stored = await readJson(`${ptHome()}/owner-phrases.json`) as { language?: unknown; phrases?: Record<string, unknown> } | undefined;
+  const written = stored?.phrases?.["edition.failed"];
+  if (language && stored?.language === language && typeof written === "string" && written.trim()) return written;
+  return isPortuguese(language) ? EDITION_FAILED.pt : EDITION_FAILED.en;
 }
