@@ -403,9 +403,9 @@ def focused_paper_hours(topics, delivery_hour):
     return sorted(hours)
 
 
-def require_workspace_spacing(hours):
+def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
     """Refuse paper starts whose shared-workspace windows can overlap."""
-    minimum_minutes = 180
+    minimum_minutes = max(180, lead_minutes)
     for index, first in enumerate(hours):
         for second in hours[index + 1:]:
             distance = abs(_minutes(first) - _minutes(second))
@@ -461,7 +461,9 @@ def desired_jobs(topics, delivery_hour, owner_tz,
     lead_minutes is the nominal lead, clamped per slot (see _lead).
     """
     focused_hours = focused_paper_hours(topics, delivery_hour)
-    require_workspace_spacing([delivery_hour, *extra_hours, *focused_hours])
+    require_workspace_spacing(
+        [delivery_hour, *extra_hours, *focused_hours], lead_minutes=lead_minutes
+    )
     jobs = []
     # The daily paper always exists once setup can register: weather and
     # calendar run even with zero news sections.

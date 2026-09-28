@@ -143,6 +143,18 @@ class TestLoadOwnerZone:
 
 
 class TestDesiredJobs:
+    @pytest.mark.parametrize("lead_minutes", [200, 180])
+    def test_workspace_spacing_allows_papers_at_effective_lead_distance(self, lead_minutes):
+        # At 200 minutes apart, the old fixed 180-minute check could allow
+        # starts to overlap when both papers hold the workspace for 200 minutes.
+        crons.desired_jobs([], "07:00", TZ, lead_minutes=lead_minutes,
+                           extra_hours=["10:20"])
+
+    def test_workspace_spacing_refuses_papers_inside_effective_lead(self):
+        with pytest.raises(SystemExit, match="220 minutes apart"):
+            crons.desired_jobs([], "07:00", TZ, lead_minutes=220,
+                               extra_hours=["10:20"])
+
     def test_one_job_per_active_subscription(self, tmp_path):
         path = write_config(tmp_path)
         topics = [topic("t_9f2a"), topic("t_0c11")]
