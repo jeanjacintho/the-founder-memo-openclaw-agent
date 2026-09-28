@@ -42,8 +42,9 @@ text, `edition.json` and each news section's notes are copied into
 `post_to_chat.py --flush-outbox` every minute and posts each entry once its
 hour has come, through the same delivery as the direct path. Without a
 registered, enabled `pt-deliver` the paper posts now -- early, never stranded.
-`delivery.json` is removed the moment the POST returns, so nothing posts
-twice; a finalizer failure keeps the entry for its recovery command.
+After the POST returns, a separate recovery ticket snapshots the edition and
+the pending finalizers before they run. `pt-deliver` resumes that ticket without
+posting the edition again, then removes it when every finalizer completes.
 After a successful POST, three
 finalizers run independently and best-effort: finalize exactly the topics carried by
 `edition.json`, print the run's PDF via print_edition.py when configured (a
@@ -63,6 +64,7 @@ import os
 import re
 import shutil
 import sys
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -132,11 +134,147 @@ def _now():
 
 
 DELIVER_JOB = "pt-deliver"
+MAX_FINALIZER_ATTEMPTS = 5
 DASHBOARD_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "pt-dashboard" / "scripts"
 
 
 def outbox_dir():
     return pt_home() / "outbox"
+
+
+def delivery_recovery_dir():
+    return pt_home() / "delivery-recovery"
+
+
+def _write_delivery_state(ticket, state):
+    temporary = ticket.with_name(f".{ticket.name}.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    os.replace(temporary, ticket)
+
+
+def persist_posted_delivery(edition_json, pdf, text_file, delivered_at):
+    """Snapshot a posted edition and its remaining finalizers before running any."""
+    if not edition_json or not Path(edition_json).is_file():
+        return None
+    root = delivery_recovery_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    folder = root / f"{delivered_at:%Y%m%dT%H%M%S}-{uuid.uuid4().hex}"
+    building = root / f".building-{folder.name}-{os.getpid()}"
+    shutil.rmtree(building, ignore_errors=True)
+    building.mkdir()
+    try:
+        edition_json = Path(edition_json)
+        shutil.copyfile(edition_json, building / "edition.json")
+        actual_pdf = Path(pdf) if pdf else edition_json.parent / "edition.pdf"
+        if actual_pdf.is_file():
+            shutil.copyfile(actual_pdf, building / "edition.pdf")
+        actual_text = Path(text_file) if text_file else edition_json.parent / "edition.companion.txt"
+        if actual_text.is_file():
+            shutil.copyfile(actual_text, building / "edition.companion.txt")
+        try:
+            sections = json.loads((building / "edition.json").read_text(encoding="utf-8")).get("sections") or []
+        except (OSError, ValueError, AttributeError):
+            sections = []
+        for section in sections:
+            topic_id = section.get("topic_id") if isinstance(section, dict) else None
+            source = _notes_source(edition_json.parent, topic_id) if topic_id else None
+            if source:
+                (building / topic_id).mkdir(exist_ok=True)
+                shutil.copyfile(source, building / topic_id / "notes.json")
+        state = {
+            "delivered_at": delivered_at.isoformat(),
+            "edition_json": "edition.json",
+            "pdf": "edition.pdf" if (building / "edition.pdf").is_file() else None,
+            "print_path": "edition.pdf" if (building / "edition.pdf").is_file() else str(actual_pdf),
+            "finalizers_pending": ["topics", "print", "record"],
+            "attempts": {},
+        }
+        _write_delivery_state(building / "delivery.json", state)
+        os.replace(building, folder)
+        return folder / "delivery.json"
+    except Exception:
+        shutil.rmtree(building, ignore_errors=True)
+        raise
+
+
+def recover_delivery(ticket, *, notify_print_failure=False, wait=True):
+    """Run only persisted finalizers; this path never posts the edition again."""
+    ticket = Path(ticket)
+    folder = ticket.parent
+    if not ticket.exists():
+        return []
+    lock_path = folder / ".recovery.lock"
+    try:
+        lock_file = open(lock_path, "a")
+    except FileNotFoundError:
+        # Another worker completed this ticket between the existence check
+        # and acquiring its per-delivery lock.
+        return []
+    with lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
+        except BlockingIOError:
+            return []
+        if not ticket.exists():
+            return []
+        try:
+            state = json.loads(ticket.read_text(encoding="utf-8"))
+            edition_json = str(folder / state["edition_json"])
+            delivered_at = datetime.fromisoformat(state["delivered_at"])
+            pending = state["finalizers_pending"]
+            if not isinstance(pending, list) or not all(isinstance(item, str) for item in pending):
+                raise ValueError("finalizers_pending must be a list of names")
+            attempts = state.setdefault("attempts", {})
+            if not isinstance(attempts, dict) or any(
+                not isinstance(value, int) or value < 0 for value in attempts.values()
+            ):
+                raise ValueError("attempts must map finalizer names to non-negative integers")
+            if any(item not in ("topics", "print", "record") for item in pending):
+                raise ValueError("finalizers_pending contains an unknown finalizer")
+        except (OSError, ValueError, TypeError, KeyError):
+            return ["invalid delivery recovery state"]
+        pending = list(pending)
+        failures = []
+        for finalizer in ("topics", "print", "record"):
+            if finalizer not in pending:
+                continue
+            if attempts.get(finalizer, 0) >= MAX_FINALIZER_ATTEMPTS:
+                failures.append(f"{finalizer} retry limit reached")
+                continue
+            if finalizer == "topics":
+                result = _best_effort(run_finalize_topics, (edition_json,), "topics not finalized")
+                print(result)
+                succeeded = not result.startswith("topics not finalized")
+            elif finalizer == "print":
+                print_path = state.get("print_path")
+                line = print_page(str(folder / print_path) if print_path == "edition.pdf" else print_path) if print_path else None
+                if line:
+                    print(line)
+                    if notify_print_failure:
+                        try:
+                            base, uid, token = resolve_chat()
+                            post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", {"body": line})
+                        except Exception as exc:
+                            print(f"print-failure notice not posted: {exc}", file=sys.stderr)
+                # Printing can have an unknown outcome; never auto-print twice.
+                succeeded = True
+            else:
+                result = _best_effort(
+                    run_record_edition, (edition_json, delivered_at), "edition not recorded"
+                )
+                print(result)
+                succeeded = "edition not recorded" not in result
+            if succeeded:
+                pending.remove(finalizer)
+                state["finalizers_pending"] = pending
+                _write_delivery_state(ticket, state)
+            else:
+                attempts[finalizer] = attempts.get(finalizer, 0) + 1
+                _write_delivery_state(ticket, state)
+                failures.append(finalizer)
+        if not pending:
+            shutil.rmtree(folder, ignore_errors=True)
+        return failures
 
 
 def deliver_job_runs():
@@ -481,10 +619,24 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         delivered_at = owner_now()
         post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", body)
-    if on_posted:
-        on_posted()
     posted_path = pdf or text_file
     edition_json = str(Path(posted_path).parent / "edition.json") if posted_path else None
+    if on_posted:
+        on_posted()
+    try:
+        recovery_ticket = persist_posted_delivery(edition_json, pdf, text_file, delivered_at)
+    except Exception as exc:
+        print(f"post-delivery recovery ticket could not be saved: {exc}; running finalizers inline",
+              file=sys.stderr)
+        recovery_ticket = None
+    if recovery_ticket:
+        suffix = " + companion" if pdf and text else " only" if pdf else ""
+        print(f"chat edition posted (pdf{suffix}) {pdf}" if pdf else f"chat edition posted ({len(text)} chars)")
+        recoveries = recover_delivery(recovery_ticket, notify_print_failure=True)
+        if recoveries:
+            sys.exit("error: post-delivery finalization remains pending; pt-deliver retries it; do not repost")
+        return
+
     topics_result = (
         _best_effort(run_finalize_topics, (edition_json,), "topics not finalized")
         if edition_json else "skipped: no posted file"
@@ -524,14 +676,23 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
 def main_flush():
     """Post every staged paper whose hour has come; 0 when nothing failed.
 
-    One flush at a time (an exclusive lock taken without waiting: a flush
-    already running owns the outbox, and the next minute's run picks up the
-    rest). An entry with no delivery.json was posted and is waiting on its
-    recovery command; it is never posted again."""
+    Pending post-delivery tickets are resumed first, without reposting. Staged
+    outbox posts remain single-flush-at-a-time under their exclusive lock; if
+    a post succeeded but finalizers did not, their separate recovery ticket is
+    picked up on the next minute."""
+    failed = False
+    recovery_root = delivery_recovery_dir()
+    if recovery_root.is_dir():
+        for ticket in sorted(recovery_root.glob("*/delivery.json")):
+            if ticket.parent.name.startswith("."):
+                continue
+            failures = recover_delivery(ticket, notify_print_failure=True, wait=False)
+            if failures:
+                print(f"{ticket.parent.name}: pending finalizers: {', '.join(failures)}", file=sys.stderr)
+                failed = True
     outbox = outbox_dir()
     if not outbox.is_dir():
-        return 0
-    failed = False
+        return 1 if failed else 0
     with open(outbox / ".flush.lock", "a") as lock_file:
         try:
             fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -557,6 +718,8 @@ def main_flush():
             except SystemExit as exc:
                 print(f"{entry.name}: {exc}", file=sys.stderr)
                 failed = True
+                if not ticket.exists():
+                    shutil.rmtree(entry, ignore_errors=True)
                 continue
             shutil.rmtree(entry, ignore_errors=True)
     return 1 if failed else 0
