@@ -152,10 +152,9 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
 
     hold_until is the send clock (delivery.hour / an extra or focused hour).
     The job may start earlier via lead_minutes; POST must still wait. The
-    on-demand copy (--now) passes none, posts when done, and never waits
-    ~150 minutes on a tournament: it reuses the newest accepted checkpoint
-    of any date, printed with its as-of date, and runs the tournament only
-    when none has ever been accepted.
+    on-demand copy (--now) passes none and posts when done. It reuses an
+    accepted checkpoint only when it is for today; if it is missing or stale,
+    it runs the tournament rather than silently using old advice.
 
     The prompt carries only what the run cannot read from its skills: the
     lock, the roster, the advice rule and the send clock. Delivery, print
@@ -188,9 +187,10 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         f"minutes-until {hold_until} and, under {MIN_TOURNAMENT_MINUTES} minutes, write the "
         f"desk's own unavailable reason per pt-priority/SKILL.md instead of starting one"
         if hold_until else
-        "reuse the newest accepted checkpoint in run/desk-priority/tournament.json whatever "
-        "its date -- an older one prints with \"as_of\" per pt-edition -- and run the "
-        "tournament only if none has ever been accepted"
+        "reuse run/desk-priority/tournament.json only if it is today's accepted checkpoint; "
+        "if it is missing or dated earlier, run the priority tournament per pt-priority/SKILL.md "
+        "and continue the paper even if that desk records an unavailable reason. Do not stop "
+        "the paper or reuse stale advice because today's checkpoint is missing"
     )
     wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if hold_until else ""
     held = (
