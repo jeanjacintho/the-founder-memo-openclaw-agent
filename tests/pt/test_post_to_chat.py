@@ -440,6 +440,20 @@ class TestOutboxDelivery:
             fcntl.flock(held, fcntl.LOCK_EX)
             assert post.recover_delivery(ticket, wait=False) == []
 
+    def test_flush_ignores_hidden_building_recovery_ticket(self, tmp_path, monkeypatch, capsys):
+        home = tmp_path / "pt"
+        building = home / "delivery-recovery" / ".building-posted-1-123"
+        building.mkdir(parents=True)
+        ticket = building / "delivery.json"
+        content = '{"finalizers_pending": ["topics"]}\n'
+        ticket.write_text(content)
+        monkeypatch.setenv("PT_HOME", str(home))
+
+        assert post.main_flush() == 0
+        assert ticket.exists()
+        assert ticket.read_text() == content
+        assert "pending finalizers" not in capsys.readouterr().err
+
     def test_flush_isolates_malformed_recovery_ticket(self, tmp_path, monkeypatch):
         home = tmp_path / "pt"
         recovery = home / "delivery-recovery" / "broken"

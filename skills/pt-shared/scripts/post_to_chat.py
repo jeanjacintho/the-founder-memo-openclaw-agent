@@ -684,6 +684,8 @@ def main_flush():
     recovery_root = delivery_recovery_dir()
     if recovery_root.is_dir():
         for ticket in sorted(recovery_root.glob("*/delivery.json")):
+            if ticket.parent.name.startswith("."):
+                continue
             failures = recover_delivery(ticket, notify_print_failure=True, wait=False)
             if failures:
                 print(f"{ticket.parent.name}: pending finalizers: {', '.join(failures)}", file=sys.stderr)
