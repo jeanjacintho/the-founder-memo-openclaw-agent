@@ -847,6 +847,18 @@ class TestRunPromptsDelegateDelivery:
         # Jobs have no delivery arm (--no-deliver): the final text goes nowhere.
         assert "NO_REPLY" not in p and "--deliver " not in p
 
+    @pytest.mark.parametrize("p", [
+        crons.paper_prompt(),
+        crons.paper_prompt(focus="12:00"),
+        crons.TOPIC_PROMPT,
+    ])
+    def test_pre_delivery_failure_sends_exactly_one_owner_notice(self, p):
+        assert p.count("send exactly one short message to the owner") == 1
+        assert "message(action=send)" in p
+        assert "target plow-owner" in p
+        assert "edition was not delivered" in p
+        assert "Do not send this notice after confirmed delivery" in p
+
     def test_paper_prompt_reopens_sections(self):
         assert "reopen-sections" in crons.paper_prompt()
 

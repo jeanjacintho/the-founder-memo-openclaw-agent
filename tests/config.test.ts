@@ -122,7 +122,22 @@ test("MCP sessions share the loopback bridge and expire after five idle minutes"
   assert.deepEqual(config.mcp, { sessionIdleTtlMs: 300_000, servers: { plow: {
     url: "http://127.0.0.1:18790/mcp", transport: "streamable-http",
     headers: { Authorization: "Bearer ${PLOW_MCP_BRIDGE_TOKEN}" }, requestTimeoutMs: 300_000,
+    toolFilter: { include: ["plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file", "plow_read_skill", "plow_run_applescript", "plow_run_command", "plow_write_file"] },
   } } });
+});
+
+test("the Plow MCP filter exposes only the Latch tools used by newspaper research", () => {
+  const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
+  assert.deepEqual(config.mcp?.servers?.plow?.toolFilter?.include, [
+    "plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file", "plow_read_skill",
+    "plow_run_applescript", "plow_run_command", "plow_write_file",
+  ]);
+  assert.deepEqual(config.tools.alsoAllow.filter(name => name.startsWith("plow__")), [
+    "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
+    "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
+  ]);
+  assert.ok(config.tools.alsoAllow.includes("process"), "OpenClaw 2026.9.6 no longer infers process from exec");
+  assert.ok(!config.tools.alsoAllow.includes("group:plugins"), "do not grant every plugin tool");
 });
 
 test("the advisor tournament can run six leaf sub-agents without chat turns preferring delegation", () => {
@@ -137,7 +152,11 @@ test("phone turns cannot block on ask_user or read secrets", () => {
 
 test("native messaging retains local workspace and memory file tools", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools, {
-    profile: "messaging", toolSearch: false, sessions: { visibility: "tree" }, alsoAllow: ["read", "write", "edit", "exec", "plow_start_thread", "plow_record_signal"], deny: ["ask_user", "secrets"],
+    profile: "messaging", toolSearch: false, sessions: { visibility: "tree" }, alsoAllow: [
+      "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+      "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
+      "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
+    ], deny: ["ask_user", "secrets"],
     exec: { pathPrepend: ["/opt/plow/pt-venv/bin"] },
   });
 });

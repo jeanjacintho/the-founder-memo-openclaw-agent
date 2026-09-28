@@ -125,9 +125,18 @@ HELD_LOCK_WAIT_SECONDS = 1200
 MIN_TOURNAMENT_MINUTES = 50
 
 # One topic's own edition: a subscription's nightly run or a one-off.
+DELIVERY_FAILURE_NOTICE = (
+    "If any step stops, refuses or fails before post_to_chat.py confirms delivery, "
+    "release the paper-workspace lock if you hold it, then send exactly one short "
+    "message to the owner with message(action=send), channel plow, accountId chat, "
+    "target plow-owner. Say the edition was not delivered and give the reason in "
+    "one sentence. Do not send this notice after confirmed delivery."
+)
+
 TOPIC_PROMPT = (
     "Run pt-research on topic {tid} now (depth {depth}), then pt-edition for it, "
-    "delivering with post_to_chat.py per pt-edition/SKILL.md step 2."
+    "delivering with post_to_chat.py per pt-edition/SKILL.md step 2. "
+    + DELIVERY_FAILURE_NOTICE
 )
 
 
@@ -206,7 +215,8 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         f"then every other standing desk it lists, in its order, then {roster}. "
         f"Then run pt-edition for the batch, delivering with post_to_chat.py "
         f"per pt-edition/SKILL.md step 2{hold}. "
-        f"Release the lock with {lock} release --name {WORKSPACE_LOCK} --today."
+        f"Release the lock with {lock} release --name {WORKSPACE_LOCK} --today. "
+        f"{DELIVERY_FAILURE_NOTICE}"
     )
 
 

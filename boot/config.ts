@@ -61,6 +61,12 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       url: "http://127.0.0.1:18790/mcp", transport: "streamable-http",
       // Browser reads and plow_get_result waits on the Mac outlast the 60s default.
       requestTimeoutMs: 300_000,
+      // Keep the newspaper's Latch surface explicit. MCP tools are filtered by
+      // server-local names before the session tool profile is applied.
+      toolFilter: { include: [
+        "plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file",
+        "plow_read_skill", "plow_run_applescript", "plow_run_command", "plow_write_file",
+      ] },
       headers: { Authorization: "Bearer ${PLOW_MCP_BRIDGE_TOKEN}" },
     } } } : {}) },
     // The channel runs the newspaper setup gate in a before_prompt_build hook; OpenClaw
@@ -88,7 +94,11 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     skills: { load: { extraDirs: ["/opt/plow/skills"] }, allowBundled: ["plow-no-bundled-skills"] },
     // Keep workspace and durable memory writes local instead of routing them through the Mac relay.
     tools: {
-      profile: "messaging", toolSearch: false, sessions: { visibility: "tree" }, alsoAllow: ["read", "write", "edit", "exec", "plow_start_thread", "plow_record_signal"], deny: ["ask_user", "secrets"],
+      profile: "messaging", toolSearch: false, sessions: { visibility: "tree" }, alsoAllow: [
+        "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+        "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
+        "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
+      ], deny: ["ask_user", "secrets"],
       // The newspaper scripts' python3 is the image's 3.13 venv, never the system 3.11.
       exec: { pathPrepend: ["/opt/plow/pt-venv/bin"] },
     },

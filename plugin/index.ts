@@ -5,6 +5,7 @@ import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
 import { request, listen, accepts, ownerChat, HttpError, DeliveryUnknownError, type Account, type Chat, type Message, type TurnOutcome } from "./transport.ts";
 import { gateContext, isOwnerDm, isOwnerDmTurn, runGate } from "./setup-gate.ts";
 import { CATEGORIES, GroupInbox, isGroupTurn, isListeningGroup, listeningContext, recordSignal, type Category } from "./group-listen.ts";
+import { notifyFailedPaperRun } from "./cron-failure-notice.ts";
 
 let runtime: PluginRuntime;
 type ActiveTurn = { chat: Chat; messageUid: string; account?: Account; deliveryUnknown?: boolean; replyDelivered?: boolean };
@@ -179,6 +180,10 @@ export default defineChannelPluginEntry({
   setRuntime: value => { runtime = value; },
   registerFull(api) {
     if (api.registrationMode === "full") api.logger.info("plow channel registered");
+    api.on("agent_end", async (event, ctx) => {
+      try { await notifyFailedPaperRun(event, ctx); }
+      catch (error) { api.logger.warn(`paper cron failure notice failed: ${(error as Error).name}`); }
+    });
     // The owner's own phone DM starts from the newspaper's setup gate.
     api.on("before_prompt_build", async (_event, ctx) => {
       const turn = activeTurn.getStore() ?? (ctx.sessionKey ? activeTurns.get(ctx.sessionKey) : undefined);
