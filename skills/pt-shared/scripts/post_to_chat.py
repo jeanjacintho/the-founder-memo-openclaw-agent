@@ -42,8 +42,9 @@ text, `edition.json` and each news section's notes are copied into
 `post_to_chat.py --flush-outbox` every minute and posts each entry once its
 hour has come, through the same delivery as the direct path. Without a
 registered, enabled `pt-deliver` the paper posts now -- early, never stranded.
-`delivery.json` is removed the moment the POST returns, so nothing posts
-twice; a finalizer failure keeps the entry for its recovery command.
+After the POST returns, a separate recovery ticket snapshots the edition and
+the pending finalizers before they run. `pt-deliver` resumes that ticket without
+posting the edition again, then removes it when every finalizer completes.
 After a successful POST, three
 finalizers run independently and best-effort: finalize exactly the topics carried by
 `edition.json`, print the run's PDF via print_edition.py when configured (a
@@ -650,10 +651,10 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
 def main_flush():
     """Post every staged paper whose hour has come; 0 when nothing failed.
 
-    One flush at a time (an exclusive lock taken without waiting: a flush
-    already running owns the outbox, and the next minute's run picks up the
-    rest). An entry with no delivery.json was posted and is waiting on its
-    recovery command; it is never posted again."""
+    Pending post-delivery tickets are resumed first, without reposting. Staged
+    outbox posts remain single-flush-at-a-time under their exclusive lock; if
+    a post succeeded but finalizers did not, their separate recovery ticket is
+    picked up on the next minute."""
     failed = False
     recovery_root = delivery_recovery_dir()
     if recovery_root.is_dir():
