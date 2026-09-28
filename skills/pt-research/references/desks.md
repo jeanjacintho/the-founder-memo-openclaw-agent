@@ -19,12 +19,13 @@ Every Latch call is the same two tools the print path uses:
 
 ## Priority — first in every paper, when configured
 
-Every paper may reuse `run/desk-priority/tournament.json` only when it is today's
+One rule for every scheduled paper: if `run/desk-priority/tournament.json` is today's
 accepted checkpoint (dated today, at its completed third-generation gate — what
-`render_edition.py --tournament` checks). Otherwise, including an older checkpoint in an
-on-demand paper, run the tournament; never present stale advice as current. If today's
-tournament cannot publish, record its unavailable reason and continue the other desks and
-edition. When no current checkpoint can be reused, run
+`render_edition.py --tournament` checks), reuse it and start below at weather. The on-demand
+copy never waits on a tournament: it reuses that checkpoint whatever its date, and pt-edition
+prints an older one with its `as_of` date; an older checkpoint is never a reason to stop the
+edition. With none to reuse (none today for a scheduled
+paper; none ever accepted for the on-demand copy), run
 `/opt/plow/skills/pt-shared/scripts/wiki_setup.py --desk`, then the signals step below,
 then load `pt-priority` and follow it.
 

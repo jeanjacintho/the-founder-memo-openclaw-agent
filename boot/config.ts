@@ -97,7 +97,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       // Keep configured research tools visible as direct model tools. OpenClaw
       // Code Mode catalogs every eligible tool behind exec/wait and has no
       // per-tool visibility allowlist.
-      profile: "messaging", toolSearch: false, codeMode: false, sessions: { visibility: "tree" }, alsoAllow: [
+      profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
         "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",

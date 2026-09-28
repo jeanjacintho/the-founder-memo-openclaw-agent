@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import JSON5 from "json5";
+import { fileURLToPath } from "node:url";
 import { renderConfig, syncConfig, type Identity } from "../boot/config.ts";
 import { llmRoute } from "../boot/llm.ts";
 
@@ -81,6 +84,23 @@ test("provider and optional MCP use environment references, never credential val
   assert.deepEqual(renderConfig(identity, "http://api:8000").mcp, { sessionIdleTtlMs: 300_000 });
 });
 
+test("rendered config passes OpenClaw's config validate command", async t => {
+  const dir = await mkdtemp(join(tmpdir(), "plow-openclaw-config-validate-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const configPath = join(dir, "openclaw.json");
+  const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
+  await writeFile(configPath, JSON.stringify(config));
+
+  const openclawDist = dirname(fileURLToPath(import.meta.resolve("openclaw")));
+  const cli = existsSync("/app/openclaw.mjs") ? "/app/openclaw.mjs" : join(dirname(openclawDist), "openclaw.mjs");
+  const result = spawnSync(process.execPath, [cli, "config", "validate", "--json"], {
+    encoding: "utf8",
+    env: { ...process.env, OPENCLAW_CONFIG_PATH: configPath, OPENCLAW_STATE_DIR: dir },
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /"valid":\s*true/);
+});
+
 test("GPT-6 Luna is the only configured model, with explicit capacity and pricing", () => {
   const config = renderConfig(identity, "http://api:8000");
   assert.deepEqual(config.agents.defaults.model, {
@@ -152,7 +172,7 @@ test("phone turns cannot block on ask_user or read secrets", () => {
 
 test("native messaging retains local workspace and memory file tools", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools, {
-    profile: "messaging", toolSearch: false, codeMode: false, sessions: { visibility: "tree" }, alsoAllow: [
+    profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
       "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
       "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
       "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",

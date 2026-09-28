@@ -22,7 +22,7 @@ async function openclawModule(prefix: string): Promise<Record<string, (...args: 
 
 test("research MCP tools survive server filtering, safe-name materialization and messaging policy", async () => {
   const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
-  assert.equal(config.tools.codeMode, false, "Code Mode must leave allowed Plow tools directly visible to the model");
+  assert.deepEqual(config.tools.codeMode, { enabled: false }, "schema-valid Code Mode config leaves allowed Plow tools directly visible");
   const filter = await openclawModule("mcp-tool-filter-");
   const safeNames = await openclawModule("agent-bundle-mcp-names-");
   const catalog = await openclawModule("tool-catalog-");

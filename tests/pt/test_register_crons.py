@@ -873,15 +873,17 @@ class TestRunPromptsDelegateDelivery:
             assert "reuse today's accepted checkpoint" in prompt
             assert "else run the tournament" in prompt
 
-    def test_on_demand_copy_reruns_tournament_when_checkpoint_is_not_today(self):
-        # A stale checkpoint must never be presented as current advice. The
-        # paper continues through its other desks if the tournament is unavailable.
+    def test_on_demand_copy_never_waits_on_a_tournament_it_can_reuse(self):
+        # Owner's call: the copy reuses the newest accepted advice of any
+        # date, printed with its as-of date; only a paper that has never had
+        # accepted advice runs the tournament.
         prompt = crons.paper_prompt()
         assert "prepare_daily_run.py --preserve-priority" in prompt
-        assert "only if it is today's accepted checkpoint" in prompt
-        assert "if it is missing or dated earlier, run the priority tournament" in prompt
-        assert "continue the paper even if that desk records an unavailable reason" in prompt
-        assert "Do not stop the paper or reuse stale advice" in prompt
+        assert "newest accepted checkpoint" in prompt and "whatever its date" in prompt
+        assert '"as_of"' in prompt
+        assert "only if none has ever been accepted" in prompt
+        assert "reuse today's" not in prompt
+        assert "An older checkpoint is never a reason to stop the paper" in prompt
 
     @pytest.mark.parametrize("prompt", [
         crons.paper_prompt(),

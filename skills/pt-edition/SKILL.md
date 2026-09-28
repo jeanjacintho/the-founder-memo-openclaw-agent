@@ -165,7 +165,12 @@ HTML.** Hand-write `edition.json` under the run directory:
   a free day — desks.md §2). **Priority is the same when `pt/config.json` has
   `priority.configured: true`: always a `"desk": "priority"` section.** Copy
   its `priority` object from `run/desk-priority/tournament.json` without rewriting. An
-  If the complete checkpoint is missing or the **As of** date in `pt/advisor.md` is not today, write the
+  on-demand copy reusing an older checkpoint also sets the section's `"as_of"` to that
+  checkpoint's `date` (on that section, not the edition); the card then prints "Advice from
+  <date>". Never edit a checkpoint's `date` or render from a re-dated copy: that prints old
+  advice as today's. If that
+  complete checkpoint is missing, or the **As of** date in
+  `pt/advisor.md` is not today (on demand: not the reused checkpoint's `as_of`), write the
   unavailable section instead: a one-line `body` saying today's card could not be built, and
   `could_not_source` copied verbatim from `run/desk-priority/notes.json` when its `date` is
   this edition's (that desk is kept across days; an older file's reason is not today's).
