@@ -23,7 +23,8 @@ One rule for every scheduled paper: if `run/desk-priority/tournament.json` is to
 accepted checkpoint (dated today, at its completed third-generation gate — what
 `render_edition.py --tournament` checks), reuse it and start below at weather. The on-demand
 copy never waits on a tournament: it reuses that checkpoint whatever its date, and pt-edition
-prints an older one with its `as_of` date. With none to reuse (none today for a scheduled
+prints an older one with its `as_of` date; an older checkpoint is never a reason to stop the
+edition. With none to reuse (none today for a scheduled
 paper; none ever accepted for the on-demand copy), run
 `/opt/plow/skills/pt-shared/scripts/wiki_setup.py --desk`, then the signals step below,
 then load `pt-priority` and follow it.

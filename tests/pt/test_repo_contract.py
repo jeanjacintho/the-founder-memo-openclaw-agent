@@ -882,6 +882,7 @@ class TestSkills:
         assert "global batch budget starts after priority" in desks
         assert "One rule for every scheduled paper" in desks
         assert "never waits on a tournament" in desks and "`as_of`" in desks
+        assert "an older checkpoint is never a reason to stop the" in desks
         assert "accepted checkpoint" in desks and "reuse it" in desks
         assert "tournament.working.json" not in text + desks
         assert "newest active run page" not in text

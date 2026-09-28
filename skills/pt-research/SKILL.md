@@ -5,6 +5,10 @@ description: One budget-bounded research pass — for a single topic, the main d
 
 # pt-research — gather sourced notes within the budget
 
+Use the session's directly exposed `plow__plow_*` tools for Latch research. If
+the runtime presents tools through Code Mode, discover the needed Plow tools
+with `catalog.search`/`describe` before starting research.
+
 You are given one topic, or the daily paper's batch, and a depth budget. You
 produce notes: for every claim, the source URL and a one-line quote or
 paraphrase. You are not writing the edition here — pt-edition compiles these

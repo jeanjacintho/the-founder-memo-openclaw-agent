@@ -883,6 +883,7 @@ class TestRunPromptsDelegateDelivery:
         assert '"as_of"' in prompt
         assert "only if none has ever been accepted" in prompt
         assert "reuse today's" not in prompt
+        assert "An older checkpoint is never a reason to stop the paper" in prompt
 
     @pytest.mark.parametrize("prompt", [
         crons.paper_prompt(),

@@ -22,6 +22,7 @@ async function openclawModule(prefix: string): Promise<Record<string, (...args: 
 
 test("research MCP tools survive server filtering, safe-name materialization and messaging policy", async () => {
   const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
+  assert.deepEqual(config.tools.codeMode, { enabled: false }, "schema-valid Code Mode config leaves allowed Plow tools directly visible");
   const filter = await openclawModule("mcp-tool-filter-");
   const safeNames = await openclawModule("agent-bundle-mcp-names-");
   const catalog = await openclawModule("tool-catalog-");
@@ -52,4 +53,24 @@ test("research MCP tools survive server filtering, safe-name materialization and
     "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
   ]);
   for (const name of materializedNames) assert.equal(allows(name), true, `${name} passes the session policy`);
+
+  // Exercise OpenClaw 2026.9.6's actual model-facing tool surface builder with
+  // a model that would normally engage Code Mode. The rendered config must
+  // keep every policy-approved research tool direct, not behind exec/wait.
+  const surface = await openclawModule("tool-surface-bridge-");
+  const createRuntime = surface.t;
+  const runtime = createRuntime({
+    config, agentId: "main", sessionKey: "agent:main:cron:test", sessionId: "test", runId: "test",
+    modelProvider: "plow", modelId: "openai/gpt-6-luna",
+    model: { compat: { codeMode: "preferred" }, contextWindow: 1050000 },
+    modelToolsEnabled: true, disableToolSearch: true, runtimeToolAllowlist: materializedNames,
+    toolsAllow: materializedNames, executeTool: async () => ({ content: [] }),
+  });
+  assert.equal(runtime.codeModeControlsEnabled, false);
+  const surfaced = runtime.compactTools(materializedNames.map(name => ({
+    name, description: name, parameters: { type: "object", properties: {} }, execute: async () => ({ content: [] }),
+  })), { localModelLeanApplied: true });
+  assert.deepEqual(surfaced.tools.map(tool => tool.name), materializedNames);
+  assert.ok(!surfaced.tools.some(tool => ["exec", "wait"].includes(tool.name)));
+  runtime.cleanup();
 });

@@ -190,7 +190,8 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         if hold_until else
         "reuse the newest accepted checkpoint in run/desk-priority/tournament.json whatever "
         "its date -- an older one prints with \"as_of\" per pt-edition -- and run the "
-        "tournament only if none has ever been accepted"
+        "tournament only if none has ever been accepted. An older checkpoint is never a "
+        "reason to stop the paper; continue research and compile the edition with its as-of date"
     )
     wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if hold_until else ""
     held = (
