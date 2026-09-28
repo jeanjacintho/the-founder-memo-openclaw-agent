@@ -240,9 +240,10 @@ sourced beat six where one is a guess.
 The PDF (and the page, if printed) is the delivery, posted by
 `pt-edition`'s delivery step. **Do not recap the edition in chat** — not the desks, not
 the headlines, not "seu jornal foi gerado". A recap is a second message the
-owner did not ask for. A paper run ends with `NO_REPLY` only after the delivery
-script confirms the chat post; before that, follow the scheduled job's failure
-notice instruction instead of ending silently.
+owner did not ask for. A paper run must execute the delivery script and verify
+its result before finishing. Its cron job has reply delivery disabled, so a
+short final status stays in the run record and is not a second chat message.
+On failure, follow the scheduled job's failure notice instruction.
 
 # Before replying
 

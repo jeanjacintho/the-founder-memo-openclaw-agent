@@ -51,6 +51,11 @@ class Job(dict):
         return bool(self.get("enabled"))
 
     @property
+    def running(self):
+        """True while the scheduler has a session of this job in flight."""
+        return (self.get("state") or {}).get("runningAtMs") is not None
+
+    @property
     def spec(self):
         """The fields drift is judged on; None where OpenClaw did not say."""
         schedule = self.get("schedule") or {}
@@ -109,6 +114,7 @@ class CronBackend:
             return self._cron("add", "--name", job["name"], *self._schedule_args(job), *self._command_args(job))
         return self._cron("add", "--name", job["name"], *self._schedule_args(job),
                           "--session", "isolated", "--message", job["prompt"],
+                          *(["--keep-after-run"] if job["name"] == "pt-daily-edition-now" else []),
                           "--no-deliver", "--model", job.get("model", MODEL), "--json")
 
     def edit_argv(self, job_id, job):

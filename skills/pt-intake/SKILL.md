@@ -151,7 +151,9 @@ Queue it with `register_crons.py --now`, which `pt-edition` documents
 under **On demand**; the paper arrives as its own message. If the output
 has a `queued:` line, reply with one ⏳ line in `owner.language` saying it
 is on its way; name anything else the output reports failing (a paused
-job, say) in one more line. With no `queued:` line, say it could not be
+job, say) in one more line. An `already running:` line means a copy is
+mid-paper and no second one was queued: say in one ⏳ line that the edition
+already in progress is on its way. With neither line, say it could not be
 queued. Never research or render it in this turn.
 
 A subscription/section is anything with a cadence in it. A one-off/assignment
