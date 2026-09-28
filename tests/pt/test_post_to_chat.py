@@ -416,6 +416,79 @@ class TestOutboxDelivery:
         assert posts == [], "recovery must not repost the already delivered edition"
         assert not recovery.exists(), "completed recovery state is removed"
 
+    def test_ticket_removed_while_waiting_for_lock_is_already_complete(self, tmp_path, monkeypatch):
+        recovery = tmp_path / "delivery-recovery" / "posted-1"
+        recovery.mkdir(parents=True)
+        ticket = recovery / "delivery.json"
+        ticket.write_text("{}")
+        real_flock = post.fcntl.flock
+
+        def remove_before_lock(fd, operation):
+            ticket.unlink(missing_ok=True)
+            return real_flock(fd, operation)
+
+        monkeypatch.setattr(post.fcntl, "flock", remove_before_lock)
+        assert post.recover_delivery(ticket) == []
+
+    def test_flush_skips_a_ticket_locked_by_another_process(self, tmp_path):
+        import fcntl
+        recovery = tmp_path / "delivery-recovery" / "posted-1"
+        recovery.mkdir(parents=True)
+        ticket = recovery / "delivery.json"
+        ticket.write_text("{}")
+        with open(recovery / ".recovery.lock", "a") as held:
+            fcntl.flock(held, fcntl.LOCK_EX)
+            assert post.recover_delivery(ticket, wait=False) == []
+
+    def test_flush_isolates_malformed_recovery_ticket(self, tmp_path, monkeypatch):
+        home = tmp_path / "pt"
+        recovery = home / "delivery-recovery" / "broken"
+        recovery.mkdir(parents=True)
+        (recovery / "delivery.json").write_text(json.dumps({
+            "edition_json": "edition.json", "delivered_at": "not-a-timestamp",
+            "finalizers_pending": ["topics"],
+        }))
+        monkeypatch.setenv("PT_HOME", str(home))
+        assert post.main_flush() == 1
+
+    def test_finalizer_stops_retrying_after_five_failures(self, tmp_path, monkeypatch):
+        recovery = tmp_path / "delivery-recovery" / "posted-1"
+        recovery.mkdir(parents=True)
+        (recovery / "edition.json").write_text("{}")
+        ticket = recovery / "delivery.json"
+        ticket.write_text(json.dumps({
+            "delivered_at": MORNING.isoformat(), "edition_json": "edition.json",
+            "finalizers_pending": ["record"], "attempts": {},
+        }))
+        calls = []
+        monkeypatch.setattr(post, "run_record_edition", lambda *args: calls.append(args) or "edition not recorded — broken")
+        for _ in range(post.MAX_FINALIZER_ATTEMPTS):
+            assert post.recover_delivery(ticket) == ["record"]
+        assert post.recover_delivery(ticket) == ["record retry limit reached"]
+        assert len(calls) == post.MAX_FINALIZER_ATTEMPTS
+
+    def test_outbox_ticket_is_removed_before_recovery_persistence_and_failure_runs_inline(
+            self, tmp_path, monkeypatch, capsys):
+        run = tmp_path / "run"
+        run.mkdir()
+        pdf = run / "edition.pdf"
+        pdf.write_bytes(b"%PDF")
+        (run / "edition.json").write_text("{}")
+        monkeypatch.setenv("PT_HOME", str(tmp_path / "pt"))
+        order = []
+        monkeypatch.setattr(post, "owner_now", lambda: MORNING)
+        monkeypatch.setattr(post, "declare_and_upload", lambda *a, **k: "att_1")
+        monkeypatch.setattr(post, "post_json", lambda *a: order.append("post"))
+        monkeypatch.setattr(post, "persist_posted_delivery",
+                            lambda *a: order.append("persist") or (_ for _ in ()).throw(OSError("disk full")))
+        monkeypatch.setattr(post, "run_finalize_topics", lambda *a: order.append("topics") or "FINALIZED")
+        monkeypatch.setattr(post, "print_page", lambda *a: order.append("print") or None)
+        monkeypatch.setattr(post, "run_record_edition", lambda *a: order.append("record") or "RECORDED")
+        post.deliver("https://api.example", "chat", "token", pdf=str(pdf),
+                     on_posted=lambda: order.append("clear outbox"))
+        assert order == ["post", "clear outbox", "persist", "topics", "print", "record"]
+        assert "running finalizers inline" in capsys.readouterr().err
+
     def test_an_hour_already_passed_posts_now_and_leaves_no_outbox(self, tmp_path, monkeypatch):
         home, run, posts, _ = self._setup(tmp_path, monkeypatch)
         self._at(monkeypatch, 9, 45)
