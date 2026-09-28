@@ -514,7 +514,8 @@ class TestExtraDailyHours:
         prompt = jobs[1]["prompt"]
         assert "--name paper-workspace --today" in prompt
         assert "post_to_chat.py" in prompt
-        assert "NO_REPLY" not in prompt
+        assert "Never end with NO_REPLY" in prompt
+        assert "Only after confirmed delivery may the paper run end with NO_REPLY" in prompt
 
     def test_no_extra_hours_is_unchanged(self):
         jobs = crons.desired_jobs([topic("t_1", kind="section")], "03:00", TZ, 45)
@@ -585,7 +586,7 @@ class TestFocusedPapers:
         assert jobs[2]["schedule"] == "0 18 * * *"
         assert "deliver_at is 12:30" in jobs[1]["prompt"]
         assert "--name paper-workspace --today" in jobs[1]["prompt"]
-        assert "NO_REPLY" not in jobs[1]["prompt"]
+        assert "Never end with NO_REPLY" in jobs[1]["prompt"]
 
     def test_deliver_at_equal_to_main_hour_rides_the_daily_job(self):
         jobs = crons.desired_jobs(
@@ -845,7 +846,8 @@ class TestRunPromptsDelegateDelivery:
         assert "post_to_chat.py" in p
         assert "pt-print" not in p and "print_edition" not in p
         # Jobs have no delivery arm (--no-deliver): the final text goes nowhere.
-        assert "NO_REPLY" not in p and "--deliver " not in p
+        assert "Never end with NO_REPLY" in p
+        assert "--deliver " not in p
 
     @pytest.mark.parametrize("p", [
         crons.paper_prompt(),
@@ -858,6 +860,7 @@ class TestRunPromptsDelegateDelivery:
         assert "target plow-owner" in p
         assert "edition was not delivered" in p
         assert "Do not send this notice after confirmed delivery" in p
+        assert "Never end with NO_REPLY" in p
 
     def test_paper_prompt_reopens_sections(self):
         assert "reopen-sections" in crons.paper_prompt()

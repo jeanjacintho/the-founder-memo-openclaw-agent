@@ -126,6 +126,9 @@ MIN_TOURNAMENT_MINUTES = 50
 
 # One topic's own edition: a subscription's nightly run or a one-off.
 DELIVERY_FAILURE_NOTICE = (
+    "This is a paper execution, not a heartbeat: run the full paper pipeline. "
+    "Never end with NO_REPLY or an empty response before post_to_chat.py confirms delivery. "
+    "Only after confirmed delivery may the paper run end with NO_REPLY. "
     "If any step stops, refuses or fails before post_to_chat.py confirms delivery, "
     "release the paper-workspace lock if you hold it, then send exactly one short "
     "message to the owner with message(action=send), channel plow, accountId chat, "
