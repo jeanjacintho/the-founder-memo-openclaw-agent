@@ -13,11 +13,36 @@ function deliveryWasConfirmed(messages: unknown[] | undefined): boolean {
   return (messages ?? []).some(message => JSON.stringify(message).includes("chat edition posted ("));
 }
 
-/** Alert the owner once when a paper cron ends with a runtime failure. */
+function alreadyMessagedOwner(messages: unknown[] | undefined): boolean {
+  const visit = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(visit);
+    if (value === null || typeof value !== "object") return false;
+    const record = value as Record<string, unknown>;
+    const fn = record.function && typeof record.function === "object"
+      ? record.function as Record<string, unknown> : undefined;
+    const name = record.name ?? record.toolName ?? fn?.name;
+    const rawArgs = record.input ?? record.args ?? record.arguments ?? fn?.arguments;
+    let args = rawArgs;
+    if (typeof rawArgs === "string") {
+      try { args = JSON.parse(rawArgs); } catch { args = undefined; }
+    }
+    if (name === "message" && args !== null && typeof args === "object") {
+      const input = args as Record<string, unknown>;
+      const target = input.to ?? input.target;
+      if (input.action === "send" && target === "plow-owner" &&
+        (input.channel === undefined || input.channel === "plow") &&
+        (input.accountId === undefined || input.accountId === "chat")) return true;
+    }
+    return Object.values(record).some(visit);
+  };
+  return visit(messages);
+}
+
+/** Alert the owner once when a paper cron ends without confirmed delivery. */
 export async function notifyFailedPaperRun(event: AgentEnd, context: AgentContext): Promise<void> {
   const runId = event.runId;
   const jobId = context.jobId;
-  if (event.success || deliveryWasConfirmed(event.messages) || !runId || !jobId || !paperJob.test(jobId)) return;
+  if (deliveryWasConfirmed(event.messages) || alreadyMessagedOwner(event.messages) || !runId || !jobId || !paperJob.test(jobId)) return;
   const key = `${jobId}:${runId}`;
   if (notifiedRuns.has(key)) return;
   // Claim before I/O: this hook must never send twice for one run, even when
