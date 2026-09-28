@@ -5,7 +5,34 @@ type AgentEnd = { runId?: string; success: boolean; messages?: unknown[] };
 type AgentContext = { jobId?: string };
 
 const notifiedRuns = new Set<string>();
-const paperJob = /^pt-(?:daily-edition(?:-now)?|paper-|subscription-|oneoff-)/;
+const paperJob = /^pt-(?:daily-edition(?:-now|-\d+)?|paper-|subscription-|oneoff-)/;
+
+function textValues(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(textValues);
+  if (value === null || typeof value !== "object") return [];
+  return Object.values(value as Record<string, unknown>).flatMap(textValues);
+}
+
+/**
+ * OpenClaw 2026.9.6 agent_end context has jobId (the UUID), not jobName.
+ * The cron runner includes both in the initial message envelope:
+ * `[cron:<jobId> <jobName>] ...`.
+ */
+function cronJobName(jobId: string, messages: unknown[] | undefined): string | undefined {
+  for (const message of messages ?? []) {
+    if (message === null || typeof message !== "object") continue;
+    const record = message as Record<string, unknown>;
+    const nestedMessage = record.message as Record<string, unknown> | undefined;
+    const role = record.role ?? nestedMessage?.role;
+    if (role !== "user") continue;
+    for (const text of textValues(record.content ?? nestedMessage?.content)) {
+      const match = /\[cron:([^\s\]]+)\s+([^\s\]]+)\]/.exec(text);
+      if (match?.[1] === jobId) return match[2];
+    }
+  }
+  return undefined;
+}
 
 function deliveryWasConfirmed(messages: unknown[] | undefined): boolean {
   // post_to_chat.py emits this only after the chat POST succeeds. Finalizer
@@ -42,7 +69,11 @@ function alreadyMessagedOwner(messages: unknown[] | undefined): boolean {
 export async function notifyFailedPaperRun(event: AgentEnd, context: AgentContext): Promise<void> {
   const runId = event.runId;
   const jobId = context.jobId;
-  if (deliveryWasConfirmed(event.messages) || alreadyMessagedOwner(event.messages) || !runId || !jobId || !paperJob.test(jobId)) return;
+  const name = jobId ? cronJobName(jobId, event.messages) : undefined;
+  if (
+    deliveryWasConfirmed(event.messages) || alreadyMessagedOwner(event.messages) ||
+    !runId || !jobId || !name || !paperJob.test(name)
+  ) return;
   const key = `${jobId}:${runId}`;
   if (notifiedRuns.has(key)) return;
   // Claim before I/O: this hook must never send twice for one run, even when
