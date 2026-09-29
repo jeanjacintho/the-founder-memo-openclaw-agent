@@ -101,34 +101,39 @@ test("rendered config passes OpenClaw's config validate command", async t => {
   assert.match(result.stdout, /"valid":\s*true/);
 });
 
-test("GPT-6 Luna is the only configured model, with explicit capacity and pricing", () => {
+test("a one-click install runs on Plow's Sol, with Plow's Luna as its fallback", () => {
   const config = renderConfig(identity, "http://api:8000");
   assert.deepEqual(config.agents.defaults.model, {
-    primary: "plow/openai/gpt-6-luna", fallbacks: [],
+    primary: "plow/openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-luna"],
   });
-  assert.deepEqual(config.models.providers.plow.models, [{
-    id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
-    cost: { input: 0.10, output: 0.50 },
-  }]);
+  // Plow serves Sol with a 1,050,000-token window (The Plow Times #132); it
+  // publishes no price for it, so the entry claims none.
+  assert.deepEqual(config.models.providers.plow.models, [
+    { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
+    { id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
+      cost: { input: 0.10, output: 0.50 } },
+  ]);
   assert.equal("models" in config.agents.defaults, false, "Plow's route adds no per-model runtime policy");
   assert.equal("modelPolicy" in config.agents.defaults, false);
   assert.equal("utilityModel" in config.agents.defaults, false);
 });
 
-test("an OpenAI route keeps Plow's Luna as its fallback and runs on OpenClaw's own runtime", () => {
+test("an OpenAI route falls back to Plow and runs on OpenClaw's own runtime", () => {
   const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route);
-  assert.deepEqual(config.agents.defaults.model, { primary: "openai/gpt-6-luna", fallbacks: ["plow/openai/gpt-6-luna"] });
+  assert.deepEqual(config.agents.defaults.model,
+    { primary: "openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-sol", "plow/openai/gpt-6-luna"] });
   assert.deepEqual(config.agents.defaults.models, { "openai/*": { agentRuntime: { id: "openclaw" } } });
   assert.deepEqual(config.agents.defaults.modelPolicy, { allow: [] });
-  assert.equal(config.agents.defaults.utilityModel, "openai/gpt-6-luna");
+  assert.equal(config.agents.defaults.utilityModel, "openai/gpt-6-sol");
   // Plow stays configured: it is the fallback, and the chat's own provider entry.
-  assert.equal(config.models.providers.plow.models[0].id, "openai/gpt-6-luna");
+  assert.deepEqual(config.models.providers.plow.models.map(m => m.id), ["openai/gpt-6-sol", "openai/gpt-6-luna"]);
 });
 
 test("an OpenRouter route needs no runtime policy of its own", () => {
   const config = renderConfig(identity, "http://api:8000",
     llmRoute({ AGENT_PROVIDER: "openrouter", AGENT_MODEL: "openai/gpt-6-luna" }, undefined).route);
-  assert.deepEqual(config.agents.defaults.model, { primary: "openrouter/openai/gpt-6-luna", fallbacks: ["plow/openai/gpt-6-luna"] });
+  assert.deepEqual(config.agents.defaults.model,
+    { primary: "openrouter/openai/gpt-6-luna", fallbacks: ["plow/openai/gpt-6-sol", "plow/openai/gpt-6-luna"] });
   assert.equal("models" in config.agents.defaults, false);
 });
 
@@ -233,7 +238,7 @@ test("fresh boot seeds owner defaults and external includes for Plow-owned setti
   const owner = JSON5.parse(await readFile(path, "utf8"));
   assert.deepEqual(owner.meta, {});
   assert.deepEqual(owner.agents.defaults, { $include: join(includes, "agent-defaults.json5") });
-  assert.equal(JSON5.parse(await readFile(join(includes, "agent-defaults.json5"), "utf8")).model.primary, "plow/openai/gpt-6-luna");
+  assert.equal(JSON5.parse(await readFile(join(includes, "agent-defaults.json5"), "utf8")).model.primary, "plow/openai/gpt-6-sol");
   assert.deepEqual(owner.skills, { $include: join(includes, "skills.json5") });
   assert.equal(JSON5.parse(await readFile(join(includes, "skills.json5"), "utf8")).load.extraDirs[0], "/opt/plow/skills");
   assert.deepEqual(owner.gateway, { $include: join(includes, "gateway.json5") });

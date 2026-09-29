@@ -327,7 +327,7 @@ class TestArgv:
         assert argv[argv.index("--tz") + 1] == TZ
         assert argv[argv.index("--session") + 1] == "isolated"
         assert argv[argv.index("--message") + 1] == sub["prompt"]
-        assert argv[argv.index("--model") + 1] == "plow/openai/gpt-6-luna"
+        assert argv[argv.index("--model") + 1] == "plow/openai/gpt-6-sol"
         assert "--no-deliver" in argv and "--exact" in argv and "--json" in argv
         assert "--announce" not in argv and "--token" not in argv
 
@@ -367,7 +367,7 @@ def registered_like_spec(topics_list, **overrides):
     """Rows exactly as a previous run of this script would have left them."""
     return [row(j["name"], expr=j["schedule"] if j["tz"] else None,
                 at=None if j["tz"] else j["schedule"], tz=j["tz"], message=j["prompt"],
-                model="plow/openai/gpt-6-luna", **overrides)
+                model="plow/openai/gpt-6-sol", **overrides)
             for j in crons.desired_jobs(topics_list, "07:00", TZ)] + [deliver_row()]
 
 
@@ -728,10 +728,10 @@ class TestDrift:
         assert crons.job_drift(self.JOB, self.spec(expr="15 6 * * *", tz=TZ, message="old")) is True
 
     def test_model_drift_detected(self):
-        assert crons.job_drift(self.JOB, self.spec(expr="15 6 * * *", tz=TZ, model="plow/openai/gpt-6-luna-old")) is True
+        assert crons.job_drift(self.JOB, self.spec(expr="15 6 * * *", tz=TZ, model="plow/openai/gpt-6-luna")) is True
 
     def test_matching_spec_is_not_drift(self):
-        spec = self.spec(expr="15 6 * * *", tz=TZ, message="same", model="plow/openai/gpt-6-luna")
+        spec = self.spec(expr="15 6 * * *", tz=TZ, message="same", model="plow/openai/gpt-6-sol")
         assert crons.job_drift(self.JOB, spec) is False
 
     def test_absent_fields_are_not_drift(self):
@@ -1016,16 +1016,16 @@ def test_jobs_follow_the_model_boot_exports(monkeypatch):
     # Boot exports the chat's model as PT_MODEL; an install moved to the
     # owner's OpenAI account registers the paper there too, and a job still
     # registered under Plow reads as drift, so the next register moves it.
-    monkeypatch.setenv("PT_MODEL", "openai/gpt-6-luna")
+    monkeypatch.setenv("PT_MODEL", "openai/gpt-6-sol")
     moved = load_module("cron_backend_moved", "pt-dashboard/scripts/cron_backend.py")
-    assert moved.MODEL == "openai/gpt-6-luna"
+    assert moved.MODEL == "openai/gpt-6-sol"
     monkeypatch.setattr(crons, "MODEL", moved.MODEL)
     job = {"name": "pt-daily-edition", "schedule": "15 6 * * *", "tz": TZ, "prompt": "same"}
-    on_plow = {"schedule": "15 6 * * *", "tz": TZ, "prompt": "same", "model": "plow/openai/gpt-6-luna", "command": None}
+    on_plow = {"schedule": "15 6 * * *", "tz": TZ, "prompt": "same", "model": "plow/openai/gpt-6-sol", "command": None}
     assert crons.job_drift(job, on_plow) is True
-    assert crons.job_drift(job, {**on_plow, "model": "openai/gpt-6-luna"}) is False
+    assert crons.job_drift(job, {**on_plow, "model": "openai/gpt-6-sol"}) is False
 
 
 def test_without_pt_model_jobs_stay_on_plow(monkeypatch):
     monkeypatch.delenv("PT_MODEL", raising=False)
-    assert load_module("cron_backend_default", "pt-dashboard/scripts/cron_backend.py").MODEL == "plow/openai/gpt-6-luna"
+    assert load_module("cron_backend_default", "pt-dashboard/scripts/cron_backend.py").MODEL == "plow/openai/gpt-6-sol"

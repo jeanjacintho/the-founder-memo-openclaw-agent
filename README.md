@@ -120,8 +120,10 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
 
 ## Model
 
-Every install runs on Plow's GPT-6 Luna (`plow/openai/gpt-6-luna`). A
-one-click install has nothing to configure and never leaves it.
+Every install runs on Plow's GPT-6 Sol (`plow/openai/gpt-6-sol`). A
+one-click install has nothing to configure and never leaves it. The paper's
+research runs are long tool loops: on Luna they gave up before research, on
+Sol they finish.
 
 The owner of one install can move all of its inference (chat, sub-agents
 and the scheduled papers) to their own OpenAI account. In a login shell on
@@ -132,14 +134,16 @@ plow-llm openai
 ```
 
 It signs in with a device code, checks that the account offers
-`gpt-6-luna`, leaves a marker in the state volume, and registers the paper's
-jobs again under the new model. Restart the agent to apply it. The sign-in
+`gpt-6-sol` (the model an OpenAI account runs on: the paper's long research
+runs finish on Sol, and gave up on Luna), leaves a marker in the state volume,
+and registers the paper's jobs again under the new model. Restart the agent to apply it. The sign-in
 and the marker live in the state volume, so rebuilds and image updates keep
 them. `plow-llm plow` moves back, and `plow-llm status` shows what the next
 boot will choose.
 
-Plow's Luna stays configured as the fallback: a spent quota or an expired
-sign-in answers from Plow instead of failing. `AGENT_PROVIDER` (`plow`,
+Plow stays configured as the fallback, Sol first and then Luna: a spent
+quota or an expired sign-in answers from Plow instead of failing, and Plow's
+Luna answers if Plow cannot serve Sol. `AGENT_PROVIDER` (`plow`,
 `openai`, `openrouter`) and `AGENT_MODEL` choose a provider from the
 environment instead and outrank the marker; OpenAI then takes
 `OPENAI_API_KEY` or the sign-in, and OpenRouter `OPENROUTER_API_KEY`. After

@@ -1125,10 +1125,10 @@ class TestDeployment:
         config = (REPO / "boot" / "config.ts").read_text()
         assert "model: { primary: llm.primary, fallbacks: llm.fallbacks }" in config
         llm = (REPO / "boot" / "llm.ts").read_text()
-        assert 'PLOW_MODEL = "plow/openai/gpt-6-luna"' in llm
-        assert 'PLOW_ROUTE: LlmRoute = { provider: "plow", primary: PLOW_MODEL, fallbacks: [] }' in llm
+        assert 'PLOW_MODEL = "plow/openai/gpt-6-sol"' in llm
+        assert 'PLOW_ROUTE: LlmRoute = { provider: "plow", primary: PLOW_MODEL, fallbacks: [PLOW_LUNA] }' in llm
+        assert '{ id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 }' in config
         assert '{ id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000' in config
-        assert 'models: [\n        { id: "openai/gpt-6-luna"' in config
         retired_models = (
             "moonshotai/kimi-k2.5", "z-ai/glm-5.2",
             "anthropic/claude-opus-5", "anthropic/claude-sonnet-5",
@@ -1136,11 +1136,14 @@ class TestDeployment:
         for retired_model in retired_models:
             assert retired_model not in config
         # Scheduled papers are pinned to the chat agent's own model, which boot
-        # exports as PT_MODEL; Plow's Luna when nothing moved the install.
+        # exports as PT_MODEL; Plow's Sol when nothing moved the install.
         backend = (ROOT / "pt-dashboard" / "scripts" / "cron_backend.py").read_text()
-        assert 'MODEL = os.environ.get("PT_MODEL") or "plow/openai/gpt-6-luna"' in backend
+        assert 'MODEL = os.environ.get("PT_MODEL") or "plow/openai/gpt-6-sol"' in backend
+        # The agent names the model boot chose (llm.ts modelName), never a fixed one.
         soul = (AGENTS).read_text()
-        assert "GPT-6 Luna (`openai/gpt-6-luna`)" in soul
+        assert "**This process infers as {{model}}.**" in soul and "GPT-6 Luna" not in soul
+        main = (REPO / "boot" / "main.ts").read_text()
+        assert '.replaceAll("{{model}}", modelName(route))' in main
         assert 'pathPrepend: ["/opt/plow/pt-venv/bin"]' in config
         assert 'deny: ["ask_user", "secrets"]' in config
         assert 'profile: "messaging"' in config
