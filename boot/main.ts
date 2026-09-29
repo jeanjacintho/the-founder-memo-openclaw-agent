@@ -3,7 +3,7 @@ import { readFile, mkdir, writeFile, rm, chmod } from "node:fs/promises";
 import { startAgentIndex } from "./agent-index.js";
 import { renderConfig, syncConfig } from "./config.js";
 import { identityFromApi } from "./identity.js";
-import { llmRoute } from "./llm.js";
+import { llmRoute, modelName } from "./llm.js";
 import { installBootLog } from "./log.js";
 import { newspaperEnv } from "./newspaper-env.js";
 import { renderPrompt } from "./prompt.js";
@@ -32,7 +32,8 @@ try {
   for (const name of ["BOOTSTRAP.md", "SOUL.md", "IDENTITY.md", "USER.md"]) {
     await rm(`/var/lib/plow/workspace/${name}`, { force: true });
   }
-  const prompt = await readFile("/opt/plow/prompt/AGENTS.md", "utf8");
+  // The prompt names the model this boot chose, so the agent never claims another.
+  const prompt = (await readFile("/opt/plow/prompt/AGENTS.md", "utf8")).replaceAll("{{model}}", modelName(route));
   await writeFile("/var/lib/plow/workspace/AGENTS.md", await renderPrompt(prompt, identity.mcp_url, process.env.PLOW_AGENT_TOKEN));
   await syncConfig(config, "/var/lib/plow/openclaw.json", "/etc/plow/openclaw");
   console.log(`plow-boot: identity resolved to ${identity.line.uid}`);
