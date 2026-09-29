@@ -132,8 +132,9 @@ plow-llm openai
 ```
 
 It signs in with a device code, checks that the account offers
-`gpt-6-luna`, leaves a marker in the state volume, and registers the paper's
-jobs again under the new model. Restart the agent to apply it. The sign-in
+`gpt-6-sol` (the model an OpenAI account runs on: the paper's long research
+runs finish on Sol, and gave up on Luna), leaves a marker in the state volume,
+and registers the paper's jobs again under the new model. Restart the agent to apply it. The sign-in
 and the marker live in the state volume, so rebuilds and image updates keep
 them. `plow-llm plow` moves back, and `plow-llm status` shows what the next
 boot will choose.

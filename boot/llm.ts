@@ -14,17 +14,21 @@ export type LlmRoute = { provider: LlmProvider; primary: string; fallbacks: stri
 export const PLOW_ROUTE: LlmRoute = { provider: "plow", primary: PLOW_MODEL, fallbacks: [] };
 
 // OpenRouter has no model this image could guess, so it needs AGENT_MODEL.
-const DEFAULT_MODEL: Partial<Record<LlmProvider, string>> = { openai: "gpt-6-luna" };
+// On the owner's OpenAI account, Sol: measured live, Luna read every skill and
+// then gave up the paper before its first browser call; Sol researched,
+// rendered, posted and printed the same edition.
+const DEFAULT_MODEL: Partial<Record<LlmProvider, string>> = { openai: "gpt-6-sol" };
 
-// The paper's scheduled runs are long tool loops. Measured live on the owner's
-// OpenAI account: Luna read every skill, then gave up before its first browser
-// call; Sol researched, rendered, posted and printed the same edition.
-const PAPER_MODEL: Partial<Record<LlmProvider, string>> = { openai: "gpt-6-sol" };
+const WHERE: Record<LlmProvider, string> = {
+  plow: "on Plow", openai: "on the owner's OpenAI account", openrouter: "on OpenRouter",
+};
 
-/** The model the paper's cron jobs run on: the provider's paper model, unless the owner named one. */
-export function paperModel(route: LlmRoute, env: NodeJS.ProcessEnv = process.env): string {
-  const model = PAPER_MODEL[route.provider];
-  return env.AGENT_MODEL?.trim() || !model ? route.primary : `${route.provider}/${model}`;
+/** How the agent names its own model when asked: `{{model}}` in AGENTS.md. */
+export function modelName(route: LlmRoute): string {
+  const id = route.primary.replace(/^plow\//, "");
+  const family = /gpt-6-(\w+)$/.exec(id)?.[1];
+  const name = family ? `GPT-6 ${family[0].toUpperCase()}${family.slice(1)} (\`${id}\`)` : `\`${id}\``;
+  return `${name} ${WHERE[route.provider]}`;
 }
 
 export function readLlmMarker(path = LLM_MARKER): string | undefined {

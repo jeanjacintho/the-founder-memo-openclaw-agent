@@ -23,8 +23,9 @@ The daily schedule is computed in minutes, so `00:00 − 0min` is `0 0 * * *`
 (midnight itself). A lead that would reach back past midnight, such as
 `00:00 − 20min`, is refused: that run would be the previous day's paper.
 
-Every row is an agent turn in an **isolated** session, on
-`plow/openai/gpt-6-luna` (the gateway's only configured model), with delivery
+Every row is an agent turn in an **isolated** session, on the chat's own
+model (`PT_MODEL`: `plow/openai/gpt-6-luna` on Plow, `openai/gpt-6-sol` on the
+owner's OpenAI account), with delivery
 **none**: the scheduler never posts the run's final text anywhere. The edition
 itself is posted mid-run as the PDF plus any chat-only mail/sports companion
 (`post_to_chat.py --pdf --text-file`), to the owner's DM (`PLOW_HOME_CHANNEL`, or `owner_chat.py`

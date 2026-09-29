@@ -1139,8 +1139,11 @@ class TestDeployment:
         # exports as PT_MODEL; Plow's Luna when nothing moved the install.
         backend = (ROOT / "pt-dashboard" / "scripts" / "cron_backend.py").read_text()
         assert 'MODEL = os.environ.get("PT_MODEL") or "plow/openai/gpt-6-luna"' in backend
+        # The agent names the model boot chose (llm.ts modelName), never a fixed one.
         soul = (AGENTS).read_text()
-        assert "GPT-6 Luna (`openai/gpt-6-luna`)" in soul
+        assert "**This process infers as {{model}}.**" in soul and "GPT-6 Luna" not in soul
+        main = (REPO / "boot" / "main.ts").read_text()
+        assert '.replaceAll("{{model}}", modelName(route))' in main
         assert 'pathPrepend: ["/opt/plow/pt-venv/bin"]' in config
         assert 'deny: ["ask_user", "secrets"]' in config
         assert 'profile: "messaging"' in config

@@ -117,10 +117,10 @@ test("GPT-6 Luna is the only configured model, with explicit capacity and pricin
 
 test("an OpenAI route keeps Plow's Luna as its fallback and runs on OpenClaw's own runtime", () => {
   const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route);
-  assert.deepEqual(config.agents.defaults.model, { primary: "openai/gpt-6-luna", fallbacks: ["plow/openai/gpt-6-luna"] });
+  assert.deepEqual(config.agents.defaults.model, { primary: "openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-luna"] });
   assert.deepEqual(config.agents.defaults.models, { "openai/*": { agentRuntime: { id: "openclaw" } } });
   assert.deepEqual(config.agents.defaults.modelPolicy, { allow: [] });
-  assert.equal(config.agents.defaults.utilityModel, "openai/gpt-6-luna");
+  assert.equal(config.agents.defaults.utilityModel, "openai/gpt-6-sol");
   // Plow stays configured: it is the fallback, and the chat's own provider entry.
   assert.equal(config.models.providers.plow.models[0].id, "openai/gpt-6-luna");
 });
