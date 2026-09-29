@@ -100,7 +100,7 @@ could not source, and a print that cannot reach the printer is reported in
 chat in your language.
 
 The printer is whatever CUPS on the Mac calls it (`lpstat -p`); setup asks
-once. The wiki is `~/Plow/wiki/projects/theplowtimes/`.
+once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
 
 ## How it runs
 

@@ -1,6 +1,6 @@
 ---
 type: Schema
-root: projects/theplowtimes
+root: projects/thefoundertimes
 required: [type, title, description, category, tags, sources, created, updated]
 fields:
   type: {enum: [Project, Synthesis, Advisor, Edition]}
@@ -17,14 +17,14 @@ tables:
     match: {type: Advisor}
     sort_by: title
     columns: [title, description]
-title: projects/theplowtimes schema
+title: projects/thefoundertimes schema
 category: meta
 tags: [schema]
 sources: []
 created: {today}
 updated: {today}
 ---
-# projects/theplowtimes/
+# projects/thefoundertimes/
 
 The Founder Times writes here. Every page links back to the paper's page with
 `paper:`, so `wiki index` lists editions and advisors there.

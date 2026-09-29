@@ -33,7 +33,7 @@ class TestPageFormat:
 
 class TestWiki:
     def test_a_missing_page_reads_as_none(self, mac):
-        assert Wiki(mac.call_tool).read("projects/theplowtimes/nope.md") is None
+        assert Wiki(mac.call_tool).read("projects/thefoundertimes/nope.md") is None
 
     def test_a_write_reads_back(self, mac):
         w = Wiki(mac.call_tool)
