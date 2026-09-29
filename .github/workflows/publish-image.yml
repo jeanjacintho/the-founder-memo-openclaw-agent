@@ -57,5 +57,5 @@ jobs:
             echo
             echo "Promote (Plow admin):"
             echo
-            echo "\`plow-agents image promote the-founder-times ${IMAGE}@${{ steps.build.outputs.digest }} --owner OWNER_UID\`"
+            echo "\`plow-agents image promote thefoundertimes ${IMAGE}@${{ steps.build.outputs.digest }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
