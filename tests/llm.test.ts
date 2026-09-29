@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { llmRoute, PLOW_MODEL, PLOW_ROUTE, readLlmMarker } from "../boot/llm.ts";
+import { llmRoute, paperModel, PLOW_MODEL, PLOW_ROUTE, readLlmMarker } from "../boot/llm.ts";
 
 test("a one-click install, with no marker and no environment, stays on Plow", () => {
   assert.deepEqual(llmRoute({}, undefined), { route: PLOW_ROUTE });
@@ -21,6 +21,21 @@ test("AGENT_PROVIDER outranks the marker, and AGENT_MODEL names the model with o
   assert.deepEqual(llmRoute({ AGENT_PROVIDER: "openrouter", AGENT_MODEL: "openai/gpt-6-luna" }, undefined).route,
     { provider: "openrouter", primary: "openrouter/openai/gpt-6-luna", fallbacks: [PLOW_MODEL] });
   assert.equal(llmRoute({ AGENT_PROVIDER: "OpenAI", AGENT_MODEL: "openai/gpt-6-sol" }, undefined).route.primary, "openai/gpt-6-sol");
+});
+
+test("papers run on Sol on the owner's OpenAI account while the chat stays on Luna", () => {
+  // Measured live: Luna read every skill, then gave up the paper before its
+  // first browser call; Sol researched, rendered, posted and printed it.
+  assert.equal(paperModel(llmRoute({}, "openai").route), "openai/gpt-6-sol");
+  assert.equal(llmRoute({}, "openai").route.primary, "openai/gpt-6-luna");
+});
+
+test("a model the owner named, or a provider without Sol, keeps papers on the chat's model", () => {
+  assert.equal(paperModel(PLOW_ROUTE), PLOW_MODEL);
+  const named = llmRoute({ AGENT_PROVIDER: "openai", AGENT_MODEL: "gpt-5.6-sol" }, undefined).route;
+  assert.equal(paperModel(named, { AGENT_MODEL: "gpt-5.6-sol" }), "openai/gpt-5.6-sol");
+  const openrouter = llmRoute({ AGENT_PROVIDER: "openrouter", AGENT_MODEL: "x/y" }, undefined).route;
+  assert.equal(paperModel(openrouter), "openrouter/x/y");
 });
 
 test("a provider this image cannot use stays on Plow and says why", () => {

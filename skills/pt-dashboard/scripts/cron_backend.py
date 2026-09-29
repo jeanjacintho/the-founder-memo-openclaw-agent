@@ -29,9 +29,10 @@ import subprocess
 COMMAND_TIMEOUT_SECONDS = 600
 
 OPENCLAW = ["node", "/app/openclaw.mjs"]
-# The chat's own model, which boot exports as PT_MODEL: Plow's Luna unless the
-# owner moved this install to their own account (plow-llm). register_crons
-# edits a job whose model differs, so a switch reaches jobs already registered.
+# The paper's model, which boot exports as PT_MODEL (boot/llm.ts paperModel):
+# Plow's Luna unless the owner moved this install to their own account
+# (plow-llm), where papers run on Sol. register_crons edits a job whose model
+# differs, so a switch reaches jobs already registered.
 MODEL = os.environ.get("PT_MODEL") or "plow/openai/gpt-6-luna"
 
 

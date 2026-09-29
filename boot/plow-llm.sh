@@ -13,11 +13,16 @@ primary() {
   node --input-type=module -e 'import { llmRoute } from "/opt/plow/boot/llm.js"; console.log(llmRoute().route.primary);'
 }
 
+# The model the paper's jobs run on, by boot's own rule (paperModel).
+paper_model() {
+  node --input-type=module -e 'import { llmRoute, paperModel } from "/opt/plow/boot/llm.js"; console.log(paperModel(llmRoute().route));'
+}
+
 # The paper's scheduled jobs are registered with a model, so they are
 # registered again under the one boot will choose. Before setup there are none.
 reregister() {
   [ -f /var/lib/plow/pt/config.json ] || return 0
-  PT_MODEL="$(primary)" /opt/plow/skills/pt-dashboard/scripts/register_crons.py \
+  PT_MODEL="$(paper_model)" /opt/plow/skills/pt-dashboard/scripts/register_crons.py \
     || echo "plow-llm: the paper's jobs keep their old model until they are registered again" >&2
 }
 

@@ -16,6 +16,17 @@ export const PLOW_ROUTE: LlmRoute = { provider: "plow", primary: PLOW_MODEL, fal
 // OpenRouter has no model this image could guess, so it needs AGENT_MODEL.
 const DEFAULT_MODEL: Partial<Record<LlmProvider, string>> = { openai: "gpt-6-luna" };
 
+// The paper's scheduled runs are long tool loops. Measured live on the owner's
+// OpenAI account: Luna read every skill, then gave up before its first browser
+// call; Sol researched, rendered, posted and printed the same edition.
+const PAPER_MODEL: Partial<Record<LlmProvider, string>> = { openai: "gpt-6-sol" };
+
+/** The model the paper's cron jobs run on: the provider's paper model, unless the owner named one. */
+export function paperModel(route: LlmRoute, env: NodeJS.ProcessEnv = process.env): string {
+  const model = PAPER_MODEL[route.provider];
+  return env.AGENT_MODEL?.trim() || !model ? route.primary : `${route.provider}/${model}`;
+}
+
 export function readLlmMarker(path = LLM_MARKER): string | undefined {
   try {
     return readFileSync(path, "utf8").trim() || undefined;
