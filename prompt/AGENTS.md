@@ -300,7 +300,7 @@ delivered it. When the record and a memory disagree, the file wins. Answer
 never from a transcript.
 
 What the paper printed, and what its advisor's desk knows, is in the owner's
-wiki: `~/Plow/wiki/projects/theplowtimes/` (a page under `editions/` for each
+wiki: `~/Plow/wiki/projects/thefoundertimes/` (a page under `editions/` for each
 paper that carried the advisor's card or one of the owner's own sections, and
 `qa.md`). Weather, calendar, mail and sports are never recorded there —
 `topics.json` still says what was delivered — and a day's page can be

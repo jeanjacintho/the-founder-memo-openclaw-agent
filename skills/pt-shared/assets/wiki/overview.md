@@ -14,9 +14,9 @@ updated: {today}
 The paper writes here every morning; you can edit anything it wrote. To change
 what it covers, text the paper.
 
-- [The advisor's Q&A](/projects/theplowtimes/qa.md) — what the advisor needs to know about
+- [The advisor's Q&A](/projects/thefoundertimes/qa.md) — what the advisor needs to know about
   the company, ranked by how much the answer changes the advice.
-- [The advisor's read capabilities and sources](/projects/theplowtimes/resources.md) — documented
+- [The advisor's read capabilities and sources](/projects/thefoundertimes/resources.md) — documented
   read-only tools and sources worth revisiting.
 - [What I'm working toward](/entities/owner/goals.md) — your goals, what not to do now,
   and notes. What you write there overrides anything the desk infers.

@@ -8,10 +8,10 @@ description: The advisor desk evolves three researched recommendations through i
 A paper run with no accepted checkpoint for today is the only writer. It owns `/var/lib/plow/pt/advisor.md`,
 `run/desk-priority/tournament.json`, and these Mac wiki pages:
 
-- `~/Plow/wiki/projects/theplowtimes/qa.md`: ranked `## Open` and `## Answered` entries,
+- `~/Plow/wiki/projects/thefoundertimes/qa.md`: ranked `## Open` and `## Answered` entries,
   each identified as `Q<n>`, at most 20 total. Answered entries are the sourced fact/FAQ base.
-- `~/Plow/wiki/projects/theplowtimes/resources.md`: documented read capabilities and sources.
-- `~/Plow/wiki/projects/theplowtimes/runs/<run-datetime>/state.md`: one private, auditable
+- `~/Plow/wiki/projects/thefoundertimes/resources.md`: documented read capabilities and sources.
+- `~/Plow/wiki/projects/thefoundertimes/runs/<run-datetime>/state.md`: one private, auditable
   snapshot of this run's research and tournament progress.
 
 Read both wiki pages again immediately before writing and fold owner edits into the new whole.
@@ -81,10 +81,10 @@ tournament ran in the current cron session.
 Load this skill once during Orient. Preserve any canonical
 `/var/lib/plow/pt/run/desk-priority/tournament.json` checkpoint. Name the run from its
 actual Orient invocation time as `YYYY-MM-DDTHHMM` and create
-`projects/theplowtimes/runs/<run-datetime>/state.md`. Copy the required OKF front matter shape from
+`projects/thefoundertimes/runs/<run-datetime>/state.md`. Copy the required OKF front matter shape from
 `qa.md`, with a run-specific title and description. The page is private research state, never printed.
 Keep its exact path in root context as
-`RUN_PAGE=~/Plow/wiki/projects/theplowtimes/runs/<run-datetime>/state.md`; every compaction handoff preserves
+`RUN_PAGE=~/Plow/wiki/projects/thefoundertimes/runs/<run-datetime>/state.md`; every compaction handoff preserves
 that value until delivery.
 Rewrite that one page whole after Orient and after every Challenge, Criticize, and Cull;
 do not create per-generation files or an append-only event log. It holds the stage and generation,
