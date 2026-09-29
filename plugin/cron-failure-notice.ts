@@ -2,10 +2,11 @@ import { request } from "./transport.ts";
 import { editionFailedNotice } from "./owner-phrases.ts";
 
 type AgentEnd = { runId?: string; success: boolean; messages?: unknown[] };
-type AgentContext = { jobId?: string };
+type AgentContext = { jobId?: string; sessionKey?: string; sessionId?: string };
 
 const notifiedRuns = new Set<string>();
 const paperJob = /^pt-(?:daily-edition(?:-now|-\d+)?|paper-|subscription-|oneoff-)/;
+const paperMarker = "[PLOW_PAPER_RUN]";
 
 function textValues(value: unknown): string[] {
   if (typeof value === "string") return [value];
@@ -19,7 +20,7 @@ function textValues(value: unknown): string[] {
  * The cron runner includes both in the initial message envelope:
  * `[cron:<jobId> <jobName>] ...`.
  */
-function cronJobName(jobId: string, messages: unknown[] | undefined): string | undefined {
+function cronJobName(jobId: string | undefined, messages: unknown[] | undefined): string | undefined {
   for (const message of messages ?? []) {
     if (message === null || typeof message !== "object") continue;
     const record = message as Record<string, unknown>;
@@ -28,16 +29,33 @@ function cronJobName(jobId: string, messages: unknown[] | undefined): string | u
     if (role !== "user") continue;
     for (const text of textValues(record.content ?? nestedMessage?.content)) {
       const match = /\[cron:([^\s\]]+)\s+([^\s\]]+)\]/.exec(text);
-      if (match?.[1] === jobId) return match[2];
+      if (match && (!jobId || match[1] === jobId)) return match[2];
     }
   }
   return undefined;
 }
 
+function isPaperRun(messages: unknown[] | undefined, context: AgentContext): boolean {
+  if (!context.jobId && !context.sessionKey?.includes(":cron:")) return false;
+  const name = cronJobName(context.jobId, messages);
+  if (name && paperJob.test(name)) return true;
+  return (messages ?? []).some(message => {
+    if (message === null || typeof message !== "object") return false;
+    const record = message as Record<string, unknown>;
+    const nested = record.message as Record<string, unknown> | undefined;
+    if ((record.role ?? nested?.role) !== "user") return false;
+    return textValues(record.content ?? nested?.content).some(text => text.includes(paperMarker));
+  });
+}
+
 function deliveryWasConfirmed(messages: unknown[] | undefined): boolean {
   // post_to_chat.py emits this only after the chat POST succeeds. Finalizer
   // failures must not be described to the owner as an undelivered edition.
-  return (messages ?? []).some(message => JSON.stringify(message).includes("chat edition posted ("));
+  return (messages ?? []).some(message => {
+    const content = JSON.stringify(message);
+    return content.includes("chat edition posted (") ||
+      /held for \d\d:\d\d — pt-deliver posts it/.test(content);
+  });
 }
 
 function alreadyMessagedOwner(messages: unknown[] | undefined): boolean {
@@ -69,12 +87,11 @@ function alreadyMessagedOwner(messages: unknown[] | undefined): boolean {
 export async function notifyFailedPaperRun(event: AgentEnd, context: AgentContext): Promise<void> {
   const runId = event.runId;
   const jobId = context.jobId;
-  const name = jobId ? cronJobName(jobId, event.messages) : undefined;
   if (
     deliveryWasConfirmed(event.messages) || alreadyMessagedOwner(event.messages) ||
-    !runId || !jobId || !name || !paperJob.test(name)
+    !isPaperRun(event.messages, context) || !runId
   ) return;
-  const key = `${jobId}:${runId}`;
+  const key = `${jobId ?? context.sessionKey ?? context.sessionId ?? "paper"}:${runId}`;
   if (notifiedRuns.has(key)) return;
   // Claim before I/O: this hook must never send twice for one run, even when
   // Plow is unavailable and the hook is called again during shutdown.

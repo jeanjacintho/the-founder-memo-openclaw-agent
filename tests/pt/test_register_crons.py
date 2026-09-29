@@ -85,7 +85,27 @@ class FakeScheduler:
         return backend_mod.CronBackend(self)
 
 
+class TestPaperPrompts:
+    @pytest.mark.parametrize("prompt", [
+        crons.paper_prompt(), crons.paper_prompt("09:30", 60), crons.paper_prompt(focus="18:00"),
+        crons.TOPIC_PROMPT.format(tid="t_1", depth="quick")])
+    def test_every_paper_says_how_its_skills_load(self, prompt):
+        # A model that guessed plow__plow_read_skill got "no skill" and
+        # gave up the paper: the prompt names the container path and tool.
+        assert prompt.startswith(crons.PAPER_RUN_MARKER)
+        assert "/opt/plow/skills/<name>/SKILL.md with the read tool" in prompt
+        assert "plow__plow_read_skill reads the owner's Mac" in prompt
+
+
 class TestListing:
+    def test_on_demand_job_keeps_its_run_for_diagnosis(self):
+        backend = backend_mod.CronBackend()
+        now = {"name": "pt-daily-edition-now", "schedule": FUTURE,
+               "tz": None, "prompt": crons.paper_prompt()}
+        assert "--keep-after-run" in backend.create_argv(now)
+        assert "--keep-after-run" not in backend.create_argv({
+            **now, "name": "pt-daily-edition"})
+
     def test_lists_disabled_jobs_too(self):
         sched = FakeScheduler([row("pt-daily-edition", enabled=False)])
         jobs = sched.backend().list()
@@ -388,6 +408,17 @@ class TestMain:
             run_main(tmp_path, monkeypatch, [], sched, argv=["--now"])
             assert [w[:2] for w in sched.writes] == [["add", "--name"], ["rm", "old123"]]
 
+    def test_now_never_removes_a_copy_that_is_running(self, tmp_path, monkeypatch, capsys):
+        # Measured live: `cron rm` on a running one-shot aborted its session
+        # right after it took the workspace lock. The lock outlived the run,
+        # and every later --now copy read 'held' and stopped for 390 minutes.
+        running = row(crons.NOW_NAME, jid="live123", at=FUTURE)
+        running["state"] = {"runningAtMs": 1790620326000}
+        sched = FakeScheduler(registered_like_spec([]) + [running])
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now"]) == 0
+        assert not any(crons.NOW_NAME in w or w[0] == "rm" for w in sched.writes)
+        assert "already running: pt-daily-edition-now" in capsys.readouterr().out
+
     def test_rebuild_recreates_a_pending_one_offs_job(self, tmp_path, monkeypatch):
         # A fresh state volume has no jobs: a one-off the owner was promised
         # must come back from topics.json like any subscription does.
@@ -514,8 +545,8 @@ class TestExtraDailyHours:
         prompt = jobs[1]["prompt"]
         assert "--name paper-workspace --today" in prompt
         assert "post_to_chat.py" in prompt
-        assert "Never end with NO_REPLY" in prompt
-        assert "Only after confirmed delivery may the paper run end with NO_REPLY" in prompt
+        assert "Do not finish the run before post_to_chat.py confirms" in prompt
+        assert "short status for the cron run record" in prompt
 
     def test_no_extra_hours_is_unchanged(self):
         jobs = crons.desired_jobs([topic("t_1", kind="section")], "03:00", TZ, 45)
@@ -586,7 +617,7 @@ class TestFocusedPapers:
         assert jobs[2]["schedule"] == "0 18 * * *"
         assert "deliver_at is 12:30" in jobs[1]["prompt"]
         assert "--name paper-workspace --today" in jobs[1]["prompt"]
-        assert "Never end with NO_REPLY" in jobs[1]["prompt"]
+        assert "Do not finish the run before post_to_chat.py confirms" in jobs[1]["prompt"]
 
     def test_deliver_at_equal_to_main_hour_rides_the_daily_job(self):
         jobs = crons.desired_jobs(
@@ -846,7 +877,8 @@ class TestRunPromptsDelegateDelivery:
         assert "post_to_chat.py" in p
         assert "pt-print" not in p and "print_edition" not in p
         # Jobs have no delivery arm (--no-deliver): the final text goes nowhere.
-        assert "Never end with NO_REPLY" in p
+        assert "Do not finish the run before post_to_chat.py confirms" in p
+        assert "NO_REPLY" not in p
         assert "--deliver " not in p
 
     @pytest.mark.parametrize("p", [
@@ -860,7 +892,7 @@ class TestRunPromptsDelegateDelivery:
         assert "target plow-owner" in p
         assert "edition was not delivered" in p
         assert "Do not send this notice after confirmed delivery" in p
-        assert "Never end with NO_REPLY" in p
+        assert "short status for the cron run record" in p
 
     def test_paper_prompt_reopens_sections(self):
         assert "reopen-sections" in crons.paper_prompt()

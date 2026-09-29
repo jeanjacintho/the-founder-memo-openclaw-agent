@@ -127,16 +127,27 @@ MIN_TOURNAMENT_MINUTES = 50
 # One topic's own edition: a subscription's nightly run or a one-off.
 DELIVERY_FAILURE_NOTICE = (
     "This is a paper execution, not a heartbeat: run the full paper pipeline. "
-    "Never end with NO_REPLY or an empty response before post_to_chat.py confirms delivery. "
-    "Only after confirmed delivery may the paper run end with NO_REPLY. "
+    "Do not finish the run before post_to_chat.py confirms the chat post or stages the edition. "
+    "After that confirmation, finish with a short status for the cron run record; "
+    "the cron reply is not delivered to chat. "
     "If any step stops, refuses or fails before post_to_chat.py confirms delivery, "
     "release the paper-workspace lock if you hold it, then send exactly one short "
     "message to the owner with message(action=send), channel plow, accountId chat, "
     "target plow-owner. Say the edition was not delivered and give the reason in "
     "one sentence. Do not send this notice after confirmed delivery."
 )
+PAPER_RUN_MARKER = "[PLOW_PAPER_RUN]"
+# Measured live: gpt-6-luna asked plow__plow_read_skill (the owner's Mac)
+# for pt-research, got "no skill named", and gave up the paper. The pt-*
+# skills live in this container and only the read tool reaches them.
+SKILL_LOADING = (
+    "Load each pt-* skill by reading /opt/plow/skills/<name>/SKILL.md with the read "
+    "tool (its references and scripts sit beside it); plow__plow_read_skill reads the "
+    "owner's Mac, which does not have them. "
+)
 
 TOPIC_PROMPT = (
+    PAPER_RUN_MARKER + " " + SKILL_LOADING +
     "Run pt-research on topic {tid} now (depth {depth}), then pt-edition for it, "
     "delivering with post_to_chat.py per pt-edition/SKILL.md step 2. "
     + DELIVERY_FAILURE_NOTICE
@@ -203,6 +214,7 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         if hold_until else "another paper owns the workspace -- stop"
     )
     return (
+        f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
         f"Run {title} now, in one session. First run {lock} acquire "
         f"--name {WORKSPACE_LOCK} --today --stale-minutes {STALE_RUN_MINUTES + lead_minutes}{wait}; "
         f"if its output is 'held', "
@@ -606,9 +618,16 @@ def queue_now(backend, listing, lead_minutes, owner_tz, clock=None):
     the same workspace lock, the same delivery leg -- so "send me the paper
     now" can never be a thinner or different paper. Previous copies are
     removed by id only after the new one is created, so a failed create
-    never cancels a copy the owner was already promised.
+    never cancels a copy the owner was already promised. A copy that is
+    running is left alone and no second one is queued: `cron rm` aborts its
+    session mid-paper, the workspace lock outlives it, and every later copy
+    reads 'held' and stops until the lock goes stale.
     """
-    at = (clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
+    running = [j for j in listing if j.name == NOW_NAME and j.running]
+    if running:
+        print(f"already running: {NOW_NAME} ({running[0].id}) -- its edition is on the way")
+        return
+    at =(clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
     job = {
         "name": NOW_NAME,
         "schedule": at.isoformat(timespec="seconds"),

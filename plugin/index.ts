@@ -181,6 +181,9 @@ export default defineChannelPluginEntry({
   registerFull(api) {
     if (api.registrationMode === "full") api.logger.info("plow channel registered");
     api.on("agent_end", async (event, ctx) => {
+      if (ctx.sessionKey?.includes(":cron:")) {
+        api.logger.info(`cron end observed runId=${event.runId ?? "unknown"} jobId=${ctx.jobId ?? "unknown"} messages=${event.messages.length}`);
+      }
       try { await notifyFailedPaperRun(event, ctx); }
       catch (error) { api.logger.warn(`paper cron failure notice failed: ${(error as Error).name}`); }
     });
