@@ -867,7 +867,7 @@ class TestSkills:
             "rewrite every reference to the owner by name or role into direct",
             "question in the owner's language -- the literal value read during Orient",
             "is a defect, not a style choice",
-            "`RUN_PAGE=~/Plow/wiki/projects/theplowtimes/runs/<run-datetime>/state.md`",
+            "`RUN_PAGE=~/Plow/wiki/projects/thefoundertimes/runs/<run-datetime>/state.md`",
             "sanitized `reads`",
             "reopens decisive public read receipts",
             "never contain raw private queries, selectors, URLs, or excerpts",
