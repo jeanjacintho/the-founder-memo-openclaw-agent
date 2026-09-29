@@ -6,12 +6,14 @@ import { readFileSync } from "node:fs";
 // and leaves the marker below) or name one with AGENT_PROVIDER and
 // AGENT_MODEL. Plow's model stays behind as the fallback, so a
 // spent quota or an expired sign-in degrades to Plow instead of to silence.
-export const PLOW_MODEL = "plow/openai/gpt-6-luna";
+export const PLOW_MODEL = "plow/openai/gpt-6-sol";
+// Plow's Luna answers when Plow cannot serve Sol, instead of silence.
+export const PLOW_LUNA = "plow/openai/gpt-6-luna";
 export const LLM_MARKER = "/var/lib/plow/llm-provider";
 
 export type LlmProvider = "plow" | "openai" | "openrouter";
 export type LlmRoute = { provider: LlmProvider; primary: string; fallbacks: string[] };
-export const PLOW_ROUTE: LlmRoute = { provider: "plow", primary: PLOW_MODEL, fallbacks: [] };
+export const PLOW_ROUTE: LlmRoute = { provider: "plow", primary: PLOW_MODEL, fallbacks: [PLOW_LUNA] };
 
 // OpenRouter has no model this image could guess, so it needs AGENT_MODEL.
 // On the owner's OpenAI account, Sol: measured live, Luna read every skill and
@@ -49,5 +51,5 @@ export function llmRoute(env: NodeJS.ProcessEnv = process.env, marker = readLlmM
   }
   const model = (env.AGENT_MODEL?.trim() || DEFAULT_MODEL[chosen])?.replace(new RegExp(`^${chosen}/`), "");
   if (!model) return { route: PLOW_ROUTE, problem: `${chosen} needs AGENT_MODEL, staying on Plow` };
-  return { route: { provider: chosen, primary: `${chosen}/${model}`, fallbacks: [PLOW_MODEL] } };
+  return { route: { provider: chosen, primary: `${chosen}/${model}`, fallbacks: [PLOW_MODEL, PLOW_LUNA] } };
 }

@@ -32,7 +32,9 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     models: { providers: { plow: {
       baseUrl: `${apiBase}/v1`, apiKey: "${PLOW_AGENT_TOKEN}", api: "openai-completions", authHeader: true,
       request: { allowPrivateNetwork: true },
+      // Plow serves Sol with a 1,050,000-token window and publishes no price for it.
       models: [
+        { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
         { id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
           cost: { input: 0.10, output: 0.50 } },
       ],
