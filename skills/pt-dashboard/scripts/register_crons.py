@@ -154,7 +154,7 @@ TOPIC_PROMPT = (
 )
 
 
-def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
+def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False):
     """The one run prompt every paper is built from, scheduled or on demand.
 
     focus=None is the MAIN paper: every active section with no deliver_at
@@ -169,7 +169,10 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
     on-demand copy (--now) passes none, posts when done, and never waits
     ~150 minutes on a tournament: it reuses the newest accepted checkpoint
     of any date, printed with its as-of date, and runs the tournament only
-    when none has ever been accepted.
+    when none has ever been accepted. fresh_advice (--now --fresh-advice) is
+    the owner asking to re-evaluate today's priorities: that copy runs the
+    tournament and reuses no checkpoint, since reusing one is what they
+    asked it not to do.
 
     The prompt carries only what the run cannot read from its skills: the
     lock, the roster, the advice rule and the send clock. Delivery, print
@@ -195,12 +198,19 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
     )
     lock = script("pt-shared", "run_lock.py")
     advice = (
+        "run the tournament now, whatever run/desk-priority/tournament.json holds: the owner "
+        "asked to re-evaluate today's priorities, so reuse none, and no delivery hour bounds "
+        "it. If it cannot reach an accepted checkpoint, record that with "
+        f"{script('pt-priority', 'advice_unavailable.py')} failed"
+        if fresh_advice else
         "reuse today's accepted checkpoint in run/desk-priority/tournament.json when "
         f"there is one, else run the tournament -- this job starts {lead_minutes} minutes "
         f"before {hold_until} (delivery.lead_minutes, clamped so it never starts before "
         f"midnight); once the lock is yours, run {script('pt-shared', 'owner_time.py')} "
-        f"minutes-until {hold_until} and, under {MIN_TOURNAMENT_MINUTES} minutes, write the "
-        f"desk's own unavailable reason per pt-priority/SKILL.md instead of starting one"
+        f"minutes-until {hold_until} and, under {MIN_TOURNAMENT_MINUTES} minutes, record the "
+        f"desk's unavailable reason with {script('pt-priority', 'advice_unavailable.py')} window "
+        f"--deliver-at {hold_until} instead of starting one; with {MIN_TOURNAMENT_MINUTES} minutes "
+        f"or more, run the tournament"
         if hold_until else
         "reuse the newest accepted checkpoint in run/desk-priority/tournament.json whatever "
         "its date -- an older one prints with \"as_of\" per pt-edition -- and run the "
@@ -611,7 +621,7 @@ def job_drift(job, spec):
     return False
 
 
-def queue_now(backend, listing, lead_minutes, owner_tz, clock=None):
+def queue_now(backend, listing, lead_minutes, owner_tz, clock=None, fresh_advice=False):
     """The on-demand copy: the main paper's own prompt as a one-shot job.
 
     The scheduler fires it exactly like the morning run -- its own session,
@@ -632,7 +642,7 @@ def queue_now(backend, listing, lead_minutes, owner_tz, clock=None):
         "name": NOW_NAME,
         "schedule": at.isoformat(timespec="seconds"),
         "tz": None,
-        "prompt": paper_prompt(lead_minutes=lead_minutes),
+        "prompt": paper_prompt(lead_minutes=lead_minutes, fresh_advice=fresh_advice),
     }
     previous = [j.id for j in listing if j.name == NOW_NAME]
     _check(backend.create(job), f"could not queue {NOW_NAME}")
@@ -655,7 +665,14 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
         help="after registering, queue the main paper as a one-shot a minute "
              "out -- the on-demand copy, same prompt, no send clock",
     )
+    parser.add_argument(
+        "--fresh-advice", action="store_true",
+        help="with --now: the owner asked to re-evaluate today's priorities, so the "
+             "copy runs the advice tournament instead of reusing a checkpoint",
+    )
     args = parser.parse_args(argv if argv is not None else [])
+    if args.fresh_advice and not args.now:
+        parser.error("--fresh-advice is an option of --now")
     env = os.environ if env is None else env
 
     if backend is None:
@@ -715,7 +732,7 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
         print(f"removed stale job: {name}")
 
     if args.now:
-        queue_now(backend, listing, lead_minutes, owner_tz)
+        queue_now(backend, listing, lead_minutes, owner_tz, fresh_advice=args.fresh_advice)
 
     if paused:
         raise SystemExit(

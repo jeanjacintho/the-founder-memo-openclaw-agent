@@ -86,6 +86,11 @@ class FakeScheduler:
 
 
 class TestPaperPrompts:
+    def test_a_scheduled_paper_records_a_short_window_with_the_script(self):
+        prompt = crons.paper_prompt("09:30", 150)
+        assert "advice_unavailable.py window --deliver-at 09:30" in prompt
+        assert "or more, run the tournament" in prompt
+
     @pytest.mark.parametrize("prompt", [
         crons.paper_prompt(), crons.paper_prompt("09:30", 60), crons.paper_prompt(focus="18:00"),
         crons.TOPIC_PROMPT.format(tid="t_1", depth="quick")])
@@ -407,6 +412,24 @@ class TestMain:
         else:
             run_main(tmp_path, monkeypatch, [], sched, argv=["--now"])
             assert [w[:2] for w in sched.writes] == [["add", "--name"], ["rm", "old123"]]
+
+    # Measured live 2026-09-30: asked to "re-evaluate today's priorities",
+    # the chat fired the daily job after its hour; it skipped the tournament by
+    # its window rule, and the plain on-demand copy reuses yesterday's advice.
+    def test_fresh_advice_queues_a_copy_that_runs_the_tournament(self, tmp_path, monkeypatch, capsys):
+        sched = FakeScheduler(registered_like_spec([]))
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
+        (create,) = [w for w in sched.writes if crons.NOW_NAME in w]
+        prompt = create[create.index("--message") + 1]
+        assert prompt == crons.paper_prompt(fresh_advice=True)
+        assert "run the tournament now" in prompt and "reuse none" in prompt
+        assert "reuse the newest accepted checkpoint" not in prompt
+        assert "queued: pt-daily-edition-now" in capsys.readouterr().out
+
+    def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
+        with pytest.raises(SystemExit):
+            run_main(tmp_path, monkeypatch, [], FakeScheduler(registered_like_spec([])),
+                     argv=["--fresh-advice"])
 
     def test_now_never_removes_a_copy_that_is_running(self, tmp_path, monkeypatch, capsys):
         # Measured live: `cron rm` on a running one-shot aborted its session

@@ -44,6 +44,10 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 sys.path.insert(
     0, str(pathlib.Path(__file__).resolve().parents[2] / "pt-shared" / "scripts")
 )
+sys.path.insert(
+    0, str(pathlib.Path(__file__).resolve().parents[2] / "pt-priority" / "scripts")
+)
+import advice_unavailable  # noqa: E402
 from owner_phrases import phrase  # noqa: E402
 from pt_paths import config_file  # noqa: E402
 DEFAULT_MASTHEAD = "THE FOUNDER TIMES"
@@ -580,6 +584,26 @@ def priority_desk_missing(edition, config):
     desks = {desk_of(s) for s in edition["sections"]}
     return (isinstance(block, dict) and block.get("configured") is True
             and "priority" not in desks and bool(desks & {"weather", "calendar"}))
+
+
+def unproven_unavailable_advice(edition, config, run_root, sessions_fn=None):
+    """Why an "advice unavailable" card is not proven, or None.
+
+    Measured live 2026-09-30: the 07:00 paper had 148 minutes left, started no
+    critic, and wrote desk-priority/notes.json by hand saying the tournament
+    could not be completed. Only advice_unavailable.py writes that file, and
+    this re-checks its proof (the lock's window, the tournament's children, or
+    the failed wiki check) before the page prints the reason.
+    """
+    if not any(desk_of(s) == "priority" and s.get("priority") is None
+               for s in edition["sections"]):
+        return None
+    owner = config.get("owner") if isinstance(config, dict) else None
+    tz = owner.get("timezone") if isinstance(owner, dict) else None
+    notes = _load_json_file(pathlib.Path(run_root) / "desk-priority" / "notes.json")
+    return advice_unavailable.proof_problem(
+        notes or {}, run_root, edition["date"], tz or "UTC",
+        sessions_fn or advice_unavailable.list_sessions)
 
 
 def _load_json_file(path):
@@ -1354,6 +1378,10 @@ def main(argv=None):
     if stale:
         sys.exit(f"error: stale desk notes for edition {edition['date']}: {stale}; "
                  "re-run that desk's gather instead of reusing yesterday's file")
+    unproven = unproven_unavailable_advice(
+        edition, config, pathlib.Path(args.edition).resolve().parent.parent)
+    if unproven:
+        sys.exit(f"error: the advice desk is unavailable without proof: {unproven}")
 
     name = masthead()
     chat_text = render_chat(edition, name, _owner_language(config))
