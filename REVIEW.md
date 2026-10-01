@@ -51,7 +51,7 @@ directly, and they come ahead of anything else:
 
 | Variant DON'T (suppress / flag-as-shape) | Variant DO (real finding) |
 |---|---|
-| Flag a section, a default, the advisor's desk or its sources for being **specific to one owner's paper**. Being one person's paper is the reason this repo exists. Generality here is bloat, not a fix. | Flag a change that a **sibling repo owns**. Research, mail, calendar and print go through Latch's tools and the gog grammar. The paper's wiki pages follow `plow-wiki`'s schema and CLI. The usage reporter is `agent-index-client`, which this repo only pins. Account, login, mint and revoke belong to `plow-agents`. Flag a `pt-*` behaviour change that diverges from the Hermes twin with no runtime reason, since the two papers should not drift apart by accident. The test: who else would have to change if this fact changed? |
+| Flag a section, a default, the advisor's desk or its sources for being **specific to one owner's paper**. Being one person's paper is the reason this repo exists. Generality here is bloat, not a fix. | Flag a change that a **sibling repo owns**. Research, mail, calendar and print go through Latch's tools and the gog grammar. The paper's wiki pages follow `plow-wiki`'s schema and CLI. The usage reporter is `agent-index-client`, which this repo only pins. Account, login, mint and revoke belong to `plow-agents`. The test: who else would have to change if this fact changed? |
 
 **Update cadence:** edit this when the stage changes. Product and architecture
 edits belong in `README.md`, not here.
