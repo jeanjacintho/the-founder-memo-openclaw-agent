@@ -88,7 +88,7 @@ Keep its exact path in root context as
 `RUN_PAGE=~/Plow/wiki/projects/thefoundertimes/runs/<run-datetime>/state.md`; every compaction handoff preserves
 that value until delivery.
 Rewrite that one page whole after Orient and after every Challenge, Criticize, and Cull;
-do not create per-generation files or an append-only event log. After the Orient write, run argv
+do not create per-generation files or an append-only event log. After each rewrite, run argv
 `["wiki", "validate", "--writer", "thefoundertimes"]` through `plow__plow_run_command`; exit 1 prints
 `path: problem` lines — fix each page it names and validate again. It holds the stage and generation,
 champions, contenders, priority cases, sanitized reads, unknowns, critic verdicts, fact-rank moves,
