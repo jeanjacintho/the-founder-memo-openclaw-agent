@@ -8,7 +8,7 @@ import { websocketFixture } from "./ws-fixture.ts";
 
 type Payload = { text: string; isError?: boolean; isFallbackNotice?: boolean };
 type Dispatch = {
-  replyOptions: { onAgentRunTerminalOutcome: (outcome: string) => void };
+  replyOptions: { onAgentRunTerminalOutcome: (outcome: string) => void; turnAdoptionLifecycle: { onAdopted: () => Promise<void> } };
   delivery: { preparePayload?: (payload: Payload) => unknown; deliver: (payload: Payload) => Promise<unknown> };
 };
 
@@ -60,6 +60,7 @@ for (const [scenario, run] of Object.entries(scenarios)) for (const sender of [m
     runtime: { channel: {
       routing: { resolveAgentRoute: () => ({ sessionKey: "agent:main:plow:group:group" }) },
       inbound: { buildContext: async () => ({}), dispatch: async (dispatch: Dispatch) => {
+        await dispatch.replyOptions.turnAdoptionLifecycle.onAdopted();
         await run(dispatch);
         return { dispatched: true, dispatchResult: { deliberateSilentTerminalReply: scenario === "the model stays silent" } };
       } },
@@ -70,7 +71,7 @@ for (const [scenario, run] of Object.entries(scenarios)) for (const sender of [m
   const posts = fetch.mock.calls.filter(call => (call.arguments[1] as RequestInit | undefined)?.method === "POST").map(call => String(call.arguments[0]));
   assert.deepEqual(posts.filter(url => url.endsWith("/messages")), [], "nothing is ever posted in a group");
   assert.deepEqual(posts.filter(url => url.endsWith("/typing")), [], "no typing indicator in a group");
-  assert.equal(await readFile(`${root}/plow-checkpoints/group`, "utf8"), "inbound", "the message is acknowledged");
+  assert.equal(JSON.parse(await readFile(`${root}/plow-checkpoints/group`, "utf8")).uid, "inbound", "the message is acknowledged");
   assert.ok(!logs.some(text => text.includes("notifying")), "no failure notice in a group");
 });
 
@@ -103,7 +104,7 @@ function registerAll() {
   return { register, tool: (context: object) => factory!(context), hook: () => hook!, channel: () => channel! };
 }
 
-const groupContext = (to = "group", sender = "member") => ({ sessionKey: "agent:main:plow:group:group", messageChannel: "plow", agentAccountId: "chat", deliveryContext: { channel: "plow", to, accountId: "chat" }, requesterSenderId: sender });
+const groupContext = (to = "group", sender = member.provider_key) => ({ sessionKey: "agent:main:plow:group:group", messageChannel: "plow", agentAccountId: "chat", deliveryContext: { channel: "plow", to, accountId: "chat" }, requesterSenderId: sender });
 
 test("record_signal accepts only a category", () => {
   const all = registerAll();
@@ -151,7 +152,7 @@ for (const [label, category, sender, config, expected] of [
   all.register({ channel: {
     routing: { resolveAgentRoute: () => ({ sessionKey: "agent:main:plow:group:group" }) },
     inbound: { buildContext: async () => ({}), dispatch: async (dispatch: Dispatch) => {
-      const tool = all.tool(groupContext("group", sender.role === "owner" ? "plow-owner" : "member"));
+      const tool = all.tool(groupContext("group", sender.role === "owner" ? "plow-owner" : member.provider_key));
       // Words, a name or a chat supplied by the model are refused, never recorded.
       smuggled = await tool.execute("call", { category, text: "forged", from_name: "CEO" });
       result = await tool.execute("call", { category });
