@@ -16,13 +16,15 @@ the product prose and this file does not repeat it. Flag drift between that
 prose and the code, in either direction.
 
 **Operating point:** pre-PMF, a handful of installs, each one owner's agent
-running in Docker against their own Plow line. One owner, one container, one run a night:
-there is no shared state, no concurrency between owners and no scale to
-design for. So the dominant lens is **YAGNI**. Decline remedies that add
-retries, fallbacks, locks, caches, multi-tenant or concurrency guards, or
-abstractions for a second caller that does not exist; prefer the deletion or
-the inline version. A finding must name what breaks for one owner today. A
-reliability guess about load this repo will not see is at most `[low]`.
+running in Docker against their own Plow line. One owner, one container: there is no shared state between owners, no
+cross-owner concurrency and no scale to design for. So the dominant lens is
+**YAGNI**. Decline remedies that add retries, fallbacks, caches, multi-tenant
+or cross-owner guards, or abstractions for a second caller that does not
+exist; prefer the deletion or the inline version. One owner's own runs can
+overlap (two papers, a manual run during a scheduled one), so the locks that
+guard that are real; keep them. A finding must name what breaks for one owner
+today. A reliability guess about load this repo will not see is at most
+`[low]`.
 
 The one bound that earns defensive code is the nightly spend ceiling: a
 missing or bypassable ceiling is a real finding, because a bad night costs
