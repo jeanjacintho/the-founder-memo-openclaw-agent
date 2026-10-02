@@ -115,7 +115,8 @@ STALE_RUN_MINUTES = 240
 # A scheduled paper that finds the workspace held (an on-demand copy runs its
 # whole ~35-minute paper under the lock) waits two rounds of this before giving
 # the day up: ~40 minutes, inside the hold-until window, each round under
-# OpenClaw's 30-minute exec timeout. The on-demand copy never waits.
+# OpenClaw's 30-minute exec timeout. The plain on-demand copy never waits; a
+# fresh-advice copy does.
 HELD_LOCK_WAIT_SECONDS = 1200
 # The priority desk's floor: with less than this left before delivery, a fresh
 # three-generation tournament cannot finish (measured ~35-50 min) before the
@@ -218,11 +219,14 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
         "tournament only if none has ever been accepted. An older checkpoint is never a "
         "reason to stop the paper; continue research and compile the edition with its as-of date"
     )
-    wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if hold_until else ""
+    # A fresh-advice copy waits like a scheduled paper: it was promised to the owner, and
+    # a paper that starts in the minute before it runs would otherwise end it at 'held'.
+    waits = bool(hold_until) or fresh_advice
+    wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if waits else ""
     held = (
         "run the same acquire once more; if that is also 'held', another paper owns "
         "the workspace -- stop"
-        if hold_until else "another paper owns the workspace -- stop"
+        if waits else "another paper owns the workspace -- stop"
     )
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"

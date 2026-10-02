@@ -444,6 +444,14 @@ class TestMain:
         assert f"not queued: {name}" in out and "no fresh evaluation was queued" in out
         assert "queued: pt-daily-edition-now" not in out.replace("not queued:", "")
 
+    # Another paper can start in the minute before the queued copy runs; the copy
+    # the owner was promised waits for the workspace instead of stopping at 'held'.
+    def test_a_fresh_advice_copy_waits_for_the_workspace(self):
+        waits = f"--wait-seconds {crons.HELD_LOCK_WAIT_SECONDS}"
+        assert waits in crons.paper_prompt(fresh_advice=True)
+        assert "run the same acquire once more" in crons.paper_prompt(fresh_advice=True)
+        assert waits not in crons.paper_prompt()
+
     def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
         with pytest.raises(SystemExit):
             run_main(tmp_path, monkeypatch, [], FakeScheduler(registered_like_spec([])),
