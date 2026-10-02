@@ -26,10 +26,6 @@ guard that are real; keep them. A finding must name what breaks for one owner
 today. A reliability guess about load this repo will not see is at most
 `[low]`.
 
-The one bound that earns defensive code is the nightly spend ceiling: a
-missing or bypassable ceiling is a real finding, because a bad night costs
-the owner real money.
-
 **Security findings name a reachable loss.** The owner trusts their own
 agent. "A prompt-injected or misbehaving agent could do X with the owner's
 own data" is not blocking unless X reaches another person, spends money, or
