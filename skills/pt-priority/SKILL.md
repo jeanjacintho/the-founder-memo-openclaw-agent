@@ -295,14 +295,14 @@ without it:
 
 - `window --deliver-at <HH:MM> --reason "<why>"` — too little tournament window: the paper took the lock under 50 minutes
   before its delivery hour (the same hour its prompt gave `owner_time.py minutes-until`).
-- `failed --reason "<what failed>"` — the tournament ran (at least one child started after the
-  lock) and time ran out with no accepted checkpoint. A tournament that never started did not fail.
 - `blocked --reason "<why>"` — Orient could not reach the owner's wiki; the script re-runs
   `wiki_setup.py --desk` and refuses when it succeeds.
 
 `--reason` is the owner-language line the card prints. The script writes
-`{"date", "could_not_source": [reason], "skip": {…}}`; `render_edition.py` re-checks that proof
-and refuses to print an unavailable card without it. A refusal means: run the tournament.
+`{"date", "could_not_source": [reason], "skip": {…}}` bound to this paper's lock;
+`render_edition.py` re-checks that proof and refuses to print an unavailable card without it,
+or with a reason another paper recorded. A refusal means: run the tournament. A tournament
+that ran and reached no accepted checkpoint has no reason here: the paper fails loudly.
 
 Write the complete candidate checkpoint to
 `/var/lib/plow/pt/run/desk-priority/tournament.candidate.json` and copy its

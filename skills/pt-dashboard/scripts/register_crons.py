@@ -200,8 +200,8 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
     advice = (
         "run the tournament now, whatever run/desk-priority/tournament.json holds: the owner "
         "asked to re-evaluate today's priorities, so reuse none, and no delivery hour bounds "
-        "it. If it cannot reach an accepted checkpoint, record that with "
-        f"{script('pt-priority', 'advice_unavailable.py')} failed"
+        "it. If it cannot reach an accepted checkpoint, the paper is not delivered: never "
+        "print an unavailable advice card for a tournament that ran"
         if fresh_advice else
         "reuse today's accepted checkpoint in run/desk-priority/tournament.json when "
         f"there is one, else run the tournament -- this job starts {lead_minutes} minutes "
@@ -209,7 +209,8 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
         f"midnight); once the lock is yours, run {script('pt-shared', 'owner_time.py')} "
         f"minutes-until {hold_until} and, under {MIN_TOURNAMENT_MINUTES} minutes, record the "
         f"desk's unavailable reason with {script('pt-priority', 'advice_unavailable.py')} window "
-        f"--deliver-at {hold_until} instead of starting one; with {MIN_TOURNAMENT_MINUTES} minutes "
+        f"--deliver-at {hold_until} --reason \"<why, in the owner's language>\" instead of "
+        f"starting one; with {MIN_TOURNAMENT_MINUTES} minutes "
         f"or more, run the tournament"
         if hold_until else
         "reuse the newest accepted checkpoint in run/desk-priority/tournament.json whatever "
@@ -621,6 +622,12 @@ def job_drift(job, spec):
     return False
 
 
+def _is_paper(name):
+    """A job that runs a paper under the workspace lock."""
+    return (name in (DAILY_NAME, NOW_NAME) or bool(_EXTRA_DAILY_RE.fullmatch(name))
+            or bool(_PAPER_RE.fullmatch(name)))
+
+
 def queue_now(backend, listing, lead_minutes, owner_tz, clock=None, fresh_advice=False):
     """The on-demand copy: the main paper's own prompt as a one-shot job.
 
@@ -631,11 +638,18 @@ def queue_now(backend, listing, lead_minutes, owner_tz, clock=None, fresh_advice
     never cancels a copy the owner was already promised. A copy that is
     running is left alone and no second one is queued: `cron rm` aborts its
     session mid-paper, the workspace lock outlives it, and every later copy
-    reads 'held' and stops until the lock goes stale.
+    reads 'held' and stops until the lock goes stale. The same holds for any
+    paper mid-run: a copy queued behind it reads 'held' and stops. So while
+    one runs, a fresh-advice request queues nothing and says so -- the running
+    paper reuses its checkpoint, so its edition is not the fresh evaluation.
     """
-    running = [j for j in listing if j.name == NOW_NAME and j.running]
+    running = [j for j in listing if _is_paper(j.name) and j.running]
+    if running and fresh_advice:
+        print(f"not queued: {running[0].name} ({running[0].id}) is mid-paper -- "
+              "no fresh evaluation was queued; ask again once it is delivered")
+        return
     if running:
-        print(f"already running: {NOW_NAME} ({running[0].id}) -- its edition is on the way")
+        print(f"already running: {running[0].name} ({running[0].id}) -- its edition is on the way")
         return
     at =(clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
     job = {

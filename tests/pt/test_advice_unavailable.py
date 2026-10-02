@@ -2,9 +2,6 @@
 from __future__ import annotations
 
 import json
-import sys
-import time
-from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -14,15 +11,7 @@ adv = load_module("advice_unavailable", "pt-priority/scripts/advice_unavailable.
 
 DAY = "2026-09-30"
 TZ = "America/Sao_Paulo"
-BRT = timezone(timedelta(hours=-3))
-
-
-def ms(hour, minute, day=30):
-    return int(datetime(2026, 9, day, hour, minute, tzinfo=BRT).timestamp() * 1000)
-
-
-def subagent(started_ms):
-    return {"key": "agent:main:subagent:abc", "sessionStartedAt": started_ms}
+LOCK = "2026-09-30T07:00:14-03:00"
 
 
 @pytest.fixture
@@ -32,7 +21,7 @@ def home(tmp_path, monkeypatch):
     (tmp_path / "config.json").write_text(json.dumps({"owner": {"timezone": TZ}}))
     run = tmp_path / "run"
     run.mkdir()
-    (run / f"paper-workspace-{DAY}.lock").write_text("2026-09-30T07:00:14-03:00\n")
+    (run / f"paper-workspace-{DAY}.lock").write_text(LOCK + "\n")
     monkeypatch.setattr(adv, "today", lambda: DAY)
     return tmp_path
 
@@ -55,25 +44,16 @@ class TestWindow:
         adv.main(["window", "--deliver-at", "09:30", "--reason", "a entrega já tinha passado"])
         assert notes(home) == {
             "date": DAY, "could_not_source": ["a entrega já tinha passado"],
-            "skip": {"kind": "window", "deliver_at": "09:30", "minutes": -223}}
+            "skip": {"kind": "window", "deliver_at": "09:30", "lock": "2026-09-30T13:13:00-03:00"}}
 
     def test_without_the_lock_there_is_no_window_to_measure(self, home):
         (home / "run" / f"paper-workspace-{DAY}.lock").unlink()
         with pytest.raises(SystemExit, match="does not hold today's paper-workspace lock"):
             adv.main(["window", "--deliver-at", "09:30", "--reason", "x"])
 
-
-class TestFailed:
-    def test_a_tournament_that_never_started_cannot_have_failed(self, home, monkeypatch):
-        monkeypatch.setattr(adv, "list_sessions", lambda: [subagent(ms(7, 5, day=29))])
-        with pytest.raises(SystemExit, match="no tournament child has started"):
-            adv.main(["failed", "--reason", "não foi possível validar as três gerações"])
-
-    def test_a_tournament_that_ran_records_how_many_children_it_started(self, home, monkeypatch):
-        monkeypatch.setattr(adv, "list_sessions", lambda: [subagent(ms(7, 10)), subagent(ms(7, 30)),
-                                                           {"key": "agent:main:main", "sessionStartedAt": ms(7, 20)}])
-        adv.main(["failed", "--reason", "a terceira geração não passou no gate"])
-        assert notes(home)["skip"] == {"kind": "failed", "children": 2}
+    def test_a_tournament_that_ran_has_no_failed_reason(self, home):
+        with pytest.raises(SystemExit):
+            adv.main(["failed", "--reason", "a terceira geração não passou no gate"])
 
 
 class TestBlocked:
@@ -85,56 +65,24 @@ class TestBlocked:
     def test_an_unreachable_wiki_records_the_check_that_failed(self, home, monkeypatch):
         monkeypatch.setattr(adv, "wiki_check", lambda: (1, "error: wiki not ready — Mac unreachable"))
         adv.main(["blocked", "--reason", "o Mac não respondeu"])
-        assert notes(home)["skip"] == {"kind": "blocked",
+        assert notes(home)["skip"] == {"kind": "blocked", "lock": LOCK,
                                        "check": "error: wiki not ready — Mac unreachable"}
 
 
-class TestListSessions:
-    # Measured live 2026-09-30: `openclaw sessions list --json` prints the whole
-    # listing at once, then its process never exits; waiting for the exit
-    # timed out and threw the listing away.
-    def test_a_listing_is_read_even_when_the_cli_never_exits(self, monkeypatch):
-        listing = json.dumps({"count": 1, "sessions": [subagent(ms(7, 10))]})
-        script = f"import sys, time; sys.stdout.write({listing!r} + chr(10)); sys.stdout.flush(); time.sleep(30)"
-        monkeypatch.setattr(adv, "SESSIONS_ARGV", [sys.executable, "-c", script])
-        started = time.monotonic()
-        assert adv.list_sessions() == [subagent(ms(7, 10))]
-        assert time.monotonic() - started < 10
-
-    def test_a_cli_that_prints_nothing_is_no_listing(self, monkeypatch):
-        monkeypatch.setattr(adv, "SESSIONS_ARGV", [sys.executable, "-c", "print('not json')"])
-        assert adv.list_sessions() is None
-
-
-class TestProof:
-    """What render_edition.py re-checks before printing an unavailable card."""
-
-    def run_root(self, home):
-        return home / "run"
-
-    def test_notes_written_by_hand_are_refused(self, home):
-        problem = adv.proof_problem({"date": DAY, "could_not_source": ["x"]},
-                                    self.run_root(home), DAY, TZ, lambda: [])
-        assert "not written by advice_unavailable.py" in problem
-
-    def test_a_window_skip_is_rechecked_against_the_lock(self, home):
-        skip = {"kind": "window", "deliver_at": "09:30", "minutes": 10}
-        problem = adv.proof_problem({"skip": skip}, self.run_root(home), DAY, TZ, lambda: [])
-        assert "149 minutes" in problem
-
-    def test_a_failed_skip_is_rechecked_against_the_sessions(self, home):
-        problem = adv.proof_problem({"skip": {"kind": "failed", "children": 3}},
-                                    self.run_root(home), DAY, TZ, lambda: [])
-        assert "no tournament child has started" in problem
-        assert adv.proof_problem({"skip": {"kind": "failed", "children": 1}}, self.run_root(home),
-                                 DAY, TZ, lambda: [subagent(ms(7, 10))]) is None
-
-    def test_sessions_that_cannot_be_listed_never_block_the_paper(self, home):
-        assert adv.proof_problem({"skip": {"kind": "failed", "children": 1}},
-                                 self.run_root(home), DAY, TZ, lambda: None) is None
-
-    def test_a_blocked_skip_carries_its_failed_check(self, home):
-        assert adv.proof_problem({"skip": {"kind": "blocked", "check": "error: Mac unreachable"}},
-                                 self.run_root(home), DAY, TZ, lambda: []) is None
-        assert "no failed check" in adv.proof_problem({"skip": {"kind": "blocked", "check": ""}},
-                                                      self.run_root(home), DAY, TZ, lambda: [])
+# What render_edition.py re-checks before printing an unavailable card. The
+# 13:13 lock is a later paper's: desk-priority survives its --preserve-priority,
+# so a reason the 07:00 paper proved must not print in it.
+@pytest.mark.parametrize(("skip", "lock", "expected"), [
+    (None, LOCK, "not written by advice_unavailable.py"),
+    ({"kind": "window", "deliver_at": "09:30", "lock": LOCK}, LOCK, "149 minutes"),
+    ({"kind": "window", "deliver_at": "09:30", "lock": "2026-09-30T09:00:00-03:00"},
+     "2026-09-30T13:13:00-03:00", "another paper's lock"),
+    ({"kind": "window", "deliver_at": "09:30"}, LOCK, "another paper's lock"),
+    ({"kind": "blocked", "check": "error: Mac unreachable", "lock": LOCK}, LOCK, None),
+    ({"kind": "blocked", "check": "", "lock": LOCK}, LOCK, "no failed check"),
+    ({"kind": "failed", "lock": LOCK}, LOCK, "not written by advice_unavailable.py"),
+])
+def test_proof_matrix(home, skip, lock, expected):
+    (home / "run" / f"paper-workspace-{DAY}.lock").write_text(lock + "\n")
+    problem = adv.proof_problem({"skip": skip} if skip else {}, home / "run", DAY, TZ)
+    assert expected in problem if expected else problem is None

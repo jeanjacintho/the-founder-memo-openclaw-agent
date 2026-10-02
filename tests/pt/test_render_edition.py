@@ -1046,7 +1046,8 @@ class TestPriorityDeskOwnsItsMessage:
                    "could_not_source": ["the wiki returned HTTP 401 on every attempt this session"]}
 
     # A blocked desk as advice_unavailable.py records it: the check that failed.
-    BLOCKED = {"kind": "blocked", "check": "error: wiki not ready — HTTP 401"}
+    BLOCKED = {"kind": "blocked", "check": "error: wiki not ready — HTTP 401",
+               "lock": "2026-09-11T07:00:14-03:00"}
 
     def _main(self, tmp_path, config, sections, skip=BLOCKED):
         run = tmp_path / "run"
@@ -1115,7 +1116,7 @@ class TestPriorityDeskOwnsItsMessage:
             self._main(tmp_path, self.ON, [self.WEATHER, self.UNAVAILABLE], skip=None)
 
     def test_an_unavailable_card_is_rechecked_against_the_lock(self, tmp_path):
-        skip = {"kind": "window", "deliver_at": "09:30", "minutes": 10}
+        skip = {"kind": "window", "deliver_at": "09:30", "lock": "2026-09-11T07:00:14-03:00"}
         with pytest.raises(SystemExit, match="149 minutes before 09:30"):
             self._main(tmp_path, self.ON, [self.WEATHER, self.UNAVAILABLE], skip=skip)
 

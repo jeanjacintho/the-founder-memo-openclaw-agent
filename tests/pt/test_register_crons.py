@@ -88,7 +88,7 @@ class FakeScheduler:
 class TestPaperPrompts:
     def test_a_scheduled_paper_records_a_short_window_with_the_script(self):
         prompt = crons.paper_prompt("09:30", 150)
-        assert "advice_unavailable.py window --deliver-at 09:30" in prompt
+        assert "advice_unavailable.py window --deliver-at 09:30 --reason" in prompt
         assert "or more, run the tournament" in prompt
 
     @pytest.mark.parametrize("prompt", [
@@ -424,7 +424,25 @@ class TestMain:
         assert prompt == crons.paper_prompt(fresh_advice=True)
         assert "run the tournament now" in prompt and "reuse none" in prompt
         assert "reuse the newest accepted checkpoint" not in prompt
+        assert "advice_unavailable.py" not in prompt and "the paper is not delivered" in prompt
         assert "queued: pt-daily-edition-now" in capsys.readouterr().out
+
+    # A copy queued behind a running paper reads 'held' and stops, and the
+    # running one reuses its checkpoint: neither is the evaluation asked for.
+    @pytest.mark.parametrize("name", [crons.NOW_NAME, crons.DAILY_NAME])
+    def test_fresh_advice_behind_a_running_paper_queues_nothing(self, tmp_path, monkeypatch,
+                                                                capsys, name):
+        listing = registered_like_spec([])
+        if name == crons.NOW_NAME:
+            listing.append(row(name, jid="live123", at=FUTURE))
+        (running,) = [r for r in listing if r["name"] == name]
+        running["state"] = {"runningAtMs": 1790620326000}
+        sched = FakeScheduler(listing)
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
+        assert sched.writes == []
+        out = capsys.readouterr().out
+        assert f"not queued: {name}" in out and "no fresh evaluation was queued" in out
+        assert "queued: pt-daily-edition-now" not in out.replace("not queued:", "")
 
     def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
         with pytest.raises(SystemExit):

@@ -586,14 +586,14 @@ def priority_desk_missing(edition, config):
             and "priority" not in desks and bool(desks & {"weather", "calendar"}))
 
 
-def unproven_unavailable_advice(edition, config, run_root, sessions_fn=None):
+def unproven_unavailable_advice(edition, config, run_root):
     """Why an "advice unavailable" card is not proven, or None.
 
     Measured live 2026-09-30: the 07:00 paper had 148 minutes left, started no
     critic, and wrote desk-priority/notes.json by hand saying the tournament
     could not be completed. Only advice_unavailable.py writes that file, and
-    this re-checks its proof (the lock's window, the tournament's children, or
-    the failed wiki check) before the page prints the reason.
+    this re-checks its proof (the lock that recorded it, and that lock's window
+    or the failed wiki check) before the page prints the reason.
     """
     if not any(desk_of(s) == "priority" and s.get("priority") is None
                for s in edition["sections"]):
@@ -601,9 +601,7 @@ def unproven_unavailable_advice(edition, config, run_root, sessions_fn=None):
     owner = config.get("owner") if isinstance(config, dict) else None
     tz = owner.get("timezone") if isinstance(owner, dict) else None
     notes = _load_json_file(pathlib.Path(run_root) / "desk-priority" / "notes.json")
-    return advice_unavailable.proof_problem(
-        notes or {}, run_root, edition["date"], tz or "UTC",
-        sessions_fn or advice_unavailable.list_sessions)
+    return advice_unavailable.proof_problem(notes or {}, run_root, edition["date"], tz or "UTC")
 
 
 def _load_json_file(path):

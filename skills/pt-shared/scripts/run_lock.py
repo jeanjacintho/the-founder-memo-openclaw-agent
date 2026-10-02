@@ -70,15 +70,27 @@ def now():
     return datetime.now(timezone.utc).astimezone()
 
 
-def age_minutes(text):
-    """Minutes since the lock was written; None when it cannot be trusted."""
+def parse_stamp(text):
+    """The time a lock was written, or None when it cannot be trusted."""
     try:
         stamp = datetime.fromisoformat(text.strip())
     except (ValueError, AttributeError):
         return None
-    if stamp.tzinfo is None:
+    return stamp if stamp.tzinfo else None
+
+
+def taken_at(run_root, name):
+    """When the lock NAME under run_root was taken, or None."""
+    try:
+        return parse_stamp((pathlib.Path(run_root) / f"{name}.lock").read_text())
+    except OSError:
         return None
-    return (now() - stamp).total_seconds() / 60.0
+
+
+def age_minutes(text):
+    """Minutes since the lock was written; None when it cannot be trusted."""
+    stamp = parse_stamp(text)
+    return None if stamp is None else (now() - stamp).total_seconds() / 60.0
 
 
 @contextmanager
