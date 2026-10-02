@@ -1049,6 +1049,12 @@ class TestPriorityDeskOwnsItsMessage:
     BLOCKED = {"kind": "blocked", "check": "error: wiki not ready — HTTP 401",
                "lock": "2026-09-11T07:00:14-03:00"}
 
+    @pytest.fixture(autouse=True)
+    def wiki_still_down(self, monkeypatch):
+        """The renderer re-runs the wiki check a blocked desk was recorded on."""
+        monkeypatch.setattr(render.advice_unavailable, "wiki_check",
+                            lambda: (1, "error: wiki not ready — HTTP 401"))
+
     def _main(self, tmp_path, config, sections, skip=BLOCKED):
         run = tmp_path / "run"
         (run / "desk-priority").mkdir(parents=True)
@@ -1095,7 +1101,8 @@ class TestPriorityDeskOwnsItsMessage:
     def test_an_unavailable_card_needs_todays_notes(self, tmp_path, notes_date, refused):
         desk = tmp_path / "run" / "desk-priority"
         desk.mkdir(parents=True)
-        (desk / "notes.json").write_text(json.dumps({"date": notes_date, "skip": self.BLOCKED}),
+        (desk / "notes.json").write_text(json.dumps({"date": notes_date, "skip": self.BLOCKED,
+                                                     "could_not_source": self.UNAVAILABLE["could_not_source"]}),
                                          encoding="utf-8")
         (tmp_path / "run" / "paper-workspace-2026-09-11.lock").write_text("2026-09-11T07:00:14-03:00\n")
         (tmp_path / "run" / "paper").mkdir()
@@ -1119,6 +1126,17 @@ class TestPriorityDeskOwnsItsMessage:
         skip = {"kind": "window", "deliver_at": "09:30", "lock": "2026-09-11T07:00:14-03:00"}
         with pytest.raises(SystemExit, match="149 minutes before 09:30"):
             self._main(tmp_path, self.ON, [self.WEATHER, self.UNAVAILABLE], skip=skip)
+
+    def test_a_blocked_card_is_refused_once_the_wiki_answers(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(render.advice_unavailable, "wiki_check", lambda: (0, "WIKI:ready"))
+        with pytest.raises(SystemExit, match="succeeds now"):
+            self._main(tmp_path, self.ON, [self.WEATHER, self.UNAVAILABLE])
+
+    # The page prints the section's reason; notes.json is what was proven.
+    def test_a_reason_other_than_the_recorded_one_is_refused(self, tmp_path):
+        other = {**self.UNAVAILABLE, "could_not_source": ["the printer was out of paper"]}
+        with pytest.raises(SystemExit, match="not the reason advice_unavailable.py recorded"):
+            self._main(tmp_path, self.ON, [self.WEATHER, other])
 
     def test_an_unavailable_desk_prints_its_own_reason(self, tmp_path):
         html, chat = self._main(tmp_path, self.ON, [self.WEATHER, self.UNAVAILABLE])

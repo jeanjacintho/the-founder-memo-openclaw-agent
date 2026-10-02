@@ -72,17 +72,20 @@ class TestBlocked:
 # What render_edition.py re-checks before printing an unavailable card. The
 # 13:13 lock is a later paper's: desk-priority survives its --preserve-priority,
 # so a reason the 07:00 paper proved must not print in it.
-@pytest.mark.parametrize(("skip", "lock", "expected"), [
-    (None, LOCK, "not written by advice_unavailable.py"),
-    ({"kind": "window", "deliver_at": "09:30", "lock": LOCK}, LOCK, "149 minutes"),
+@pytest.mark.parametrize(("skip", "lock", "expected", "wiki"), [
+    (None, LOCK, "not written by advice_unavailable.py", 1),
+    ({"kind": "window", "deliver_at": "09:30", "lock": LOCK}, LOCK, "149 minutes", 1),
     ({"kind": "window", "deliver_at": "09:30", "lock": "2026-09-30T09:00:00-03:00"},
-     "2026-09-30T13:13:00-03:00", "another paper's lock"),
-    ({"kind": "window", "deliver_at": "09:30"}, LOCK, "another paper's lock"),
-    ({"kind": "blocked", "check": "error: Mac unreachable", "lock": LOCK}, LOCK, None),
-    ({"kind": "blocked", "check": "", "lock": LOCK}, LOCK, "no failed check"),
-    ({"kind": "failed", "lock": LOCK}, LOCK, "not written by advice_unavailable.py"),
+     "2026-09-30T13:13:00-03:00", "another paper's lock", 1),
+    ({"kind": "window", "deliver_at": "09:30"}, LOCK, "another paper's lock", 1),
+    ({"kind": "blocked", "check": "error: Mac unreachable", "lock": LOCK}, LOCK, None, 1),
+    ({"kind": "blocked", "check": "error: Mac unreachable", "lock": LOCK}, LOCK,
+     "succeeds now", 0),
+    ({"kind": "blocked", "check": "", "lock": LOCK}, LOCK, "no failed check", 1),
+    ({"kind": "failed", "lock": LOCK}, LOCK, "not written by advice_unavailable.py", 1),
 ])
-def test_proof_matrix(home, skip, lock, expected):
+def test_proof_matrix(home, skip, lock, expected, wiki):
     (home / "run" / f"paper-workspace-{DAY}.lock").write_text(lock + "\n")
-    problem = adv.proof_problem({"skip": skip} if skip else {}, home / "run", DAY, TZ)
+    problem = adv.proof_problem({"skip": skip} if skip else {}, home / "run", DAY, TZ,
+                                lambda: (wiki, "error: Mac unreachable"))
     assert expected in problem if expected else problem is None

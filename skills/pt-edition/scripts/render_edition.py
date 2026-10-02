@@ -593,15 +593,24 @@ def unproven_unavailable_advice(edition, config, run_root):
     critic, and wrote desk-priority/notes.json by hand saying the tournament
     could not be completed. Only advice_unavailable.py writes that file, and
     this re-checks its proof (the lock that recorded it, and that lock's window
-    or the failed wiki check) before the page prints the reason.
+    or the wiki check, which must still fail) and that the section prints the
+    recorded reason, before the page prints it.
     """
-    if not any(desk_of(s) == "priority" and s.get("priority") is None
-               for s in edition["sections"]):
+    unavailable = [s for s in edition["sections"]
+                   if desk_of(s) == "priority" and s.get("priority") is None]
+    if not unavailable:
         return None
     owner = config.get("owner") if isinstance(config, dict) else None
     tz = owner.get("timezone") if isinstance(owner, dict) else None
     notes = _load_json_file(pathlib.Path(run_root) / "desk-priority" / "notes.json")
-    return advice_unavailable.proof_problem(notes or {}, run_root, edition["date"], tz or "UTC")
+    problem = advice_unavailable.proof_problem(notes or {}, run_root, edition["date"], tz or "UTC")
+    if problem:
+        return problem
+    # The page prints the section's own reason; only the proven one may reach the owner.
+    if any(s.get("could_not_source") != notes.get("could_not_source") for s in unavailable):
+        return ("the unavailable section's could_not_source is not the reason "
+                "advice_unavailable.py recorded in desk-priority/notes.json; copy it verbatim")
+    return None
 
 
 def _load_json_file(path):

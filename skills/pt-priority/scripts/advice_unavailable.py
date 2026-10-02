@@ -12,7 +12,7 @@ by hand: this script writes it, and only with a reason it can check.
       minutes before HH:MM. Refused when the window was 50 minutes or more.
   blocked --reason TEXT
       Orient could not reach the owner's wiki. Runs `wiki_setup.py --desk`
-      itself; refused when that succeeds.
+      itself; refused when that succeeds, and the renderer runs it again.
 
 A tournament that started and reached no accepted checkpoint has no reason
 here: the paper fails loudly instead of printing an unavailable card.
@@ -72,13 +72,16 @@ def window_minutes(taken, day, deliver_at, tz):
 
 
 def wiki_check():
-    done = subprocess.run([sys.executable, str(WIKI_SETUP), "--desk"],
-                          capture_output=True, text=True, timeout=300)
+    try:
+        done = subprocess.run([sys.executable, str(WIKI_SETUP), "--desk"],
+                              capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        return 1, "wiki_setup.py --desk timed out"
     lines = (done.stdout + done.stderr).strip().splitlines()
     return done.returncode, (lines[-1] if lines else "")
 
 
-def proof_problem(notes, run_root, day, tz):
+def proof_problem(notes, run_root, day, tz, wiki_fn=None):
     """Why an unavailable card is not proven, or None when it is."""
     skip = notes.get("skip") if isinstance(notes, dict) else None
     if not isinstance(skip, dict) or skip.get("kind") not in KINDS:
@@ -98,8 +101,11 @@ def proof_problem(notes, run_root, day, tz):
         if minutes >= MIN_TOURNAMENT_MINUTES:
             return (f"the paper took the lock {minutes} minutes before {skip['deliver_at']}, "
                     f"enough for the tournament ({MIN_TOURNAMENT_MINUTES}); run the tournament")
-    elif not str(skip.get("check") or "").strip():
-        return "a blocked desk carries no failed check"
+    else:
+        if not str(skip.get("check") or "").strip():
+            return "a blocked desk carries no failed check"
+        if (wiki_fn or wiki_check)()[0] == 0:
+            return "wiki_setup.py --desk succeeds now; the desk is not blocked -- run the tournament"
     return None
 
 
@@ -118,6 +124,7 @@ def main(argv=None):
     if taken is None:
         sys.exit("error: this paper does not hold today's paper-workspace lock")
     lock = taken.isoformat(timespec="seconds")
+    code = last = None
     if args.kind == "window":
         skip = {"kind": "window", "deliver_at": args.deliver_at, "lock": lock}
     else:
@@ -126,7 +133,7 @@ def main(argv=None):
             sys.exit("error: wiki_setup.py --desk succeeded; the desk is not blocked -- run the tournament")
         skip = {"kind": "blocked", "check": last, "lock": lock}
     notes = {"date": day, "could_not_source": [args.reason], "skip": skip}
-    problem = proof_problem(notes, run_root, day, owner_zone())
+    problem = proof_problem(notes, run_root, day, owner_zone(), lambda: (code, last))
     if problem:
         sys.exit(f"error: {problem}")
     path = run_root / "desk-priority" / "notes.json"
