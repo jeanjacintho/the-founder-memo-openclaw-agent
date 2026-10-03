@@ -270,11 +270,13 @@ test("a NO_REPLY line beside an email final is dropped; the runtime's reminder n
   assert.deepEqual(posts.map(post => post.body.body), [`Email "Booking" from "sender@example.com":\nMorgan asked about Thursday.\n\n${note}`]);
 });
 
-for (const [name, failures, paths, completed] of [
-  ["transient, retried and delivered", 1, ["/chats/home/messages"], true],
-  ["persistent, failed rather than dropped as delivered", Infinity, [], false],
+for (const [name, failures, truncated, paths, completed] of [
+  ["transient, retried and delivered", 1, false, ["/chats/home/messages"], true],
+  ["persistent, failed rather than dropped as delivered", Infinity, false, [], false],
+  ["truncated listing without the owner's DM, failed rather than dropped", 0, true, [], false],
 ] as const) test(`owner lookup failure: ${name}`, async t => {
-  t.after(() => { listingFailures = 0; });
+  truncatedListing = truncated;
+  t.after(() => { listingFailures = 0; truncatedListing = false; });
   const { posts, logs } = await run(t, "email", [{ chat: "thread", sender: outsider }], async dispatch => {
     listingFailures = failures;
     await final(dispatch, { text: "For you" }).catch(() => {});
@@ -282,16 +284,6 @@ for (const [name, failures, paths, completed] of [
   assert.deepEqual(posts.map(post => post.path), paths);
   assert.equal(logs.some(line => line.startsWith("completed chat=thread")), completed);
   assert.ok(!logs.some(line => line.includes("nowhere to deliver")));
-});
-
-test("a truncated listing without the owner's DM fails the turn rather than dropping the final", async t => {
-  truncatedListing = true;
-  t.after(() => { truncatedListing = false; });
-  const { posts, logs } = await run(t, "email", [{ chat: "thread", sender: outsider }], async dispatch => {
-    await final(dispatch, { text: "For you" }).catch(() => {});
-  });
-  assert.deepEqual(posts, []);
-  assert.ok(!logs.some(line => line.startsWith("completed chat=thread")));
 });
 
 for (const [name, persona, ownerName, sent] of [

@@ -107,19 +107,17 @@ for (const scene of ["owner DM", "owner group", "member group", "owner email"] a
 });
 
 for (const [mode, requested, expected] of [
-  ["untrusted", true, false], ["trusted", false, true],
-] as const) test(`group creation enforces ${mode} mode when trusted=${requested}`, async t => {
+  ["untrusted", true, false], ["trusted", false, true], ["ask", undefined, /explicit trust choice/],
+] as const) test(`group creation in ${mode} mode with trusted=${requested}`, async t => {
   const { failure, posts } = await runInboundTool(t, "owner DM", "plow_start_thread",
-    { members: ["+15550000002"], body: "Planning lunch", trusted: requested }, { threadTrust: mode });
-  assert.equal(failure, undefined);
-  assert.equal((posts[0].body as { trusted: boolean }).trusted, expected);
-});
-
-test("ask mode requires an explicit trust choice", async t => {
-  const { failure, posts } = await runInboundTool(t, "owner DM", "plow_start_thread",
-    { members: ["+15550000002"], body: "Planning lunch" }, { threadTrust: "ask" });
-  assert.match((failure as Error)?.message, /explicit trust choice/);
-  assert.deepEqual(posts, []);
+    { members: ["+15550000002"], body: "Planning lunch", ...(requested === undefined ? {} : { trusted: requested }) }, { threadTrust: mode });
+  if (typeof expected === "boolean") {
+    assert.equal(failure, undefined);
+    assert.equal((posts[0].body as { trusted: boolean }).trusted, expected);
+  } else {
+    assert.match((failure as Error)?.message, expected);
+    assert.deepEqual(posts, []);
+  }
 });
 
 test("an ambiguous trust change latches delivery for the rest of the turn", async t => {
