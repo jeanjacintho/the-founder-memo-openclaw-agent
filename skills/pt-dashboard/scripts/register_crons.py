@@ -207,6 +207,11 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         "tournament only if none has ever been accepted. An older checkpoint is never a "
         "reason to stop the paper; continue research and compile the edition with its as-of date"
     )
+    attempts = script("pt-shared", "run_attempts.py")
+    next_try = (
+        f"the next scheduled paper is tomorrow at {hold_until}" if hold_until
+        else "they can ask again later"
+    )
     wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if hold_until else ""
     held = (
         "run the same acquire once more; if that is also 'held', another paper owns "
@@ -218,7 +223,13 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         f"Run {title} now, in one session. First run {lock} acquire "
         f"--name {WORKSPACE_LOCK} --today --stale-minutes {STALE_RUN_MINUTES + lead_minutes}{wait}; "
         f"if its output is 'held', "
-        f"{held}. Then "
+        f"{held}. Then run {attempts} begin: on 'proceed' go on; on 'give-up' the day's "
+        f"attempts are spent (retries after a provider rate limit only feed it), so run {lock} "
+        f"release --name {WORKSPACE_LOCK} --today, send the owner exactly one short message "
+        f"with message(action=send), channel plow, accountId chat, target plow-owner, saying the "
+        f"edition was not delivered, that the provider kept refusing, that you are not trying "
+        f"again now, and that {next_try}, and stop; on 'give-up-quiet' release the lock and "
+        f"stop without a message. Then "
         f"/opt/plow/skills/pt-shared/scripts/prepare_daily_run.py --preserve-priority "
         f"(it archives prior scratch after the lock; do not inspect or reuse old run files). Then "
         f"/opt/plow/skills/pt-intake/scripts/topics.py reopen-sections "
@@ -231,6 +242,7 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         f"then every other standing desk it lists, in its order, then {roster}. "
         f"Then run pt-edition for the batch, delivering with post_to_chat.py "
         f"per pt-edition/SKILL.md step 2{hold}. "
+        f"Once post_to_chat.py has confirmed the post or staged the edition, run {attempts} delivered. "
         f"Release the lock with {lock} release --name {WORKSPACE_LOCK} --today. "
         f"{DELIVERY_FAILURE_NOTICE}"
     )
