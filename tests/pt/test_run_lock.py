@@ -172,3 +172,72 @@ def test_today_uses_the_real_owner_clock(pt_home):
     from datetime import datetime, timezone
     out(["acquire", "--name", "paper-workspace", "--today"])
     assert (pt_home / "run" / f"paper-workspace-{datetime.now(timezone.utc).date().isoformat()}.lock").is_file()
+
+
+def aged_lock(pt_home, minutes):
+    path = pt_home / "run" / "paper-workspace-2026-10-02.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    old = datetime.now(timezone.utc).astimezone() - timedelta(minutes=minutes)
+    path.write_text(old.isoformat(timespec="seconds") + "\n")
+    return path
+
+
+def touch_ago(path, minutes):
+    import os
+    import time
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x")
+    stamp = time.time() - minutes * 60
+    os.utime(path, (stamp, stamp))
+
+
+# A run killed by a model error or OpenClaw's exec timeout never releases; it
+# also stops writing, which is how the next attempt tells it from a slow one.
+def test_a_quiet_lock_is_taken_over_long_before_the_stale_limit(pt_home):
+    aged_lock(pt_home, 90)
+    touch_ago(pt_home / "run" / "desk-priority" / "notes.json", 80)
+    assert out(["acquire", "--name", "paper-workspace-2026-10-02", "--stale-minutes", "390"]) == (0, "stale-takeover")
+
+
+def test_a_lock_with_no_activity_at_all_is_quiet(pt_home):
+    aged_lock(pt_home, 90)
+    assert out(["acquire", "--name", "paper-workspace-2026-10-02", "--stale-minutes", "390"]) == (0, "stale-takeover")
+
+
+def test_a_run_that_is_still_writing_keeps_its_lock(pt_home):
+    aged_lock(pt_home, 90)
+    touch_ago(pt_home / "run" / "desk-priority" / "notes.json", 5)
+    assert out(["acquire", "--name", "paper-workspace-2026-10-02", "--stale-minutes", "390"]) == (0, "held")
+
+
+def test_other_locks_and_the_guard_are_not_activity(pt_home):
+    aged_lock(pt_home, 90)
+    touch_ago(pt_home / "run" / "delivery-order.lock", 1)
+    assert out(["acquire", "--name", "paper-workspace-2026-10-02", "--stale-minutes", "390"]) == (0, "stale-takeover")
+
+
+def test_a_young_lock_is_held_even_when_the_run_has_not_written_yet(pt_home):
+    aged_lock(pt_home, 10)
+    assert out(["acquire", "--name", "paper-workspace-2026-10-02", "--stale-minutes", "390"]) == (0, "held")
+
+
+def test_the_quiet_window_is_a_flag(pt_home):
+    aged_lock(pt_home, 90)
+    argv = ["acquire", "--name", "paper-workspace-2026-10-02", "--stale-minutes", "390", "--quiet-minutes", "120"]
+    assert out(argv) == (0, "held")
+
+
+def test_a_waiting_acquire_takes_over_when_the_holder_goes_quiet(pt_home, monkeypatch):
+    aged_lock(pt_home, 55)
+    touch_ago(pt_home / "run" / "notes.json", 54)
+
+    def time_passes(clock):
+        if clock.sleeps == 3:  # the minutes go by: still no write
+            aged_lock(pt_home, 61)
+            touch_ago(pt_home / "run" / "notes.json", 61)
+
+    clock = FakeClock(on_sleep=time_passes)
+    use_clock(monkeypatch, clock)
+    code, text = out(["acquire", "--name", "paper-workspace-2026-10-02", "--stale-minutes", "390", "--wait-seconds", "1200"])
+    assert (code, text) == (0, "stale-takeover") and clock.sleeps == 3

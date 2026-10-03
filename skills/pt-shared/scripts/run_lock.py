@@ -10,7 +10,7 @@ agent must never do. The scheduler has no dedup, so the lock is a file
 created with O_EXCL: the atomic primitive every process on the host agrees
 on.
 
-  acquire --name NAME [--today] [--stale-minutes N] [--wait-seconds N]
+  acquire --name NAME [--today] [--stale-minutes N] [--quiet-minutes N] [--wait-seconds N]
   release --name NAME [--today]
 
 `--today` appends `-YYYY-MM-DD`, the owner's day on the owner's clock
@@ -22,9 +22,10 @@ ran. Pass it to both acquire and release.
 session reads the decision instead of a status code:
 
   acquired        this process owns the run; release it when done
-  stale-takeover  a lock was there but older than --stale-minutes, so it is
-                  a dead run's leftover, not a live owner; this process now
-                  owns it
+  stale-takeover  a lock was there but older than --stale-minutes, or older than
+                  --quiet-minutes with nothing written under the run directory
+                  since, so it is a dead run's leftover, not a live owner; this
+                  process now owns it
   held            a fresh owner is running it; stop, do not start a second
 
 `--wait-seconds N` (default 0) makes a fresh `held` wait: acquire polls once
@@ -33,6 +34,14 @@ stale, or N seconds pass, and only then answers `held`. A scheduled paper uses
 it so an on-demand copy holding the workspace does not cost it the day.
 Keep N under OpenClaw's 30-minute exec timeout: without the
 process tool, exec runs synchronously until then.
+
+The lock holds only a timestamp: the process that took it exits at once, and
+the run it guards lives in the gateway, so a PID says nothing about whether the
+run is alive. A live run keeps writing under the run directory (notes,
+checkpoints); a run that was killed (a model error, OpenClaw's exec timeout)
+leaves its lock behind and goes quiet. So a lock older than --quiet-minutes
+(default 60) with nothing written since is taken over without waiting for
+--stale-minutes, which stays the backstop for a run that is slow but not dead.
 
 `release` removes the lock; a missing lock is not an error (the run ended
 without acquiring, or two releases raced). The lock directory is
@@ -55,6 +64,8 @@ from owner_time import owner_today
 from pt_paths import pt_home
 
 DEFAULT_STALE_MINUTES = 120
+# A live run writes into the run directory at least this often.
+DEFAULT_QUIET_MINUTES = 60
 NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
@@ -81,6 +92,20 @@ def age_minutes(text):
     return (now() - stamp).total_seconds() / 60.0
 
 
+def quiet_minutes_since_activity(directory):
+    """Minutes since anything but a lock file was written under the run directory; None when nothing was."""
+    newest = None
+    for path in directory.rglob("*"):
+        if not path.is_file() or path.suffix == ".lock" or path.name == ".run_lock.guard":
+            continue
+        try:
+            stamp = path.stat().st_mtime
+        except OSError:
+            continue
+        newest = stamp if newest is None else max(newest, stamp)
+    return None if newest is None else (time.time() - newest) / 60.0
+
+
 @contextmanager
 def guarded(directory):
     """Serialize every check-and-take on this host.
@@ -100,17 +125,17 @@ def guarded(directory):
             fcntl.flock(guard, fcntl.LOCK_UN)
 
 
-def acquire(name, stale_minutes, wait_seconds=0):
+def acquire(name, stale_minutes, wait_seconds=0, quiet_minutes=DEFAULT_QUIET_MINUTES):
     deadline = time.monotonic() + wait_seconds
     while True:
-        outcome = _take(name, stale_minutes)
+        outcome = _take(name, stale_minutes, quiet_minutes)
         if outcome != "held" or time.monotonic() >= deadline:
             print(outcome)
             return 0
         time.sleep(1)
 
 
-def _take(name, stale_minutes):
+def _take(name, stale_minutes, quiet_minutes=DEFAULT_QUIET_MINUTES):
     """One check-and-take under the host guard: acquired, stale-takeover or held."""
     path = lock_path(name)
     with guarded(path.parent):
@@ -122,10 +147,12 @@ def _take(name, stale_minutes):
             except OSError:
                 text = ""
             age = age_minutes(text)
-            if age is None or age > stale_minutes:
-                # A lock we cannot parse, or one older than the whole run budget,
-                # is a dead run's leftover -- taking it over beats blocking the
-                # paper forever. A parsed-and-fresh lock is a live owner: held.
+            idle = quiet_minutes_since_activity(path.parent)
+            if age is None or age > stale_minutes or (age > quiet_minutes and (idle is None or idle > quiet_minutes)):
+                # A lock we cannot parse, one older than the whole run budget, or one
+                # whose run has gone quiet, is a dead run's leftover -- taking it over
+                # beats blocking the paper forever. A fresh lock whose run is still
+                # writing is a live owner: held.
                 path.write_text(now().isoformat(timespec="seconds") + "\n")
                 return "stale-takeover"
             return "held"
@@ -160,8 +187,9 @@ def main(argv=None):
     acq.add_argument("--name", required=True)
     acq.add_argument("--today", action="store_true", help="append the owner's date to NAME")
     acq.add_argument("--stale-minutes", type=int, default=DEFAULT_STALE_MINUTES)
+    acq.add_argument("--quiet-minutes", type=int, default=DEFAULT_QUIET_MINUTES)
     acq.add_argument("--wait-seconds", type=_seconds, default=0)
-    acq.set_defaults(func=lambda a: acquire(a.name, a.stale_minutes, a.wait_seconds))
+    acq.set_defaults(func=lambda a: acquire(a.name, a.stale_minutes, a.wait_seconds, a.quiet_minutes))
 
     rel = sub.add_parser("release", help="drop the run lock")
     rel.add_argument("--name", required=True)

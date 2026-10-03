@@ -111,6 +111,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   owner's date itself (`paper-workspace --today` is `paper-workspace-2026-09-25`), so never
   compute a date for a lock name. Prints one word
   (`acquired` / `stale-takeover` / `held`) and always exits 0 on acquire.
+  A lock whose run stopped writing under `run/` for `--quiet-minutes` (default 60) is taken over
+  as `stale-takeover` at once; `--stale-minutes` stays the backstop for a slow run.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.
   Every paper passes `--preserve-priority` (desks.md decides which advisor checkpoint
