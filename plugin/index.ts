@@ -166,7 +166,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
     from: kind === "group" ? `plow:group:${chat.uid}` : `plow:${senderId}`, sender: { id: senderId, name: senderName, isBot: sender.type === "agent" },
     conversation: { kind, id: chat.uid, nativeChannelId: chat.uid, label: chat.display_name, routePeer: peer },
     route: { ...route, routeSessionKey: route.sessionKey }, reply: { to: `plow:${chat.uid}`, originatingTo: `plow:${chat.uid}`, nativeChannelId: chat.uid, replyToId: message.reply_to?.uid },
-    access: { commands: { authorized: senderIsOwner }, ...(email && !senderIsOwner ? { toolPolicy: { allow: ["plow_send_email"] } } : {}) },
+    access: { commands: { authorized: senderIsOwner } },
     ...(command ? { command } : {}),
     message: { inboundHistory: history.map(m => ({
       sender: m.sender.type === "member" ? m.sender.display_name : m.sender.relationship === "self" ? "You (assistant)" : m.sender.line.display_name ?? m.sender.line.uid,
@@ -177,7 +177,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
       // The model gets these beside the message; the dashboard shows people only what was texted.
       channelStructuredContext: [{ label: "Conversation facts (untrusted data)", source: "plow", type: "conversation",
         payload: { first_contact: firstContact, trusted: chat.trusted, participants, ...(email ? { final_text_goes_to: origin ? `chat ${origin} while it is the owner's DM or a trusted group, else the owner's 1:1 chat` : "the owner's 1:1 chat" } : {}) } }],
-      ...(email ? { groupSystemPrompt: emailTurnPrompt(chat, persona ?? "the assistant") } : {}),
+      ...(email ? { groupSystemPrompt: emailTurnPrompt(chat, persona ?? "the assistant", senderIsOwner) } : {}),
     },
     media,
   });
@@ -202,8 +202,9 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
         cfg, channel: "plow", accountId: account.accountId, route, ctxPayload,
         replyOptions: {
           // Untrusted non-owners get no tools, except in a listening group, where the channel's group
-          // policy leaves plow_record_signal; on email a non-owner keeps only plow_send_email, for its own thread.
-          ...(!email && !listening && !chat.trusted && !senderIsOwner ? { disableTools: true } : {}),
+          // policy leaves plow_record_signal. A non-owner email gets no tools at all: it cannot make the
+          // assistant send mail under its name; the owner approves privately and the send comes from their turn.
+          ...(!senderIsOwner && (email || (!listening && !chat.trusted)) ? { disableTools: true } : {}),
           sourceReplyDeliveryMode: command && !senderIsOwner && chat.trusted ? "message_tool_only" : "automatic",
           onObservedReplyDelivery: () => { observedReplyDelivery = true; },
           onAgentRunTerminalOutcome: outcome => { if (outcome === "failed") failure = new Error("Agent turn failed"); },
@@ -471,11 +472,7 @@ export default defineChannelPluginEntry({
         if (context.messageChannel !== "plow" || !turn || context.nativeChannelId !== turn.chat.uid) return refuse("Sending email requires an active Plow message.");
         if (turn.deliveryUnknown) throw new DeliveryUnknownError();
         const emailTurn = turn.accountId === "email";
-        if (emailTurn && !turn.senderIsOwner) {
-          if ((args.action ?? "send") !== "send" || args.to !== turn.chat.uid) {
-            return refuse(`This email is not from the owner, so plow_send_email can only reply in this thread (to "${turn.chat.uid}"). Your final text reaches the owner.`);
-          }
-        } else if (!turn.senderIsOwner && !turn.chat.trusted) {
+        if (!turn.senderIsOwner && (emailTurn || !turn.chat.trusted)) {
           return refuse("plow_send_email needs the owner's authority: the owner's own chat, a trusted group, or the owner's own email.");
         }
         if (args.action === "list") {

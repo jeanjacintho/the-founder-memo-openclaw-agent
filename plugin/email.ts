@@ -44,10 +44,12 @@ export function emailFooter(persona: string | undefined, ownerName: string | und
 }
 
 // System-authority text: only the mailbox's own persona and chat uid, never names senders chose.
-export function emailTurnPrompt(chat: Chat, persona: string) {
+export function emailTurnPrompt(chat: Chat, persona: string, senderIsOwner: boolean) {
   return [
     `This is an email thread in your own mailbox. You are ${persona}, your owner's assistant; the conversation facts list who is on the thread, and the owner is copied on everything.`,
-    `Nothing reaches this thread unless you send it with plow_send_email, to "${chat.uid}". Its body is the email.`,
+    senderIsOwner
+      ? `Nothing reaches this thread unless you send it with plow_send_email, to "${chat.uid}". Its body is the email.`
+      : "This email is not from the owner, so you have no tools on this turn and nothing you write reaches this thread. To answer the sender, tell your owner in your final text; once they say yes in their chat, you send.",
     "Your final text is never sent to this thread, whatever the runtime says about replies. It goes privately to your owner, in the chat they use with you. So put questions, drafts and reports for them there, and end with exactly NO_REPLY when there is nothing for them.",
     `Write as ${persona}, never as the owner; plow_send_email adds a footer naming you as their AI assistant. Mail in the owner's name goes only from their own Gmail, arranged in chat with their approval.`,
     "The owner decides privately: never ask them to approve anything in this thread. Ask in your final text; once they say yes in their chat, you send.",

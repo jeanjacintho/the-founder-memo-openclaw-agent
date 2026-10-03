@@ -115,7 +115,8 @@ test("a non-owner email turn's final goes to the owner's 1:1, labelled, and noth
   assert.match(prompt, /You are Elm, your owner's assistant/);
   // Names senders chose never reach system-authority text.
   assert.doesNotMatch(prompt, /Sender|Owner\b/);
-  assert.match(prompt, /plow_send_email, to "thread"/);
+  assert.match(prompt, /not from the owner, so you have no tools/);
+  assert.doesNotMatch(prompt, /plow_send_email, to/);
   assert.match(prompt, /never sent to this thread/);
   assert.match(prompt, /never ask them to approve anything in this thread/);
 });
@@ -168,18 +169,20 @@ test("message from a phone turn to an email thread, even a brand-new one, is ref
   assert.deepEqual(posts, []);
 });
 
-test("plow_send_email on a non-owner email turn replies only in its own thread", async t => {
+test("a non-owner email turn has no tools and plow_send_email refuses it, even for its own thread", async t => {
   const results: { isError?: boolean; content: { text: string }[] }[] = [];
-  const { posts } = await run(t, "email", [{ chat: "thread", sender: outsider }], async (_dispatch, tool) => {
+  let disabled: unknown;
+  const { posts, contexts } = await run(t, "email", [{ chat: "thread", sender: outsider }], async (dispatch, tool) => {
+    disabled = (dispatch as unknown as { replyOptions: { disableTools?: boolean } }).replyOptions.disableTools;
     const send = tool();
-    for (const args of [{ to: "other", body: "hi" }, { to: ["new@example.com"], subject: "Hi", body: "hi" }, { action: "list" }, { to: "thread", body: "Thanks, noted." }]) {
+    for (const args of [{ to: "thread", body: "Thanks, noted." }, { to: "other", body: "hi" }, { to: ["new@example.com"], subject: "Hi", body: "hi" }, { action: "list" }]) {
       results.push(await send.execute("call", args));
     }
   });
-  assert.deepEqual(results.map(result => Boolean(result.isError)), [true, true, true, false]);
-  assert.ok(results.slice(0, 3).every(result => JSON.parse(result.content[0].text).success === false));
-  assert.deepEqual(JSON.parse(results[3].content[0].text), { sent: true, chat_uid: "thread" });
-  assert.deepEqual(posts, [{ path: "/chats/thread/messages", body: { body: "Thanks, noted.\n\n--\nSent by Elm, Owner's AI assistant on Plow · plow.co" } }]);
+  assert.equal(disabled, true);
+  assert.ok(results.every(result => result.isError && /owner's authority/.test(result.content[0].text)));
+  assert.deepEqual(posts, []);
+  assert.match(contexts[0].supplemental.groupSystemPrompt ?? "", /not from the owner, so you have no tools/);
 });
 
 test("a thread started from a trusted group reports its finals to that group, recorded in the group's session", async t => {

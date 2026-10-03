@@ -167,7 +167,9 @@ is one sender across chats; the owner is `plow-owner`.
 
 An email turn's final text never reaches the sender: it goes privately to the
 owner (the chat the thread was started from, else their 1:1), and mail is sent
-only with `plow_send_email`.
+only with `plow_send_email`. A turn on mail from anyone but the owner has no tools, so
+an email cannot make the assistant send; the owner approves in their chat and
+the send comes from their turn.
 
 ## Moving a paper from the Hermes edition
 
