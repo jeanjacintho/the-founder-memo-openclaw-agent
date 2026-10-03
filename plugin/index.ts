@@ -113,6 +113,8 @@ async function durableSend(cfg: OpenClawConfig, turn: ActiveTurn, route: { agent
     sessionKey: route.sessionKey, channel: "plow", accountId, to: routeTo, createIfMissing: true,
   });
   const sessionId = sessionText ? getSessionEntry({ agentId: route.agentId, sessionKey: route.sessionKey })?.sessionId : undefined;
+  // The durable send trims its payload and the permit matches the exact text, so trim once, here.
+  text = text.trim();
   const permit = { accountId, to, text };
   let result;
   try {

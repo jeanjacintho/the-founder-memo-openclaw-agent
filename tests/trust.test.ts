@@ -141,8 +141,9 @@ for (const scene of ["owner group", "member group", "owner email"] as const) tes
 
 test("follow-up to another phone chat", async t => {
   const [chatUid, text, sessionKey] = ["cht_direct_target", "See you at lunch.", "agent:main:plow:direct:cht_direct_target"];
+  // Surrounding whitespace is trimmed by the durable send; the permit must match what is sent.
   const { apiBase, result, failure, posts, transcript } = await runInboundTool(t, "owner DM", "plow_reply_to", {
-    chat_uid: chatUid, text,
+    chat_uid: chatUid, text: `  ${text}\n`,
   });
   assert.equal(failure, undefined);
   assert.deepEqual((result as { details: unknown }).details, { message_uid: "sent" });
