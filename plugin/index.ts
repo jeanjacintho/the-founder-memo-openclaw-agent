@@ -4,7 +4,7 @@ import { defineChannelPluginEntry, type ChannelPlugin, type PluginRuntime, type 
 import { hasVisibleChannelTurnDispatch } from "openclaw/plugin-sdk/channel-message";
 import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
 import { request, listen, accepts, ownerChat, HttpError, DeliveryUnknownError, type Account, type Chat, type Message, type TurnOutcome } from "./transport.ts";
-import { gateContext, isOwnerDm, isOwnerDmTurn, runGate } from "./setup-gate.ts";
+import { gateContext, isOwnerDmTurn, runGate } from "./setup-gate.ts";
 import { CATEGORIES, GroupInbox, isGroupTurn, isListeningGroup, listeningContext, recordSignal, type Category } from "./group-listen.ts";
 import { notifyFailedPaperRun } from "./cron-failure-notice.ts";
 

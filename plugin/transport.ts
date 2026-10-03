@@ -12,7 +12,6 @@ import { on, once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
 import { isListeningGroup } from "./group-listen.ts";
-import { turnFailedNotice } from "./owner-phrases.ts";
 
 export type Member = { type: "member"; uid: string; display_name: string; role: string; provider_key?: string };
 export type Agent = { type: "agent"; relationship: string; line: { uid: string; display_name?: string } };

@@ -26,7 +26,6 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
   server.on("connection", (socket: { send: (text: string) => void }) => socket.send(JSON.stringify({ event_type: "message_received", event_id: "event", chat_id: "chat", data: { message: { uid: "inbound", direction: "inbound", sender, body: "hello", attachments: [], created_at: new Date().toISOString() } } })));
   const logs: string[] = [];
   let observation: boolean | undefined;
-  let strandedRetry: (() => Promise<unknown>) | undefined;
   let context: { message: { bodyForAgent?: string; rawBody: string }; supplemental: { channelStructuredContext: { label: string; payload: { trusted: boolean; participants: unknown[] } }[] } } | undefined;
   let channel: { outbound: { sendText: (context: object) => Promise<unknown> }; gateway: { startAccount: (context: object) => Promise<void> } } | undefined;
   entry.register({ registrationMode: "full", registerTool() {}, logger: { info() {} }, on() {},
@@ -49,8 +48,8 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
         }
         if (outcome === "delivered") { observation = dispatch.delivery.observeMessageSent; await dispatch.delivery.deliver({ text: "reply" }); }
         if (outcome === "plain-final") {
-          if (dispatch.replyOptions.sourceReplyDeliveryMode === "automatic") await dispatch.delivery.deliver({ text: "plain reply" });
-          else strandedRetry = () => channel!.outbound.sendText({ cfg: { channels: { plow: account } }, accountId: "chat", to: "chat", text: "plain reply" });
+          assert.equal(dispatch.replyOptions.sourceReplyDeliveryMode, "automatic");
+          await dispatch.delivery.deliver({ text: "plain reply" });
         }
         if (outcome === "native-source" || outcome === "native-source-final") {
           await channel!.outbound.sendText({ cfg: { channels: { plow: account } }, accountId: "chat", to: "plow:chat", text: "native reply" });
@@ -78,8 +77,6 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
   assert.ok(channel);
   await channel.gateway.startAccount({ account, cfg: { messages: { visibleReplies: "automatic" } }, abortSignal: controller.signal, log: { info(text: string) { logs.push(text); if (text.startsWith("acked")) controller.abort(); } } });
   if (outcome === "plain-final") {
-    assert.equal(strandedRetry, undefined);
-    await strandedRetry?.();
     const texts = fetch.mock.calls.filter(call => String(call.arguments[0]).endsWith("/messages")).map(call => JSON.parse((call.arguments[1] as RequestInit).body as string).body);
     assert.deepEqual(texts, ["plain reply"]);
     assert.ok(logs.some(text => text.startsWith("completed chat=chat message=inbound")));

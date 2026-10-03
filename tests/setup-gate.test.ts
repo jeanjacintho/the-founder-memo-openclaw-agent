@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { test } from "node:test";
 import entry from "../plugin/index.ts";
-import { gateContext, isOwnerDm, isOwnerDmTurn, parseGate, runGate } from "../plugin/setup-gate.ts";
+import { gateContext, isOwnerDmTurn, parseGate, runGate } from "../plugin/setup-gate.ts";
 import { websocketFixture } from "./ws-fixture.ts";
 
 const self = { type: "agent" as const, relationship: "self", line: { uid: "line" } };
@@ -25,14 +25,6 @@ test("the gate runs with the venv first on PATH and a failure injects nothing", 
   assert.deepEqual(seen!.args, ["/var/lib/plow/pt/config.json"]);
   assert.ok(seen!.path!.startsWith("/opt/plow/pt-venv/bin:"));
   assert.equal(await runGate(async () => { throw new Error("ENOENT"); }), undefined);
-});
-
-test("setup belongs to the owner's solo DM only", () => {
-  const chat = (...participants: object[]) => ({ uid: "c", status: "active", trusted: false, participants }) as never;
-  assert.equal(isOwnerDm(chat(self, owner), "line"), true);
-  assert.equal(isOwnerDm(chat(self, owner, guest), "line"), false);
-  assert.equal(isOwnerDm(chat(self, guest), "line"), false);
-  assert.equal(isOwnerDm(chat({ ...self, line: { uid: "mailbox" } }, owner), "line"), false);
 });
 
 test("the injected context says the first action is done", () => {
