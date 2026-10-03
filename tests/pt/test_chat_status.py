@@ -86,10 +86,16 @@ class TestOneNoticePerWait:
         calls = [1000.0, 1030.0, 1060.0, 1060.0 + status.BUSY_NEW_WAVE_SECONDS + 1]
         assert self.simulate(stamp, calls) == ["busy", "busy-still", "busy"]
 
-    def test_a_stamp_without_a_last_call_still_ages_from_its_start(self, tmp_path):
+
+class TestNewWave:
+    def test_the_first_call_after_an_owner_answer_gets_its_own_hang_on(self, tmp_path):
         stamp = tmp_path / "setup-busy.json"
         status.record_busy_start(stamp, now=1000.0)
-        assert status.busy_action(stamp, now=1000.0 + status.BUSY_NEW_WAVE_SECONDS + 1) == "send-start"
+        status.record_busy_still(stamp)
+        status.record_busy_call(stamp, now=1060.0)
+        # The owner answers a minute later and the next step is slow again.
+        assert status.busy_action(stamp, now=1120.0) == "already"
+        assert status.busy_action(stamp, now=1120.0, new_wave=True) == "send-start"
 
 
 class TestLanguageFromConfig:
