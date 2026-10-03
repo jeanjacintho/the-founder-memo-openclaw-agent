@@ -8,7 +8,10 @@ the same Plow Chat path as post_to_chat.py:
     /opt/plow/skills/pt-shared/scripts/chat_status.py --busy
 
 The first call posts a hang-on; later calls in the same wave no-op until
-BUSY_REPEAT_SECONDS, then post "still on it" once. Cron never calls it.
+BUSY_REPEAT_SECONDS, then post "still on it" once. A wave lasts as long as
+calls keep coming: it ends only after BUSY_NEW_WAVE_SECONDS with no call, so a
+long wait costs the owner two texts, not two every minute and a half. Cron
+never calls it.
 """
 from __future__ import annotations
 
@@ -27,7 +30,7 @@ from bearer_http import post_json  # noqa: E402
 from pt_paths import config_file, pt_home  # noqa: E402
 
 BUSY_REPEAT_SECONDS = 20
-BUSY_NEW_WAVE_SECONDS = 90
+BUSY_NEW_WAVE_SECONDS = 600
 BUSY_STAMP_DEFAULT = str(pt_home() / "run" / "setup-busy.json")
 CONFIG_DEFAULT = str(config_file())
 
@@ -76,6 +79,15 @@ def record_busy_still(path):
     _write_stamp(path, data)
 
 
+def record_busy_call(path, now=None):
+    """A call that sent nothing still keeps its wave alive."""
+    data = _load_stamp(str(path))
+    if data is None:
+        return
+    data["last_call"] = float(now if now is not None else time.time())
+    _write_stamp(path, data)
+
+
 def busy_action(path, now=None, repeat_seconds=BUSY_REPEAT_SECONDS,
                 new_wave_seconds=BUSY_NEW_WAVE_SECONDS):
     data = _load_stamp(str(path))
@@ -88,7 +100,11 @@ def busy_action(path, now=None, repeat_seconds=BUSY_REPEAT_SECONDS,
         return "send-start"
     clock = float(now if now is not None else time.time())
     elapsed = clock - start
-    if elapsed >= new_wave_seconds:
+    try:
+        quiet = clock - float(data.get("last_call", start))
+    except (TypeError, ValueError):
+        quiet = elapsed
+    if quiet >= new_wave_seconds:
         return "send-start"
     if data.get("still_sent") is True:
         return "already"
@@ -121,8 +137,10 @@ def main():
         kind = "busy" if action == "send-start" else "busy-still"
         post_status(status_text(kind, owner_language(args.config)), args.dry_run)
         (record_busy_start if kind == "busy" else record_busy_still)(args.stamp)
+        record_busy_call(args.stamp)
         print(f"STATUS:{kind}")
         return
+    record_busy_call(args.stamp)
     print(f"STATUS:{action}")
 
 
