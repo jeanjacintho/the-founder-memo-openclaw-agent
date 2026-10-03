@@ -12,6 +12,7 @@ on.
 
   acquire --name NAME [--today] [--stale-minutes N] [--wait-seconds N]
   release --name NAME [--today]
+  name    --name NAME --today       print the resolved lock name and nothing else
 
 `--today` appends `-YYYY-MM-DD`, the owner's day on the owner's clock
 (owner_time.py), so a paper's lock is `paper-workspace-2026-09-25` without
@@ -179,6 +180,11 @@ def main(argv=None):
     rel.add_argument("--name", required=True)
     rel.add_argument("--today", action="store_true", help="append the owner's date to NAME")
     rel.set_defaults(func=lambda a: release(a.name))
+
+    nam = sub.add_parser("name", help="print the lock name with today's date, to pin it")
+    nam.add_argument("--name", required=True)
+    nam.add_argument("--today", action="store_true", help="append the owner's date to NAME")
+    nam.set_defaults(func=lambda a: print(a.name) or 0)
 
     args = parser.parse_args(argv)
     if not NAME_RE.fullmatch(args.name):

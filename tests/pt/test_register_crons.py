@@ -455,6 +455,15 @@ class TestMain:
         assert "once more" not in fresh
         assert waits not in crons.paper_prompt()
 
+    def test_a_fresh_advice_copy_pins_its_lock_name_across_midnight(self):
+        # Each retry is a new acquire; `--today` would re-resolve the date on every one.
+        fresh = crons.paper_prompt(fresh_advice=True)
+        assert fresh.count("--name paper-workspace --today") == 1
+        assert "run_lock.py name --name paper-workspace --today" in fresh
+        assert fresh.count("--name LOCK") == 3  # acquire, release on refusal, release
+        assert fresh.index("run_lock.py name") < fresh.index("run_lock.py acquire")
+        assert "--name LOCK" not in crons.paper_prompt()
+
     def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
         with pytest.raises(SystemExit):
             run_main(tmp_path, monkeypatch, [], FakeScheduler(registered_like_spec([])),

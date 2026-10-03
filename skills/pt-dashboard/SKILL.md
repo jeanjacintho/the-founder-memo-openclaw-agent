@@ -127,8 +127,9 @@ From a turn (exec inherits the gateway token):
 
 Never force a paper job (`pt-daily-edition`, `pt-paper-*`) this way: past its
 delivery hour the window rule skips the advice tournament, so the copy prints
-no fresh advice. To re-run a paper, queue a copy with `register_crons.py --now`,
-or `--now --fresh-advice` when the owner asked to re-evaluate priorities.
+no fresh advice. To re-run the main paper, queue a copy with `register_crons.py --now`,
+or `--now --fresh-advice` when the owner asked to re-evaluate priorities. `--now` always
+builds the main paper's roster, so it is not a recovery for a `pt-paper-*` job.
 
 A forced run exercises the whole path a nightly fire would take once it
 starts; its `runId` starts with `manual:`. Only a scheduled fire proves the
