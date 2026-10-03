@@ -102,7 +102,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
     chatUid: chat.uid, messageUid: message.uid, senderId: senderIsOwner ? "plow-owner" : senderId,
     fromName: senderName || "unnamed member", text: message.body ?? "", receivedAt: message.created_at,
   });
-  log(`turn ${JSON.stringify({ chat: chat.uid, message: message.uid, first_contact: firstContact, senderId, senderName, senderIsOwner, sessionKey: route.sessionKey, listening })}`);
+  log(`turn ${JSON.stringify({ chat: chat.uid, message: message.uid, first_contact: firstContact, senderName, senderIsOwner, sessionKey: route.sessionKey, listening })}`);
   const deliveryState: DeliveryState = { unknown: false };
   let failure: unknown;
   let observedReplyDelivery = false;
