@@ -237,20 +237,15 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
                   if (error instanceof HttpError && [403, 404].includes(error.status)) return undefined;
                   throw error;
                 }) : undefined;
+                // A missing or truncated owner listing throws: the final is never dropped as if delivered.
                 return recorded && accepts(phone, recorded) && (recorded.trusted || findOwnerChat(phone, [recorded]) === recorded) ? recorded
-                  // Read fresh: a cached roster can be stale, and a failed read is not proof there is no 1:1.
-                  : findOwnerChat(phone, (await request<Page<Chat>>(phone, "/chats")).data);
+                  : await ownerChat(phone);
               };
               // Nothing has been sent yet, so a failed lookup is safe to retry; the email listener has no replay.
-              let target: Chat | undefined;
+              let target!: Chat;
               for (let attempt = 1; ; attempt++) {
                 try { target = await resolveTarget(); break; }
                 catch (error) { if (attempt === 3) throw error; await delay(500); }
-              }
-              deliveredToOwner = true;
-              if (!target) {
-                log(`dropped final chat=${chat.uid} message=${message.uid}: nowhere to deliver`);
-                return { messageIds: [] };
               }
               // Durable, so the final is also recorded in the session of the chat it lands in. Trimmed,
               // because the durable send trims its text and its permit matches the exact text.
@@ -259,6 +254,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
               // People see no chat ids; that chat's session copy keeps the thread's, to reply there.
               const sent = await durableSend(cfg, activeTurn.getStore()!, route, "chat", target.uid, routeTo, `${label}:\n${text}`, kind,
                 `${label} (thread ${chat.uid}):\n${text}`);
+              deliveredToOwner = true;
               log(`delivered chat=${chat.uid} to=${target.uid} message=${sent}`);
               return { messageIds: [sent] };
             }

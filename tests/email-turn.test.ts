@@ -32,6 +32,8 @@ const chats: Record<string, { uid: string; status: string; trusted: boolean; dis
 const forbidden = new Set<string>();
 // Set inside a turn to make the next N chat listings fail.
 let listingFailures = 0;
+// Makes every chat listing a truncated page without the owner's DM.
+let truncatedListing = false;
 const cfg = { channels: { plow: { lineUid: "line", emailLineUid: "mail", emailName: "Elm" } } };
 const transcript = async (sessionKey: string) => {
   const entry = getSessionEntry({ agentId: "main", sessionKey });
@@ -56,7 +58,7 @@ async function run(t: TestContext, accountId: "chat" | "email", frames: { chat: 
       posts.push({ path, body: JSON.parse(options.body as string) });
       return path === "/chats" && posts.at(-1)!.body.line_uid === "mail" ? Response.json(newThread, { status: newThread.http ?? 201 }) : Response.json({ uid: `sent-${posts.length}` });
     }
-    if (path === "/chats") return listingFailures-- > 0 ? Response.json({}, { status: 503 }) : Response.json({ data: Object.values(chats), has_more: false });
+    if (path === "/chats") return listingFailures-- > 0 ? Response.json({}, { status: 503 }) : Response.json({ data: Object.values(chats).filter(chat => !truncatedListing || chat.uid !== "home"), has_more: truncatedListing });
     if (forbidden.has(path.split("/")[2])) return Response.json({}, { status: 403 });
     // Only an email thread's newest message is served: the listing reads it for last activity.
     if (path.endsWith("/messages")) return Response.json(new URL(url).searchParams.get("limit") !== "1" || !["thread", "other", "started"].includes(path.split("/")[2]) ? { data: [], has_more: false } : { data: [{ uid: "newest", direction: "outbound", sender: self("mail"), body: "Earlier", attachments: [], created_at: "2026-09-28T12:00:00Z" }], has_more: false });
@@ -277,6 +279,16 @@ for (const [name, failures, paths, completed] of [
   assert.deepEqual(posts.map(post => post.path), paths);
   assert.equal(logs.some(line => line.startsWith("completed chat=thread")), completed);
   assert.ok(!logs.some(line => line.includes("nowhere to deliver")));
+});
+
+test("a truncated listing without the owner's DM fails the turn rather than dropping the final", async t => {
+  truncatedListing = true;
+  t.after(() => { truncatedListing = false; });
+  const { posts, logs } = await run(t, "email", [{ chat: "thread", sender: outsider }], async dispatch => {
+    await final(dispatch, { text: "For you" }).catch(() => {});
+  });
+  assert.deepEqual(posts, []);
+  assert.ok(!logs.some(line => line.startsWith("completed chat=thread")));
 });
 
 for (const [name, persona, ownerName, sent] of [
