@@ -189,9 +189,10 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
             f"do not research unscoped sections, sections of another hour, or assignments)"
         )
     hold = (
-        f" with --hold-until {hold_until} so chat waits for that clock "
-        f"(if that hour has already passed, post immediately; never wait until tomorrow)"
-        if hold_until else ""
+        f", with --hold-until {hold_until} so chat waits for that clock "
+        f"(if that hour has already passed, post immediately; never wait until tomorrow), "
+        f"and with --clear-attempts"
+        if hold_until else ", with --clear-attempts"
     )
     lock = script("pt-shared", "run_lock.py")
     advice = (
@@ -227,7 +228,7 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         f"attempts are spent (retries after a provider rate limit only feed it), so run {lock} "
         f"release --name {WORKSPACE_LOCK} --today, send the owner exactly one short message "
         f"with message(action=send), channel plow, accountId chat, target plow-owner, saying the "
-        f"edition was not delivered, that the provider kept refusing, that you are not trying "
+        f"edition was not delivered after repeated attempts, that you are not trying "
         f"again now, and that {next_try}, and stop; on 'give-up-quiet' release the lock and "
         f"stop without a message. Then "
         f"/opt/plow/skills/pt-shared/scripts/prepare_daily_run.py --preserve-priority "
@@ -242,7 +243,6 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         f"then every other standing desk it lists, in its order, then {roster}. "
         f"Then run pt-edition for the batch, delivering with post_to_chat.py "
         f"per pt-edition/SKILL.md step 2{hold}. "
-        f"Once post_to_chat.py has confirmed the post or staged the edition, run {attempts} delivered. "
         f"Release the lock with {lock} release --name {WORKSPACE_LOCK} --today. "
         f"{DELIVERY_FAILURE_NOTICE}"
     )

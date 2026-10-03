@@ -1023,7 +1023,9 @@ def test_a_paper_counts_its_starts_and_gives_up_instead_of_retrying_all_day():
         assert prompt.index("run_lock.py acquire") < begin < prompt.index("prepare_daily_run.py")
         assert "'give-up'" in prompt and "'give-up-quiet'" in prompt
         assert "exactly one short message" in prompt
-        assert prompt.index("run_attempts.py delivered") < prompt.rindex("release --name paper-workspace --today")
+        assert "run_attempts.py delivered" not in prompt, "the count is cleared by post_to_chat.py, not by a command the model must remember"
+        assert "--clear-attempts" in prompt
+        assert "provider kept refusing" not in prompt, "the cause of the failures is not known"
     assert "the next scheduled paper is tomorrow at 09:30" in scheduled
     assert "they can ask again later" in on_demand
 

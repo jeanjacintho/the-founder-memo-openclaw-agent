@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-from datetime import date
 
 import pytest
 
@@ -18,51 +17,38 @@ def pt_home(tmp_path, monkeypatch):
     return tmp_path / "pt"
 
 
-def out(argv):
+def begin():
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        code = attempts.main(argv)
-    return code, buf.getvalue().strip()
+        code = attempts.main(["begin"])
+    assert code == 0
+    return buf.getvalue().strip()
 
 
 def test_the_first_attempts_proceed(pt_home):
-    assert [out(["begin"])[1] for _ in range(attempts.MAX_ATTEMPTS)] == ["proceed"] * attempts.MAX_ATTEMPTS
+    assert [begin() for _ in range(attempts.MAX_ATTEMPTS)] == ["proceed"] * attempts.MAX_ATTEMPTS
 
 
 def test_the_next_one_gives_up_and_only_the_first_give_up_asks_for_a_notice(pt_home):
     for _ in range(attempts.MAX_ATTEMPTS):
-        out(["begin"])
-    assert out(["begin"]) == (0, "give-up")
-    assert out(["begin"]) == (0, "give-up-quiet")
-    assert out(["begin"]) == (0, "give-up-quiet")
+        begin()
+    assert [begin(), begin(), begin()] == ["give-up", "give-up-quiet", "give-up-quiet"]
 
 
-def test_a_delivered_edition_starts_the_count_over(pt_home):
-    for _ in range(attempts.MAX_ATTEMPTS - 1):
-        out(["begin"])
-    assert out(["delivered"]) == (0, "cleared")
-    assert [out(["begin"])[1] for _ in range(attempts.MAX_ATTEMPTS)] == ["proceed"] * attempts.MAX_ATTEMPTS
-
-
-def test_delivered_without_a_count_is_not_an_error(pt_home):
-    assert out(["delivered"]) == (0, "cleared")
-
-
-def test_the_limit_is_a_flag(pt_home):
-    assert out(["begin", "--max-attempts", "1"])[1] == "proceed"
-    assert out(["begin", "--max-attempts", "1"])[1] == "give-up"
-
-
-def test_a_new_owner_day_has_a_fresh_count_and_the_old_file_goes(pt_home, monkeypatch):
+def test_a_confirmed_delivery_starts_the_day_over(pt_home):
     for _ in range(attempts.MAX_ATTEMPTS):
-        out(["begin"])
-    yesterday = pt_home / f"paper-attempts-{date(2020, 1, 1).isoformat()}.json"
-    yesterday.write_text('{"starts": 9, "told": true}')
-    assert out(["begin"])[1] == "give-up"
-    assert not yesterday.exists()
+        begin()
+    attempts.clear()
+    assert begin() == "proceed"
 
 
-def test_an_unreadable_count_is_a_fresh_one(pt_home):
-    pt_home.mkdir(parents=True)
-    (pt_home / f"paper-attempts-{attempts.owner_now().date().isoformat()}.json").write_text("not json")
-    assert out(["begin"])[1] == "proceed"
+def test_clearing_without_a_count_is_not_an_error(pt_home):
+    attempts.clear()
+
+
+def test_the_count_is_the_owner_days(pt_home, monkeypatch):
+    for _ in range(attempts.MAX_ATTEMPTS):
+        begin()
+    from datetime import date
+    monkeypatch.setattr(attempts, "owner_today", lambda: date(2030, 1, 1))
+    assert begin() == "proceed"

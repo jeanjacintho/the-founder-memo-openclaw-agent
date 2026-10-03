@@ -14,14 +14,14 @@ before it spends another model call.
                 give-up      the day's attempts are spent and no one has told
                              the owner yet: release the lock, send the owner
                              one message (the edition was not delivered and
-                             why it is not trying again), stop
+                             that it is not trying again now), stop
                 give-up-quiet  the owner was already told: release the lock, stop
-  delivered   run once post_to_chat.py has confirmed the post or staged the
-              edition: the day's count starts over
 
-Always exits 0, like run_lock.py, so a cron-fired session reads the word.
-The count lives in $PT_HOME/paper-attempts-YYYY-MM-DD.json (the owner's day);
-an earlier day's file is removed on the next `begin`.
+The count starts over when post_to_chat.py --clear-attempts confirms a post or
+stages the edition (see `clear`), not through a command the model has to
+remember. Always exits 0, like run_lock.py, so a cron-fired session reads the
+word. The count lives in $PT_HOME/paper-attempts-YYYY-MM-DD.json (the owner's
+day).
 """
 from __future__ import annotations
 
@@ -29,71 +29,42 @@ import argparse
 import json
 import sys
 
-from owner_time import owner_now
+from owner_time import owner_today
 from pt_paths import pt_home
 
 MAX_ATTEMPTS = 3
-PREFIX = "paper-attempts-"
 
 
-def _path(day):
-    return pt_home() / f"{PREFIX}{day.isoformat()}.json"
+def _path():
+    return pt_home() / f"paper-attempts-{owner_today().isoformat()}.json"
 
 
-def _load(path):
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return {"starts": 0, "told": False}
-    if not isinstance(data, dict) or not isinstance(data.get("starts"), int):
-        return {"starts": 0, "told": False}
-    return {"starts": max(data["starts"], 0), "told": data.get("told") is True}
-
-
-def _save(path, data):
+def begin():
+    path = _path()
+    data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
+    if data["starts"] >= MAX_ATTEMPTS:
+        word = "give-up-quiet" if data["told"] else "give-up"
+        data["told"] = True
+    else:
+        data["starts"] += 1
+        word = "proceed"
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data))
     tmp.replace(path)
-
-
-def _sweep(today):
-    for old in pt_home().glob(f"{PREFIX}*.json"):
-        if old != _path(today):
-            old.unlink(missing_ok=True)
-
-
-def begin(max_attempts=MAX_ATTEMPTS):
-    now = owner_now()
-    today = now.date()
-    _sweep(today)
-    path = _path(today)
-    data = _load(path)
-    if data["starts"] >= max_attempts:
-        word = "give-up-quiet" if data["told"] else "give-up"
-        data["told"] = True
-        _save(path, data)
-        print(word)
-        return 0
-    data["starts"] += 1
-    _save(path, data)
-    print("proceed")
+    print(word)
     return 0
 
 
-def delivered():
-    _path(owner_now().date()).unlink(missing_ok=True)
-    print("cleared")
-    return 0
+def clear():
+    """The edition is out: the owner's day starts over."""
+    _path().unlink(missing_ok=True)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    start = sub.add_parser("begin", help="count this start; proceed or give up")
-    start.add_argument("--max-attempts", type=int, default=MAX_ATTEMPTS)
-    start.set_defaults(func=lambda a: begin(a.max_attempts))
-    sub.add_parser("delivered", help="the edition is out: start the count over").set_defaults(func=lambda a: delivered())
+    sub.add_parser("begin", help="count this start; proceed or give up").set_defaults(func=lambda a: begin())
     args = parser.parse_args(argv)
     return args.func(args)
 
