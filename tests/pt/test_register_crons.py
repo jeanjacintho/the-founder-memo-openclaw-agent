@@ -36,7 +36,7 @@ def write_config(tmp_path, config=CONFIG):
     return path
 
 
-def row(name, enabled=True, jid=None, expr=None, tz=None, at=None, message=None, model=None):
+def row(name, enabled=True, jid=None, expr=None, tz=None, at=None, message=None, model=None, timeout=10800):
     """One automation as `openclaw cron list --json` returns it."""
     schedule = {}
     if at is not None:
@@ -48,6 +48,8 @@ def row(name, enabled=True, jid=None, expr=None, tz=None, at=None, message=None,
         payload["message"] = message
     if model is not None:
         payload["model"] = model
+    if timeout is not None:  # None: a job registered before the budget was set
+        payload["timeoutSeconds"] = timeout
     return {"id": jid or f"id-{name}", "name": name, "enabled": enabled,
             "sessionTarget": "isolated", "schedule": schedule, "payload": payload,
             "delivery": {"mode": "none"}}
@@ -1024,6 +1026,29 @@ def test_jobs_follow_the_model_boot_exports(monkeypatch):
     on_plow = {"schedule": "15 6 * * *", "tz": TZ, "prompt": "same", "model": "plow/openai/gpt-6-sol", "command": None}
     assert crons.job_drift(job, on_plow) is True
     assert crons.job_drift(job, {**on_plow, "model": "openai/gpt-6-sol"}) is False
+
+
+def test_a_job_without_a_run_budget_drifts_so_the_next_register_sets_it():
+    job = {"name": "pt-daily-edition", "schedule": "15 6 * * *", "tz": TZ, "prompt": "same"}
+    spec = {"schedule": "15 6 * * *", "tz": TZ, "prompt": "same", "model": crons.MODEL, "command": None}
+    assert crons.job_drift(job, spec) is False  # a spec that reports no timeout field says nothing
+    assert crons.job_drift(job, {**spec, "timeout": crons.PAPER_TIMEOUT_SECONDS}) is False
+    assert crons.job_drift(job, {**spec, "timeout": None}) is True  # the scheduler's 60-minute default
+    assert crons.job_drift(job, {**spec, "timeout": 3600}) is True
+
+
+def test_paper_jobs_are_registered_and_edited_with_an_explicit_run_budget():
+    backend = load_module("cron_backend_budget", "pt-dashboard/scripts/cron_backend.py").CronBackend()
+    job = {"name": "pt-daily-edition", "schedule": "15 6 * * *", "tz": TZ, "prompt": "p"}
+    for argv in (backend.create_argv(job), backend.edit_argv("id-1", job)):
+        assert argv[argv.index("--timeout-seconds") + 1] == "10800"
+    command = {"name": "pt-deliver", "every": "1m", "command": ["x"]}
+    assert argv[argv.index("--timeout-seconds") + 1] == "10800"
+    assert backend.create_argv(command)[backend.create_argv(command).index("--timeout-seconds") + 1] == "600"
+
+
+def test_the_run_budget_ends_before_the_workspace_lock_goes_stale():
+    assert crons.PAPER_TIMEOUT_SECONDS / 60 < crons.STALE_RUN_MINUTES
 
 
 def test_without_pt_model_jobs_stay_on_plow(monkeypatch):

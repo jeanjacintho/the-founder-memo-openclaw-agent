@@ -74,7 +74,7 @@ sys.path[:0] = [os.path.join(_SKILLS, "pt-intake", "scripts"), os.path.join(_SKI
 from record_owner_language import _write_json  # noqa: E402 -- the config's atomic writer
 from pt_paths import config_file, script  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from cron_backend import MODEL, OPENCLAW, CronBackend  # noqa: E402 -- sibling module
+from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
 CONFIG_FILE = str(config_file())
 # The only job names this spec owns. Pinned as a fullmatch so a name that
@@ -595,9 +595,14 @@ def job_drift(job, spec):
     field is silence, not a mismatch. Schedule, zone, prompt and model are
     the fields a spec change actually moves (the delivery hour, the owner's
     zone, the lead, the delivery contract, the model the paper is tuned on).
+    The run budget is the exception: a job registered before it was set reports
+    no timeout at all, which is the scheduler's 60-minute default, so a reported
+    spec with no timeout drifts and the next register moves it.
     """
     if job.get("command") is not None:  # a command job has no prompt or model
         return spec.get("command") is not None and spec["command"] != job["command"]
+    if "timeout" in spec and spec["timeout"] != PAPER_TIMEOUT_SECONDS:
+        return True
     for key in ("schedule", "tz", "prompt", "model"):
         have = spec.get(key)
         want = job.get(key, MODEL) if key == "model" else job.get(key)
