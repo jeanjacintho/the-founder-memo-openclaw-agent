@@ -457,7 +457,7 @@ export default defineChannelPluginEntry({
     api.registerTool(context => {
       const cfg = context.config;
       const persona = cfg && plugin.config.resolveAccount(cfg, "chat").emailName;
-      // Receipts match the Hermes image's plow_send_email: failures are {success: false, error, …}.
+      // Failures are reported as {success: false, error, …}.
       const refuse = (error: string, extra: object = {}) => {
         const result = { success: false, error, ...extra };
         return { isError: true, content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result };
