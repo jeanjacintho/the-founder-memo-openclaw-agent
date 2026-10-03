@@ -223,11 +223,22 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
     # a paper that starts in the minute before it runs would otherwise end it at 'held'.
     waits = bool(hold_until) or fresh_advice
     wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if waits else ""
-    held = (
-        "run the same acquire once more; if that is also 'held', another paper owns "
-        "the workspace -- stop"
-        if waits else "another paper owns the workspace -- stop"
-    )
+    if fresh_advice:
+        # The tournament alone takes 35-50 minutes, so two rounds can end before a
+        # paper that won the workspace in the scheduling gap lets go; its lock
+        # goes stale on its own after STALE_RUN_MINUTES, which bounds this.
+        held = (
+            "run the same acquire again, and again for as long as it prints 'held' "
+            "(each round waits; the other paper's lock expires on its own) -- never stop "
+            "at 'held', the owner was promised this evaluation"
+        )
+    elif waits:
+        held = (
+            "run the same acquire once more; if that is also 'held', another paper owns "
+            "the workspace -- stop"
+        )
+    else:
+        held = "another paper owns the workspace -- stop"
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
         f"Run {title} now, in one session. First run {lock} acquire "

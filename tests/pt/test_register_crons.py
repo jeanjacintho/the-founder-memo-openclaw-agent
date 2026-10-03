@@ -449,7 +449,10 @@ class TestMain:
     def test_a_fresh_advice_copy_waits_for_the_workspace(self):
         waits = f"--wait-seconds {crons.HELD_LOCK_WAIT_SECONDS}"
         assert waits in crons.paper_prompt(fresh_advice=True)
-        assert "run the same acquire once more" in crons.paper_prompt(fresh_advice=True)
+        fresh = crons.paper_prompt(fresh_advice=True)
+        # Two rounds (~40 min) can end before a paper that won the gap lets go.
+        assert "for as long as it prints 'held'" in fresh
+        assert "once more" not in fresh
         assert waits not in crons.paper_prompt()
 
     def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):

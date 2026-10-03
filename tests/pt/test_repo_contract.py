@@ -691,6 +691,8 @@ class TestSoul:
         soul = AGENTS.read_text()
         assert "register_crons.py --now --fresh-advice" in intake
         assert "Never fire a paper job with `openclaw cron run`" in soul
+        dashboard = (ROOT / "pt-dashboard" / "SKILL.md").read_text()
+        assert "Never force a paper job" in dashboard
 
     def test_an_owner_chat_message_is_a_reopenable_item(self):
         # An owner correction texted to the agent's line had no documented
