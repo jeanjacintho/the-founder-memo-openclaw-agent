@@ -29,10 +29,25 @@ def test_the_first_attempts_proceed(pt_home):
     assert [begin() for _ in range(attempts.MAX_ATTEMPTS)] == ["proceed"] * attempts.MAX_ATTEMPTS
 
 
-def test_the_next_one_gives_up_and_only_the_first_give_up_asks_for_a_notice(pt_home):
+def told():
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        assert attempts.main(["told"]) == 0
+    return buf.getvalue().strip()
+
+
+def test_the_next_one_gives_up_and_stays_quiet_only_once_the_owner_was_told(pt_home):
     for _ in range(attempts.MAX_ATTEMPTS):
         begin()
-    assert [begin(), begin(), begin()] == ["give-up", "give-up-quiet", "give-up-quiet"]
+    assert begin() == "give-up"
+    assert told() == "told"
+    assert [begin(), begin()] == ["give-up-quiet", "give-up-quiet"]
+
+
+def test_a_failed_notice_leaves_the_owner_untold_so_the_next_start_tries_again(pt_home):
+    for _ in range(attempts.MAX_ATTEMPTS):
+        begin()
+    assert [begin(), begin(), begin()] == ["give-up"] * 3
 
 
 def test_a_confirmed_delivery_starts_the_day_over(pt_home):

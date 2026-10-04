@@ -1025,6 +1025,7 @@ def test_a_paper_counts_its_starts_and_gives_up_instead_of_retrying_all_day():
         assert "exactly one short message" in prompt
         assert "run_attempts.py delivered" not in prompt, "the count is cleared by post_to_chat.py, not by a command the model must remember"
         assert "--clear-attempts" in prompt
+        assert "once that send succeeds run" in prompt and "run_attempts.py told" in prompt, "told only after the send"
         assert "provider kept refusing" not in prompt, "the cause of the failures is not known"
     assert "the next scheduled paper is tomorrow at 09:30" in scheduled
     assert "they can ask again later" in on_demand

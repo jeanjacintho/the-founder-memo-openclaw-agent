@@ -14,8 +14,12 @@ before it spends another model call.
                 give-up      the day's attempts are spent and no one has told
                              the owner yet: release the lock, send the owner
                              one message (the edition was not delivered and
-                             that it is not trying again now), stop
+                             that it is not trying again now), run `told`, stop
                 give-up-quiet  the owner was already told: release the lock, stop
+
+  told        run once that message was SENT. Only then does the next start
+              answer give-up-quiet: a send that failed leaves the owner
+              untold, so the next start tries again.
 
 The count starts over when post_to_chat.py --clear-attempts confirms a post or
 stages the edition (see `clear`), not through a command the model has to
@@ -44,7 +48,6 @@ def begin():
     data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
     if data["starts"] >= MAX_ATTEMPTS:
         word = "give-up-quiet" if data["told"] else "give-up"
-        data["told"] = True
     else:
         data["starts"] += 1
         word = "proceed"
@@ -53,6 +56,19 @@ def begin():
     tmp.write_text(json.dumps(data))
     tmp.replace(path)
     print(word)
+    return 0
+
+
+def told():
+    """The owner has been told the day is spent."""
+    path = _path()
+    data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
+    data["told"] = True
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data))
+    tmp.replace(path)
+    print("told")
     return 0
 
 
@@ -65,6 +81,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("begin", help="count this start; proceed or give up").set_defaults(func=lambda a: begin())
+    sub.add_parser("told", help="the give-up message was sent").set_defaults(func=lambda a: told())
     args = parser.parse_args(argv)
     return args.func(args)
 

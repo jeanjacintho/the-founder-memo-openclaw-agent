@@ -113,7 +113,11 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
   timezone (`--tz`), with no automatic delivery — the paper posts itself as a
   PDF. Jobs live in the state volume and survive restarts and
   `docker compose up --build`; on a fresh volume, setup (or any schedule
-  change in chat) registers them again.
+  change in chat) registers them again. They also keep the prompt they were
+  registered with: after updating the image of an existing install, register
+  again so they pick up its changes (the model-switch command does it too):
+  `docker compose exec agent bash -l -c /opt/plow/skills/pt-dashboard/scripts/register_crons.py`
+  (on a VM, the same in an SSH session).
 - **Scripts.** The `pt-*` skills' Python scripts run on Python 3.13 with
   WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The paper's state is
   `/var/lib/plow/pt` (config, topics, run scratch).

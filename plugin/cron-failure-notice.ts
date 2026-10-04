@@ -83,10 +83,41 @@ function alreadyMessagedOwner(messages: unknown[] | undefined): boolean {
   return visit(messages);
 }
 
-// run_attempts.py prints this when the day's attempts are spent and the owner was already told:
-// the run stopped on purpose, and a second failure notice would repeat what they know.
+const toolResultRole = new Set(["tool", "toolResult", "tool_result"]);
+
+/** Ids of the assistant's tool calls that ran `run_attempts.py begin`. */
+function beginCallIds(messages: unknown[]): Set<string> {
+  const ids = new Set<string>();
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (value === null || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    const args = record.arguments ?? record.input ?? record.args;
+    if (typeof record.id === "string" && args !== undefined && JSON.stringify(args).includes("run_attempts.py begin")) ids.add(record.id);
+    Object.values(record).forEach(visit);
+  };
+  for (const message of messages) {
+    const record = message as Record<string, unknown> | null;
+    if (record !== null && typeof record === "object" && (record.role ?? (record.message as Record<string, unknown> | undefined)?.role) === "assistant") visit(record);
+  }
+  return ids;
+}
+
+// run_attempts.py begin prints this when the day's attempts are spent and the owner was already told:
+// the run stopped on purpose, and a second failure notice would repeat what they know. Only that
+// script's own result counts: the tool result paired with the call that ran it, never text the
+// model or another tool produced.
 function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
-  return (messages ?? []).some(message => textValues(message).some(text => text.trim() === "give-up-quiet"));
+  const begins = beginCallIds(messages ?? []);
+  if (begins.size === 0) return false;
+  return (messages ?? []).some(message => {
+    if (message === null || typeof message !== "object") return false;
+    const record = message as Record<string, unknown>;
+    const nested = record.message as Record<string, unknown> | undefined;
+    if (!toolResultRole.has(String(record.role ?? nested?.role))) return false;
+    const callId = record.toolCallId ?? record.tool_call_id ?? record.toolUseId ?? nested?.toolCallId ?? nested?.tool_call_id;
+    return typeof callId === "string" && begins.has(callId) && textValues(record.content ?? nested?.content).some(text => text.trim() === "give-up-quiet");
+  });
 }
 
 /** Alert the owner once when a paper cron ends without confirmed delivery. */

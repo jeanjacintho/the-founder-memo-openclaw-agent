@@ -113,8 +113,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   (`acquired` / `stale-takeover` / `held`) and always exits 0 on acquire.
 - `scripts/run_attempts.py` — counts a day's paper starts so a paper that keeps failing stops
   re-running. Called bare, after the paper lock is held: `.../run_attempts.py begin` prints
-  `proceed`, `give-up` (spent: release the lock, tell the owner once, stop) or `give-up-quiet`
-  (already told: release and stop). `post_to_chat.py --clear-attempts` starts the count over once
+  `proceed`, `give-up` (spent: release the lock, tell the owner, then `run_attempts.py told`,
+  stop) or `give-up-quiet` (already told: release and stop). `post_to_chat.py --clear-attempts` starts the count over once
   the edition is posted or staged. Three undelivered starts spend the owner's day.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.
