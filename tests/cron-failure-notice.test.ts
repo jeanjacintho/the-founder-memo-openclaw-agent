@@ -115,9 +115,14 @@ test("a run that stopped on a spent day does not repeat the failure notice", asy
   await notifyFailedPaperRun(spentDay("call_1", "call_1"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
 });
 
+test("a spent day owns its notice: begin's give-up, with notify failed or not yet run, adds no generic one", async t => {
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("must not send"); });
+  await notifyFailedPaperRun(spentDay("call_1", "call_1", "toolResult", "give-up\n"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
+});
+
 test("a run whose notify just told the owner does not send a second notice", async t => {
   t.mock.method(globalThis, "fetch", async () => { throw new Error("must not send"); });
-  await notifyFailedPaperRun(spentDay("call_1", "call_1", "toolResult", "told\n", "notify --text x"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
+  await notifyFailedPaperRun(spentDay("call_1", "call_1", "toolResult", "told\n", "notify"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
 });
 
 test("only run_attempts.py's own result counts as a deliberate stop; anything else still gets the notice", async t => {

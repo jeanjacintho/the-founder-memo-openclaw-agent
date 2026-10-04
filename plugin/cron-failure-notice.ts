@@ -103,16 +103,18 @@ function callIds(messages: unknown[], subcommand: string): Set<string> {
   return ids;
 }
 
-// A run that stopped because the day's attempts are spent did so on purpose, and a generic failure
-// notice would repeat or contradict what the owner knows: `run_attempts.py begin` answered
-// give-up-quiet (they were told earlier) or `run_attempts.py notify` answered told (it just told them).
+// A run that stopped because the day's attempts are spent did so on purpose, and the spent-day path
+// owns its notice: `begin` answered give-up-quiet (they were told earlier) or give-up (`notify` tells
+// them, and a failed `notify` leaves them untold so the next start tries again, never a second,
+// different notice), or `notify` answered told. A generic failure notice on top would repeat or
+// contradict it.
 // Only that script's own result counts: the tool result paired with the call that ran it, never
 // text the model or another tool produced.
 function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
   const all = messages ?? [];
-  const expected = new Map<string, string>();
-  for (const id of callIds(all, "begin")) expected.set(id, "give-up-quiet");
-  for (const id of callIds(all, "notify")) expected.set(id, "told");
+  const expected = new Map<string, string[]>();
+  for (const id of callIds(all, "begin")) expected.set(id, ["give-up-quiet", "give-up"]);
+  for (const id of callIds(all, "notify")) expected.set(id, ["told"]);
   if (expected.size === 0) return false;
   return all.some(message => {
     if (message === null || typeof message !== "object") return false;
@@ -121,7 +123,7 @@ function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
     if (!toolResultRole.has(String(record.role ?? nested?.role))) return false;
     const callId = record.toolCallId ?? record.tool_call_id ?? record.toolUseId ?? nested?.toolCallId ?? nested?.tool_call_id;
     return typeof callId === "string" && expected.has(callId) &&
-      textValues(record.content ?? nested?.content).some(text => text.trim() === expected.get(callId));
+      textValues(record.content ?? nested?.content).some(text => expected.get(callId)!.includes(text.trim()));
   });
 }
 

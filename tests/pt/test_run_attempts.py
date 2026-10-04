@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sys
 
 import pytest
 
@@ -31,55 +32,59 @@ def test_the_first_attempts_proceed(pt_home):
 @pytest.fixture
 def chat(monkeypatch):
     """The owner's chat: records what notify posts; set .fails to make the post fail."""
-    import bearer_http
-    import post_to_chat
-
     class Chat:
         posts, fails = [], False
 
     Chat.posts = []
-    monkeypatch.setattr(post_to_chat, "resolve_chat", lambda: ("https://plow.example", "cht_owner", "tok"))
 
-    def post_json(base, path, token, label, payload):
+    def post_owner_text(text):
         if Chat.fails:
             raise SystemExit("error: Plow Chat HTTP 503")
-        Chat.posts.append((base, path, payload))
+        Chat.posts.append(text)
 
-    monkeypatch.setattr(bearer_http, "post_json", post_json)
+    monkeypatch.setattr(attempts, "post_owner_text", post_owner_text)
     return Chat
 
 
-def notify(text="Not delivered; not trying again now."):
+def notify(monkeypatch, text="Not delivered; not trying again now."):
+    monkeypatch.setattr(sys, "stdin", io.StringIO(text + "\n"))
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        assert attempts.main(["notify", "--text", text]) == 0
+        assert attempts.main(["notify"]) == 0
     return buf.getvalue().strip()
 
 
-def test_the_next_one_gives_up_and_stays_quiet_only_once_the_owner_was_told(pt_home, chat):
+def test_the_next_one_gives_up_and_stays_quiet_only_once_the_owner_was_told(pt_home, chat, monkeypatch):
     for _ in range(attempts.MAX_ATTEMPTS):
         run("begin")
     assert run("begin") == "give-up"
-    assert notify() == "told"
-    assert chat.posts == [("https://plow.example", "/v1/chats/cht_owner/messages", {"body": "Not delivered; not trying again now."})]
+    assert notify(monkeypatch) == "told"
+    assert chat.posts == ["Not delivered; not trying again now."]
     assert [run("begin"), run("begin")] == ["give-up-quiet", "give-up-quiet"]
 
 
-def test_a_failed_post_leaves_the_owner_untold_so_the_next_start_tries_again(pt_home, chat):
+def test_a_failed_post_leaves_the_owner_untold_so_the_next_start_tries_again(pt_home, chat, monkeypatch):
     for _ in range(attempts.MAX_ATTEMPTS):
         run("begin")
     chat.fails = True
     with pytest.raises(SystemExit, match="503"):
-        notify()
+        notify(monkeypatch)
     assert [run("begin"), run("begin")] == ["give-up", "give-up"]
     chat.fails = False
-    assert notify() == "told"
+    assert notify(monkeypatch) == "told"
     assert run("begin") == "give-up-quiet"
 
 
-def test_notify_needs_a_message(pt_home, chat):
+def test_the_message_arrives_verbatim_on_stdin_whatever_it_contains(pt_home, chat, monkeypatch):
+    # Model-written text never rides in an argument, where a shell would evaluate it.
+    nasty = "Não entregue: \"$(touch pwned)\" `id` $HOME 'x'"
+    assert notify(monkeypatch, nasty) == "told"
+    assert chat.posts == [nasty]
+
+
+def test_notify_needs_a_message(pt_home, chat, monkeypatch):
     with pytest.raises(SystemExit, match="needs the message text"):
-        notify("  ")
+        notify(monkeypatch, "  ")
     assert chat.posts == []
 
 

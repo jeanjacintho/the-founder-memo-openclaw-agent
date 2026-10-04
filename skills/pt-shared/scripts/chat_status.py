@@ -20,10 +20,9 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import post_to_chat  # noqa: E402
+from owner_chat import post_owner_text  # noqa: E402
 from owner_phrases import phrase  # noqa: E402
 import setup_needed as _gate  # noqa: E402
-from bearer_http import post_json  # noqa: E402
 from pt_paths import config_file, pt_home  # noqa: E402
 
 BUSY_REPEAT_SECONDS = 20
@@ -101,11 +100,7 @@ def post_status(text, dry_run):
     if dry_run:
         print(f"dry-run: would POST {len(text)} chars")
         return
-    base, uid, token = post_to_chat.resolve_chat()
-    post_json(
-        base, f"/v1/chats/{uid}/messages", token, "Plow Chat",
-        post_to_chat.compose_payload(text),
-    )
+    post_owner_text(text)
 
 
 def main():

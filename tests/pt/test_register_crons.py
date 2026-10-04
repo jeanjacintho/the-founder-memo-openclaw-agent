@@ -1029,7 +1029,9 @@ def test_a_paper_counts_its_starts_and_gives_up_instead_of_retrying_all_day():
         # mark; another run waiting on the lock must not get in before both are done.
         spent = prompt[prompt.index("'give-up' the day's"):prompt.index("'give-up-quiet'")]
         assert "run_attempts.py told" not in prompt and "message(action=send)" not in spent
-        assert spent.index("still holding the lock") < spent.index("run_attempts.py notify --text") < spent.index("release --name paper-workspace")
+        # The text is model-written: stdin through a quoted heredoc, never a shell-parsed argument.
+        assert "--text" not in prompt and "<<'PLOW_NOTICE'" in spent
+        assert spent.index("still holding the lock") < spent.index("run_attempts.py notify") < spent.index("release --name paper-workspace")
         assert "provider kept refusing" not in prompt, "the cause of the failures is not known"
     assert "the next scheduled paper is tomorrow at 09:30" in scheduled
     assert "they can ask again later" in on_demand
