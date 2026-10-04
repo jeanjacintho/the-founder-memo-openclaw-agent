@@ -443,7 +443,7 @@ def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
 
     Compared on the jobs' real cron start times: a lead clamped at midnight pulls a late-night
     paper's start toward its neighbour, so two delivery hours far enough apart can still start close."""
-    minimum_minutes = max(MIN_PAPER_SPACING_MINUTES, lead_minutes)
+    minimum_minutes = MIN_PAPER_SPACING_MINUTES
     starts = {hour: _minutes(hour) - _lead(hour, lead_minutes) for hour in hours}
     for index, first in enumerate(hours):
         for second in hours[index + 1:]:

@@ -171,8 +171,9 @@ class TestDesiredJobs:
         crons.desired_jobs([], "07:00", TZ, lead_minutes=lead_minutes,
                            extra_hours=["10:21"])
 
-    def test_workspace_spacing_refuses_papers_inside_effective_lead(self):
-        with pytest.raises(SystemExit, match="220 minutes apart"):
+    def test_workspace_spacing_refuses_starts_closer_than_the_stale_limit(self):
+        # With a 220-minute lead the starts are 03:20 and 06:40: 200 minutes apart.
+        with pytest.raises(SystemExit, match="201 minutes apart"):
             crons.desired_jobs([], "07:00", TZ, lead_minutes=220,
                                extra_hours=["10:20"])
 
