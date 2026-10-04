@@ -12,14 +12,17 @@ before it spends another model call.
               Prints one word:
                 proceed      attempt N of MAX_ATTEMPTS; go on
                 give-up      the day's attempts are spent and no one has told
-                             the owner yet: release the lock, send the owner
-                             one message (the edition was not delivered and
-                             that it is not trying again now), run `told`, stop
+                             the owner yet: run `notify` while still holding
+                             the lock, then release it and stop
                 give-up-quiet  the owner was already told: release the lock, stop
 
-  told        run once that message was SENT. Only then does the next start
-              answer give-up-quiet: a send that failed leaves the owner
-              untold, so the next start tries again.
+  notify --text TEXT
+              post TEXT (one short message in the owner's language: the edition
+              was not delivered and the paper is not trying again now) to the
+              owner's chat and, in the same process, record that they were told.
+              Prints `told`. If the post fails it exits non-zero and records
+              nothing, so the next start tries again; one process does both
+              steps, so no model turn can fall between the send and the mark.
 
 The count starts over when post_to_chat.py --clear-attempts confirms a post or
 stages the edition (see `clear`), not through a command the model has to
@@ -59,6 +62,17 @@ def begin():
     return 0
 
 
+def notify(text):
+    """Post the spent-day message to the owner's chat, then record that they were told."""
+    import post_to_chat  # lazy: post_to_chat imports this module for --clear-attempts
+    from bearer_http import post_json
+    if not text.strip():
+        sys.exit("error: notify needs the message text")
+    base, uid, token = post_to_chat.resolve_chat()
+    post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", post_to_chat.compose_payload(text.strip()))
+    return told()
+
+
 def told():
     """The owner has been told the day is spent."""
     path = _path()
@@ -81,7 +95,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("begin", help="count this start; proceed or give up").set_defaults(func=lambda a: begin())
-    sub.add_parser("told", help="the give-up message was sent").set_defaults(func=lambda a: told())
+    note = sub.add_parser("notify", help="send the give-up message and record that the owner was told")
+    note.add_argument("--text", required=True)
+    note.set_defaults(func=lambda a: notify(a.text))
     args = parser.parse_args(argv)
     return args.func(args)
 

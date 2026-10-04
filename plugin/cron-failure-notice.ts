@@ -85,15 +85,15 @@ function alreadyMessagedOwner(messages: unknown[] | undefined): boolean {
 
 const toolResultRole = new Set(["tool", "toolResult", "tool_result"]);
 
-/** Ids of the assistant's tool calls that ran `run_attempts.py begin`. */
-function beginCallIds(messages: unknown[]): Set<string> {
+/** Ids of the assistant's tool calls that ran `run_attempts.py <subcommand>`. */
+function callIds(messages: unknown[], subcommand: string): Set<string> {
   const ids = new Set<string>();
   const visit = (value: unknown) => {
     if (Array.isArray(value)) return value.forEach(visit);
     if (value === null || typeof value !== "object") return;
     const record = value as Record<string, unknown>;
     const args = record.arguments ?? record.input ?? record.args;
-    if (typeof record.id === "string" && args !== undefined && JSON.stringify(args).includes("run_attempts.py begin")) ids.add(record.id);
+    if (typeof record.id === "string" && args !== undefined && JSON.stringify(args).includes(`run_attempts.py ${subcommand}`)) ids.add(record.id);
     Object.values(record).forEach(visit);
   };
   for (const message of messages) {
@@ -103,20 +103,25 @@ function beginCallIds(messages: unknown[]): Set<string> {
   return ids;
 }
 
-// run_attempts.py begin prints this when the day's attempts are spent and the owner was already told:
-// the run stopped on purpose, and a second failure notice would repeat what they know. Only that
-// script's own result counts: the tool result paired with the call that ran it, never text the
-// model or another tool produced.
+// A run that stopped because the day's attempts are spent did so on purpose, and a generic failure
+// notice would repeat or contradict what the owner knows: `run_attempts.py begin` answered
+// give-up-quiet (they were told earlier) or `run_attempts.py notify` answered told (it just told them).
+// Only that script's own result counts: the tool result paired with the call that ran it, never
+// text the model or another tool produced.
 function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
-  const begins = beginCallIds(messages ?? []);
-  if (begins.size === 0) return false;
-  return (messages ?? []).some(message => {
+  const all = messages ?? [];
+  const expected = new Map<string, string>();
+  for (const id of callIds(all, "begin")) expected.set(id, "give-up-quiet");
+  for (const id of callIds(all, "notify")) expected.set(id, "told");
+  if (expected.size === 0) return false;
+  return all.some(message => {
     if (message === null || typeof message !== "object") return false;
     const record = message as Record<string, unknown>;
     const nested = record.message as Record<string, unknown> | undefined;
     if (!toolResultRole.has(String(record.role ?? nested?.role))) return false;
     const callId = record.toolCallId ?? record.tool_call_id ?? record.toolUseId ?? nested?.toolCallId ?? nested?.tool_call_id;
-    return typeof callId === "string" && begins.has(callId) && textValues(record.content ?? nested?.content).some(text => text.trim() === "give-up-quiet");
+    return typeof callId === "string" && expected.has(callId) &&
+      textValues(record.content ?? nested?.content).some(text => text.trim() === expected.get(callId));
   });
 }
 

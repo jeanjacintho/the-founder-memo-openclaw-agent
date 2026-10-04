@@ -103,9 +103,9 @@ test("paper job names in the real cron envelope include numbered daily editions"
   assert.equal(sent.length, 1);
 });
 
-const spentDay = (callId: string, resultId: string, resultRole = "toolResult", text = "give-up-quiet\n") => ({ runId: `run-${callId}-${resultId}-${resultRole}`, success: true, messages: [
+const spentDay = (callId: string, resultId: string, resultRole = "toolResult", text = "give-up-quiet\n", subcommand = "begin") => ({ runId: `run-${callId}-${resultId}-${resultRole}-${subcommand}-${text.length}`, success: true, messages: [
   { role: "user", content: [{ type: "text", text: "[cron:9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11 pt-daily-edition-now] Run the daily edition. On 'give-up-quiet' release the lock and stop." }] },
-  { role: "assistant", content: [{ type: "toolCall", id: callId, name: "exec", arguments: { command: "/opt/plow/skills/pt-shared/scripts/run_attempts.py begin" } }] },
+  { role: "assistant", content: [{ type: "toolCall", id: callId, name: "exec", arguments: { command: `/opt/plow/skills/pt-shared/scripts/run_attempts.py ${subcommand}` } }] },
   { role: resultRole, toolCallId: resultId, toolName: "exec", content: [{ type: "text", text }] },
   { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
 ] });
@@ -113,6 +113,11 @@ const spentDay = (callId: string, resultId: string, resultRole = "toolResult", t
 test("a run that stopped on a spent day does not repeat the failure notice", async t => {
   t.mock.method(globalThis, "fetch", async () => { throw new Error("must not send"); });
   await notifyFailedPaperRun(spentDay("call_1", "call_1"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
+});
+
+test("a run whose notify just told the owner does not send a second notice", async t => {
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("must not send"); });
+  await notifyFailedPaperRun(spentDay("call_1", "call_1", "toolResult", "told\n", "notify --text x"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
 });
 
 test("only run_attempts.py's own result counts as a deliberate stop; anything else still gets the notice", async t => {
@@ -129,7 +134,8 @@ test("only run_attempts.py's own result counts as a deliberate stop; anything el
     spentDay("call_1", "call_1", "assistant"),
     spentDay("call_1", "call_2"),
     spentDay("call_1", "call_1", "toolResult", "no give-up-quiet here"),
+    spentDay("call_1", "call_1", "toolResult", "told\n"),  // told is notify's word, not begin's
   ];
   for (const event of spoofs) await notifyFailedPaperRun(event, { jobId });
-  assert.equal(sent.length, 3);
+  assert.equal(sent.length, 4);
 });

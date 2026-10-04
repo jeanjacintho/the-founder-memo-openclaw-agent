@@ -1025,10 +1025,11 @@ def test_a_paper_counts_its_starts_and_gives_up_instead_of_retrying_all_day():
         assert "exactly one short message" in prompt
         assert "run_attempts.py delivered" not in prompt, "the count is cleared by post_to_chat.py, not by a command the model must remember"
         assert "--clear-attempts" in prompt
-        assert "once that send succeeds run" in prompt and "run_attempts.py told" in prompt, "told only after the send"
-        # Another run waiting on the lock must not get in between the send and the told mark.
+        # One helper posts the notice and records it, so no model step falls between the send and the
+        # mark; another run waiting on the lock must not get in before both are done.
         spent = prompt[prompt.index("'give-up' the day's"):prompt.index("'give-up-quiet'")]
-        assert spent.index("still holding the lock") < spent.index("run_attempts.py told") < spent.index("release --name paper-workspace")
+        assert "run_attempts.py told" not in prompt and "message(action=send)" not in spent
+        assert spent.index("still holding the lock") < spent.index("run_attempts.py notify --text") < spent.index("release --name paper-workspace")
         assert "provider kept refusing" not in prompt, "the cause of the failures is not known"
     assert "the next scheduled paper is tomorrow at 09:30" in scheduled
     assert "they can ask again later" in on_demand
