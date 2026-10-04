@@ -53,8 +53,10 @@ async function run(t: TestContext, accountId: "chat" | "email", frames: { chat: 
   // The durable sender loads the plugin's outbound adapter from this path.
   const config = { channels: { plow: { ...cfg.channels.plow, apiBase } }, plugins: { load: { paths: [new URL("../plugin/", import.meta.url).pathname] }, entries: { plow: { enabled: true } } } };
   const posts: { path: string; body: Record<string, unknown> }[] = [];
+  const historyReads: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit = {}) => {
     const path = new URL(url).pathname.replace(/^\/v1/, "");
+    if (path.endsWith("/messages") && new URL(url).searchParams.get("limit") === "20") historyReads.push(path.split("/")[2]);
     if (options.method === "POST" && path !== "/ws/ticket" && !path.endsWith("/typing")) {
       posts.push({ path, body: JSON.parse(options.body as string) });
       return path === "/chats" && posts.at(-1)!.body.line_uid === "mail" ? Response.json(newThread, { status: newThread.http ?? 201 }) : Response.json({ uid: `sent-${posts.length}` });
@@ -96,7 +98,7 @@ async function run(t: TestContext, accountId: "chat" | "email", frames: { chat: 
   // Tools run in a separate module instance, as they do in the gateway.
   toolEntry.register({ ...api, registerChannel() {}, registerTool(factory: (context: object) => Tool) { factories.push(factory); } });
   await channel!.gateway.startAccount({ account, cfg: config, abortSignal: controller.signal, log: { info(text: string) { logs.push(text); } } });
-  return { posts, contexts, logs };
+  return { posts, contexts, logs, historyReads };
 }
 
 async function final(dispatch: Dispatch, payload: Payload, kind = "final") {
@@ -185,10 +187,12 @@ test("message from a phone turn to an email thread, even a brand-new one, is ref
 test("mail from an outsider and mail from the owner on one thread run in different sessions", async t => {
   const keys: Record<string, string> = {};
   let n = 0;
-  const { contexts } = await run(t, "email", [{ chat: "thread", sender: owner }, { chat: "thread", sender: outsider }, { chat: "thread", sender: outsider }], async dispatch => {
+  const { contexts, historyReads } = await run(t, "email", [{ chat: "thread", sender: owner }, { chat: "thread", sender: outsider }, { chat: "thread", sender: outsider }], async dispatch => {
     keys[`turn${n++}`] = dispatch.route.sessionKey;
   });
   assert.equal(contexts.length, 3);
+  // Each sender's fresh session gets the thread's history; a thread-wide cache would skip it.
+  assert.deepEqual(historyReads, ["thread", "thread", "thread"]);
   const [ownerKey, ...outsiderKeys] = Object.values(keys).sort((a, b) => (a.includes("-") ? 1 : 0) - (b.includes("-") ? 1 : 0));
   assert.equal(ownerKey, "agent:main:plow:email:direct:thread");
   assert.equal(new Set(outsiderKeys).size, 1, "one outsider keeps one session");
