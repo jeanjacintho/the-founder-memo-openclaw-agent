@@ -385,10 +385,10 @@ English:
 
 > 👂 Want me to listen for priorities? I can follow the group chats I'm in (without ever talking there), your incoming mail and your incoming iMessages — spam and newsletters filtered out. Say which: groups / mail / iMessage / none.
 
-**5b. On their next message**, map what they named to three switches —
-"nenhum" / "none" / "not now" is all three off. Before recording `true`, run
-`chat_status.py --busy --new-wave` once, before the first probe here (their answer is what
-started this wait; the probes below and the close step that follows use a bare `--busy`):
+**5b. On their next message**, run `chat_status.py --busy --new-wave` first, whatever they
+answered (their answer is what started this wait, even when it is "none"; the probes below and
+the close step that follows use a bare `--busy`). Then map what they named to three switches —
+"nenhum" / "none" / "not now" is all three off. Before recording `true`:
 
 - **email** needs Google reachable. If `mail.configured` is already
   `true`, 3b's probe proved it; otherwise run 3b's Google probe (same exact
