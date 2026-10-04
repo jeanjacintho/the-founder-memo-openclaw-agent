@@ -119,7 +119,8 @@ STALE_RUN_MINUTES = PAPER_TIMEOUT_SECONDS // 60 + 20
 # lock and then be killed at its budget, so its lock is at most budget-minus-that-wait old when the
 # second starts; the second's own two rounds add the wait back. Spacing papers at least the stale
 # limit apart is what lets the second always reclaim an orphan, whatever the first waited.
-MIN_PAPER_SPACING_MINUTES = STALE_RUN_MINUTES
+# One more than the limit: takeover needs the lock strictly older than it (run_lock.py).
+MIN_PAPER_SPACING_MINUTES = STALE_RUN_MINUTES + 1
 # A scheduled paper that finds the workspace held (an on-demand copy runs its
 # whole ~35-minute paper under the lock) waits two rounds of this before giving
 # the day up: ~40 minutes, inside the hold-until window, each round under
@@ -438,11 +439,15 @@ def focused_paper_hours(topics, delivery_hour):
 
 
 def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
-    """Refuse paper starts whose shared-workspace windows can overlap."""
+    """Refuse paper starts whose shared-workspace windows can overlap.
+
+    Compared on the jobs' real cron start times: a lead clamped at midnight pulls a late-night
+    paper's start toward its neighbour, so two delivery hours far enough apart can still start close."""
     minimum_minutes = max(MIN_PAPER_SPACING_MINUTES, lead_minutes)
+    starts = {hour: _minutes(hour) - _lead(hour, lead_minutes) for hour in hours}
     for index, first in enumerate(hours):
         for second in hours[index + 1:]:
-            distance = abs(_minutes(first) - _minutes(second))
+            distance = abs(starts[first] - starts[second])
             if min(distance, 24 * 60 - distance) < minimum_minutes:
                 raise SystemExit(
                     f"refusing to register: paper times {first} and {second} are less than "
