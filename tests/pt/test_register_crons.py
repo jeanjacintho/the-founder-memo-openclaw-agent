@@ -455,14 +455,15 @@ class TestMain:
         assert "once more" not in fresh
         assert waits not in crons.paper_prompt()
 
-    def test_a_fresh_advice_copy_pins_its_lock_name_across_midnight(self):
-        # Each retry is a new acquire; `--today` would re-resolve the date on every one.
-        fresh = crons.paper_prompt(fresh_advice=True)
-        assert fresh.count("--name paper-workspace --today") == 1
-        assert "run_lock.py name --name paper-workspace --today" in fresh
-        assert fresh.count("--name LOCK") == 3  # acquire, release on refusal, release
-        assert fresh.index("run_lock.py name") < fresh.index("run_lock.py acquire")
-        assert "--name LOCK" not in crons.paper_prompt()
+    def test_every_paper_shares_one_undated_workspace_lock(self):
+        # A dated name gives a paper that starts after midnight a different lock from the one the
+        # earlier paper still holds (a fresh-advice copy waiting across midnight included), so two
+        # papers would archive and write the same scratch.
+        for prompt in (crons.paper_prompt(), crons.paper_prompt(fresh_advice=True),
+                       crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
+            assert "--name paper-workspace " in prompt or "--name paper-workspace," in prompt
+            assert "paper-workspace --today" not in prompt
+            assert "run_lock.py name" not in prompt
 
     def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
         with pytest.raises(SystemExit):
@@ -604,7 +605,7 @@ class TestExtraDailyHours:
             [topic("t_1", kind="section")], "03:00", TZ, 45, extra_hours=["10:30"],
         )
         prompt = jobs[1]["prompt"]
-        assert "--name paper-workspace --today" in prompt
+        assert "--name paper-workspace" in prompt
         assert "post_to_chat.py" in prompt
         assert "Do not finish the run before post_to_chat.py confirms" in prompt
         assert "short status for the cron run record" in prompt
@@ -677,7 +678,7 @@ class TestFocusedPapers:
         assert jobs[1]["schedule"] == "30 12 * * *"
         assert jobs[2]["schedule"] == "0 18 * * *"
         assert "deliver_at is 12:30" in jobs[1]["prompt"]
-        assert "--name paper-workspace --today" in jobs[1]["prompt"]
+        assert "--name paper-workspace" in jobs[1]["prompt"]
         assert "Do not finish the run before post_to_chat.py confirms" in jobs[1]["prompt"]
 
     def test_deliver_at_equal_to_main_hour_rides_the_daily_job(self):
@@ -960,7 +961,7 @@ class TestRunPromptsDelegateDelivery:
 
     def test_all_papers_share_a_lock_longer_than_the_tournament(self):
         for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt(focus="12:00")):
-            assert "--name paper-workspace --today" in prompt
+            assert "--name paper-workspace" in prompt
             assert "--stale-minutes 240" in prompt
 
     def test_scheduled_papers_reuse_only_todays_advice(self):
@@ -1069,7 +1070,7 @@ def test_no_prompt_asks_the_model_to_work_out_a_date():
     # the date is run_lock.py's to compute, on the owner's clock.
     for prompt in (crons.paper_prompt(), crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
         assert "<today" not in prompt and "<date>" not in prompt
-        assert prompt.count("--name paper-workspace --today") == 3  # acquire, release on refusal, release
+        assert prompt.count("--name paper-workspace") == 3  # acquire, release on refusal, release
     assert "check-paper --deliver-at main --as-of today" in crons.paper_prompt()
 
 

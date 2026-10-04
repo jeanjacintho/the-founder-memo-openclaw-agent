@@ -56,8 +56,12 @@ def owner_zone():
 
 
 def lock_taken_at(run_root, day):
-    """When this paper took today's paper-workspace lock, or None."""
-    return run_lock.taken_at(run_root, f"{WORKSPACE_LOCK}-{day}")
+    """When the paper-workspace lock was taken, or None when no lock is held or it was taken on
+    another day of the owner's: a lock left from yesterday proves nothing about today's paper."""
+    taken = run_lock.taken_at(run_root, WORKSPACE_LOCK)
+    if taken is None or taken.astimezone(owner_now().tzinfo).date().isoformat() != day:
+        return None
+    return taken
 
 
 def window_minutes(taken, day, deliver_at, tz):

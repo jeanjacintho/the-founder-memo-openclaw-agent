@@ -239,16 +239,12 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
         )
     else:
         held = "another paper owns the workspace -- stop"
-    if fresh_advice:
-        # Every retry above is a new invocation, so `--today` would re-resolve the date on each and
-        # a wait that crosses the owner's midnight would take the next day's lock while the earlier
-        # paper still owns the shared workspace: the name is resolved once and reused.
-        lock_arg = "--name LOCK"
-        pin = (f"First run {lock} name --name {WORKSPACE_LOCK} --today and keep its output as LOCK "
-               f"for this whole run, even if the date turns while you wait. Then run ")
-    else:
-        lock_arg = f"--name {WORKSPACE_LOCK} --today"
-        pin = "First run "
+    # One undated lock for the shared workspace: a dated name would give a paper that starts
+    # after midnight a different lock from the one the earlier paper still holds (and a
+    # fresh-advice copy waiting across midnight could take it), so two papers would archive and
+    # write the same scratch. A stuck lock is reclaimed by age (STALE_RUN_MINUTES) as before.
+    lock_arg = f"--name {WORKSPACE_LOCK}"
+    pin = "First run "
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
         f"Run {title} now, in one session. {pin}{lock} acquire "

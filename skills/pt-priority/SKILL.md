@@ -20,7 +20,7 @@ The next daily run, not live intake, re-ranks Q&A by how much an answer changes 
 
 ## Invariants
 
-- **One writer.** Only a paper run holding `paper-workspace-<date>` that found no accepted checkpoint
+- **One writer.** Only a paper run holding `paper-workspace` that found no accepted checkpoint
   for today (or was asked for fresh advice) writes the page, Q&A, resource catalog, and card. A
   paper that reuses today's writes none.
 - **Read-only research.** Latch may read through documented installed skills and native read

@@ -1060,7 +1060,7 @@ class TestPriorityDeskOwnsItsMessage:
         (run / "desk-priority").mkdir(parents=True)
         (run / "paper").mkdir()
         day = edition()["date"]
-        (run / f"paper-workspace-{day}.lock").write_text(f"{day}T07:00:14-03:00\n")
+        (run / f"paper-workspace.lock").write_text(f"{day}T07:00:14-03:00\n")
         notes = {"date": day, "could_not_source": self.UNAVAILABLE["could_not_source"]}
         (run / "desk-priority" / "notes.json").write_text(
             json.dumps({**notes, **({"skip": skip} if skip else {})}), encoding="utf-8")
@@ -1104,7 +1104,7 @@ class TestPriorityDeskOwnsItsMessage:
         (desk / "notes.json").write_text(json.dumps({"date": notes_date, "skip": self.BLOCKED,
                                                      "could_not_source": self.UNAVAILABLE["could_not_source"]}),
                                          encoding="utf-8")
-        (tmp_path / "run" / "paper-workspace-2026-09-11.lock").write_text("2026-09-11T07:00:14-03:00\n")
+        (tmp_path / "run" / "paper-workspace.lock").write_text("2026-09-11T07:00:14-03:00\n")
         (tmp_path / "run" / "paper").mkdir()
         ed_path = tmp_path / "run" / "paper" / "edition.json"
         ed_path.write_text(json.dumps(edition(sections=[self.WEATHER, self.UNAVAILABLE])))

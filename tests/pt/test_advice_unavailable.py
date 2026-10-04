@@ -21,7 +21,7 @@ def home(tmp_path, monkeypatch):
     (tmp_path / "config.json").write_text(json.dumps({"owner": {"timezone": TZ}}))
     run = tmp_path / "run"
     run.mkdir()
-    (run / f"paper-workspace-{DAY}.lock").write_text(LOCK + "\n")
+    (run / f"paper-workspace.lock").write_text(LOCK + "\n")
     monkeypatch.setattr(adv, "today", lambda: DAY)
     return tmp_path
 
@@ -40,14 +40,14 @@ class TestWindow:
         assert not (home / "run" / "desk-priority" / "notes.json").exists()
 
     def test_a_paper_that_took_the_lock_after_its_hour_records_why(self, home):
-        (home / "run" / f"paper-workspace-{DAY}.lock").write_text("2026-09-30T13:13:00-03:00\n")
+        (home / "run" / f"paper-workspace.lock").write_text("2026-09-30T13:13:00-03:00\n")
         adv.main(["window", "--deliver-at", "09:30", "--reason", "a entrega já tinha passado"])
         assert notes(home) == {
             "date": DAY, "could_not_source": ["a entrega já tinha passado"],
             "skip": {"kind": "window", "deliver_at": "09:30", "lock": "2026-09-30T13:13:00-03:00"}}
 
     def test_without_the_lock_there_is_no_window_to_measure(self, home):
-        (home / "run" / f"paper-workspace-{DAY}.lock").unlink()
+        (home / "run" / f"paper-workspace.lock").unlink()
         with pytest.raises(SystemExit, match="does not hold today's paper-workspace lock"):
             adv.main(["window", "--deliver-at", "09:30", "--reason", "x"])
 
@@ -85,7 +85,13 @@ class TestBlocked:
     ({"kind": "failed", "lock": LOCK}, LOCK, "not written by advice_unavailable.py", 1),
 ])
 def test_proof_matrix(home, skip, lock, expected, wiki):
-    (home / "run" / f"paper-workspace-{DAY}.lock").write_text(lock + "\n")
+    (home / "run" / f"paper-workspace.lock").write_text(lock + "\n")
     problem = adv.proof_problem({"skip": skip} if skip else {}, home / "run", DAY, TZ,
                                 lambda: (wiki, "error: Mac unreachable"))
     assert expected in problem if expected else problem is None
+
+
+def test_a_lock_left_from_another_day_proves_nothing(home):
+    """The workspace lock is undated, so a leftover from yesterday must not read as today's."""
+    (home / "run" / "paper-workspace.lock").write_text("2026-09-29T23:50:00-03:00\n")
+    assert adv.lock_taken_at(home / "run", DAY) is None

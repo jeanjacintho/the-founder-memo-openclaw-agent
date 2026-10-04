@@ -108,8 +108,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   Called bare, never through an interpreter:
   `/opt/plow/skills/pt-shared/scripts/run_lock.py acquire --name NAME [--today] [--stale-minutes N]`
   and the matching `.../run_lock.py release --name NAME [--today]`; `--today` appends the
-  owner's date itself (`paper-workspace --today` is `paper-workspace-2026-09-25`), so never
-  compute a date for a lock name. Prints one word
+  owner's date itself (`NAME --today` is `NAME-2026-09-25`), so never compute a date for a
+  lock name. The papers' shared workspace lock is the undated `paper-workspace`. Prints one word
   (`acquired` / `stale-takeover` / `held`) and always exits 0 on acquire.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.
