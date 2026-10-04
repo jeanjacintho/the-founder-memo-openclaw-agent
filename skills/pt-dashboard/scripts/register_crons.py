@@ -115,6 +115,11 @@ DEFAULT_LEAD_MINUTES = 0
 # workspace lock, so nothing shorter is safe: it could call a live run dead and
 # start a competing paper.
 STALE_RUN_MINUTES = PAPER_TIMEOUT_SECONDS // 60 + 20
+# The closest two papers may start. The first can wait up to two lock rounds before it takes the
+# lock and then be killed at its budget, so its lock is at most budget-minus-that-wait old when the
+# second starts; the second's own two rounds add the wait back. Spacing papers at least the stale
+# limit apart is what lets the second always reclaim an orphan, whatever the first waited.
+MIN_PAPER_SPACING_MINUTES = STALE_RUN_MINUTES
 # A scheduled paper that finds the workspace held (an on-demand copy runs its
 # whole ~35-minute paper under the lock) waits two rounds of this before giving
 # the day up: ~40 minutes, inside the hold-until window, each round under
@@ -434,7 +439,7 @@ def focused_paper_hours(topics, delivery_hour):
 
 def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
     """Refuse paper starts whose shared-workspace windows can overlap."""
-    minimum_minutes = max(180, lead_minutes)
+    minimum_minutes = max(MIN_PAPER_SPACING_MINUTES, lead_minutes)
     for index, first in enumerate(hours):
         for second in hours[index + 1:]:
             distance = abs(_minutes(first) - _minutes(second))

@@ -167,8 +167,7 @@ class TestLoadOwnerZone:
 class TestDesiredJobs:
     @pytest.mark.parametrize("lead_minutes", [200, 180])
     def test_workspace_spacing_allows_papers_at_effective_lead_distance(self, lead_minutes):
-        # At 200 minutes apart, the old fixed 180-minute check could allow
-        # starts to overlap when both papers hold the workspace for 200 minutes.
+        # At 200 minutes apart both papers fit the lock's stale limit and the lead.
         crons.desired_jobs([], "07:00", TZ, lead_minutes=lead_minutes,
                            extra_hours=["10:20"])
 
@@ -575,7 +574,7 @@ class TestExtraDailyHours:
     def test_papers_less_than_three_hours_apart_are_refused(self, extra, section_hour):
         topics = [topic("t_1", kind="section", deliver_at=section_hour)] if section_hour else []
 
-        with pytest.raises(SystemExit, match="paper times 07:00 and 09:00 are less than 180 minutes apart"):
+        with pytest.raises(SystemExit, match="paper times 07:00 and 09:00 are less than 200 minutes apart"):
             crons.desired_jobs(topics, "07:00", TZ, 0, extra_hours=extra)
 
     def test_multiple_extra_hours_are_numbered_in_order(self):
@@ -652,13 +651,13 @@ class TestFocusedPapers:
     def test_papers_sit_between_extra_hours_and_subscriptions(self):
         jobs = crons.desired_jobs(
             [
-                topic("t_1", kind="section", deliver_at="13:30"),
+                topic("t_1", kind="section", deliver_at="14:00"),
                 topic("t_9f2a"),
             ],
             "07:00", TZ, 0, extra_hours=["10:30"],
         )
         assert [j["name"] for j in jobs] == [
-            "pt-daily-edition", "pt-daily-edition-2", "pt-paper-1330",
+            "pt-daily-edition", "pt-daily-edition-2", "pt-paper-1400",
             "pt-subscription-t_9f2a",
         ]
 
@@ -842,14 +841,16 @@ class TestScheduledHold:
         assert crons.STALE_RUN_MINUTES > crons.PAPER_TIMEOUT_SECONDS / 60
 
     def test_the_closest_accepted_pair_can_reclaim_the_first_papers_orphaned_lock(self):
-        # Two papers exactly the minimum apart: the first may use its whole budget and be
-        # killed holding the lock; the second's two wait rounds must reach the stale limit.
-        spacing = 180
-        rounds = 2 * crons.HELD_LOCK_WAIT_SECONDS / 60
-        assert crons.STALE_RUN_MINUTES <= spacing + rounds
-        crons.require_workspace_spacing(["07:00", "10:00"])  # accepted
+        # Two papers exactly the minimum apart. Worst case the first waited its two lock rounds
+        # before taking the lock and was killed at its budget, so its lock is budget - rounds old
+        # when the second starts; the second's own two rounds add them back and must reach the limit.
+        budget = crons.PAPER_TIMEOUT_SECONDS / 60
+        spacing = crons.MIN_PAPER_SPACING_MINUTES
+        assert spacing >= crons.STALE_RUN_MINUTES, "the second paper's rounds always reach the stale limit"
+        assert budget <= spacing
+        crons.require_workspace_spacing(["07:00", "10:20"])  # exactly the minimum: accepted
         with pytest.raises(SystemExit):
-            crons.require_workspace_spacing(["07:00", "09:59"])
+            crons.require_workspace_spacing(["07:00", "10:19"])
 
     def test_paper_job_holds_until_its_hour(self):
         jobs = crons.desired_jobs(
