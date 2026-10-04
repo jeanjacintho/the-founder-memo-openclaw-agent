@@ -386,12 +386,14 @@ English:
 > 👂 Want me to listen for priorities? I can follow the group chats I'm in (without ever talking there), your incoming mail and your incoming iMessages — spam and newsletters filtered out. Say which: groups / mail / iMessage / none.
 
 **5b. On their next message**, map what they named to three switches —
-"nenhum" / "none" / "not now" is all three off. Before recording `true`:
+"nenhum" / "none" / "not now" is all three off. Before recording `true`, run
+`chat_status.py --busy --new-wave` once, before the first probe here (their answer is what
+started this wait; the probes below and the close step that follows use a bare `--busy`):
 
 - **email** needs Google reachable. If `mail.configured` is already
   `true`, 3b's probe proved it; otherwise run 3b's Google probe (same exact
   argv) and record `false` if it fails.
-- **imessage** needs one probe through Latch — `chat_status.py --busy --new-wave`
+- **imessage** needs one probe through Latch — a bare `chat_status.py --busy`
   first — with **exactly** the argv the daily scan uses, so the Mac's
   "always allow" covers the unattended runs:
 
@@ -423,8 +425,8 @@ scheduled yet" message, not a question back to the owner.
 
 Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
 
-1. **Read location through Latch's browser** — `chat_status.py --busy --new-wave`
-   first, and a bare `--busy` again after every `goto`. `plow_browser_open` scoped to
+1. **Read location through Latch's browser** — a bare `chat_status.py --busy`
+   first (the wait this follows already got its hang-on), and again after every `goto`. `plow_browser_open` scoped to
    `["ipapi.co", "ipwho.is", "ifconfig.co"]`, then steps 2–3 of
    `pt-research/references/desks.md` §1 (the provider fallback order and
    which field is the timezone), then `plow_browser_close`. If no provider
