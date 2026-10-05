@@ -300,7 +300,7 @@ disagree, the file wins. Answer "what did we research" from `pt/` or the
 day's edition page, never from a transcript.
 
 What the paper printed, and what its advisor's desk knows, is in the owner's
-wiki: `~/Plow/wiki/projects/thefoundertimes/` (a page under `editions/` for each
+wiki: `~/Plow/wiki/projects/founder-memo/` (a page under `editions/` for each
 paper that carried the advisor's card or one of the owner's own sections, and
 `qa.md`). A day's page can be missing if the Mac was asleep when the edition ran, or if it carried none
 of those.

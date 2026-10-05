@@ -59,16 +59,14 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   print-miss line and the priority card's "Advice from" line). A library, not a flow
   script: nothing invokes it, the pt-* scripts import it.
 - `scripts/wiki.py` — the paper's pages in the owner's wiki (`~/Plow/wiki`, plow-wiki):
-  the root `projects/thefoundertimes` (writer `thefoundertimes`), the shared
+  the root `projects/founder-memo` (writer `founder-memo`), the shared
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
-  (`thefoundertimes`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
+  (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
-  the Mac has none, copies an install's pages from the pre-rename root
-  `projects/theplowtimes` to `projects/thefoundertimes` once (links rewritten; the old
-  folder and its `wiki.toml` entry are left as they were and never read again), writes
-  the paper's schema and page when absent, declares
-  `projects/thefoundertimes` in `wiki.toml` (appending; no other root is touched), and
+  the Mac has none, writes
+  the memo's schema and page when absent, declares
+  `projects/founder-memo` in `wiki.toml` (appending; no other root is touched), and
   with `--desk` the goals page and the desk's Q&A, carrying an older install's notes
   file over once. Prints `WIKI:ready` or `WIKI:set up …`;
   `error: wiki not ready — …` exits non-zero. **This bullet is the contract.**
