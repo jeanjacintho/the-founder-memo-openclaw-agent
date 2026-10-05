@@ -164,8 +164,13 @@ MEMO_MODEL_CRITIC=plow/<another provider>/<model>
 MEMO_MODEL_CRITIC_PRICE=<input>,<output>
 ```
 
-The price converts each child's listed input and output tokens to USD for
-the run's dollar ceiling check. Boot refuses one without the other, a missing or
+The prices register the role models for OpenClaw's usage accounting. The
+`run_cost.py` helper converts listed input and output tokens to USD and checks
+whether another generation fits; tournament integration lands in later steps of
+issue #59, so the nightly workflow does not yet enforce a spending limit.
+The current tournament still directly spawns leaf
+workers; phase coordinators and depth-2 execution also land later.
+Boot refuses one without the other, a missing or
 malformed price, and a critic from the writer's provider. With neither set,
 every child runs on the chat's model.
 

@@ -168,9 +168,9 @@ test("the Plow MCP filter exposes only the Latch tools used by newspaper researc
   assert.ok(!config.tools.alsoAllow.includes("group:plugins"), "do not grant every plugin tool");
 });
 
-test("memo spawns two levels deep, ten wide, without chat turns preferring delegation", () => {
+test("the current tournament allows six leaf children without chat turns preferring delegation", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").agents.defaults.subagents, {
-    maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest",
+    maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest",
   });
 });
 

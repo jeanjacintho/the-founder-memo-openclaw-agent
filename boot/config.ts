@@ -65,10 +65,10 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       ...(llm.provider === "openai" ? {
         models: { "openai/*": { agentRuntime: { id: "openclaw" } } }, modelPolicy: { allow: [] },
       } : {}),
-      // The memo's conductor spawns phase coordinators, and each coordinator spawns
-      // up to ten leaf children (writers, critics, investigators); leaves never spawn.
+      // The current tournament directly spawns up to six leaf critics.
+      // Raise depth and width when the phase-coordinator engine lands (issue #59 Task 9).
       // Delegation stays a suggestion so owner chat turns are not pushed into sub-agents.
-      subagents: { maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest" },
+      subagents: { maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest" },
     } },
     mcp: { sessionIdleTtlMs: 300_000, ...(identity.mcp_url ? { servers: { plow: {
       url: "http://127.0.0.1:18790/mcp", transport: "streamable-http",
