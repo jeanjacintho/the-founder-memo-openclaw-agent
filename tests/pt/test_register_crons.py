@@ -88,6 +88,11 @@ class FakeScheduler:
 
 
 class TestPaperPrompts:
+    def test_a_scheduled_paper_records_a_short_window_with_the_script(self):
+        prompt = crons.paper_prompt("09:30", 150)
+        assert "advice_unavailable.py window --deliver-at 09:30 --reason" in prompt
+        assert "or more, run the tournament" in prompt
+
     @pytest.mark.parametrize("prompt", [
         crons.paper_prompt(), crons.paper_prompt("09:30", 60), crons.paper_prompt(focus="18:00"),
         crons.TOPIC_PROMPT.format(tid="t_1", depth="quick")])
@@ -412,6 +417,63 @@ class TestMain:
             run_main(tmp_path, monkeypatch, [], sched, argv=["--now"])
             assert [w[:2] for w in sched.writes] == [["add", "--name"], ["rm", "old123"]]
 
+    # Measured live 2026-09-30: asked to "re-evaluate today's priorities",
+    # the chat fired the daily job after its hour; it skipped the tournament by
+    # its window rule, and the plain on-demand copy reuses yesterday's advice.
+    def test_fresh_advice_queues_a_copy_that_runs_the_tournament(self, tmp_path, monkeypatch, capsys):
+        sched = FakeScheduler(registered_like_spec([]))
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
+        (create,) = [w for w in sched.writes if crons.NOW_NAME in w]
+        prompt = create[create.index("--message") + 1]
+        assert prompt == crons.paper_prompt(fresh_advice=True)
+        assert "run the tournament now" in prompt and "reuse none" in prompt
+        assert "reuse the newest accepted checkpoint" not in prompt
+        assert "advice_unavailable.py" not in prompt and "the paper is not delivered" in prompt
+        assert "queued: pt-daily-edition-now" in capsys.readouterr().out
+
+    # A copy queued behind a running paper reads 'held' and stops, and the
+    # running one reuses its checkpoint: neither is the evaluation asked for.
+    @pytest.mark.parametrize("name", [crons.NOW_NAME, crons.DAILY_NAME])
+    def test_fresh_advice_behind_a_running_paper_queues_nothing(self, tmp_path, monkeypatch,
+                                                                capsys, name):
+        listing = registered_like_spec([])
+        if name == crons.NOW_NAME:
+            listing.append(row(name, jid="live123", at=FUTURE))
+        (running,) = [r for r in listing if r["name"] == name]
+        running["state"] = {"runningAtMs": 1790620326000}
+        sched = FakeScheduler(listing)
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
+        assert sched.writes == []
+        out = capsys.readouterr().out
+        assert f"not queued: {name}" in out and "no fresh evaluation was queued" in out
+        assert "queued: pt-daily-edition-now" not in out.replace("not queued:", "")
+
+    # Another paper can start in the minute before the queued copy runs; the copy
+    # the owner was promised waits for the workspace instead of stopping at 'held'.
+    def test_a_fresh_advice_copy_waits_for_the_workspace(self):
+        waits = f"--wait-seconds {crons.HELD_LOCK_WAIT_SECONDS}"
+        assert waits in crons.paper_prompt(fresh_advice=True)
+        fresh = crons.paper_prompt(fresh_advice=True)
+        # Two rounds (~40 min) can end before a paper that won the gap lets go.
+        assert "for as long as it prints 'held'" in fresh
+        assert "once more" not in fresh
+        assert waits not in crons.paper_prompt()
+
+    def test_every_paper_shares_one_undated_workspace_lock(self):
+        # A dated name gives a paper that starts after midnight a different lock from the one the
+        # earlier paper still holds (a fresh-advice copy waiting across midnight included), so two
+        # papers would archive and write the same scratch.
+        for prompt in (crons.paper_prompt(), crons.paper_prompt(fresh_advice=True),
+                       crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
+            assert "--name paper-workspace " in prompt or "--name paper-workspace," in prompt
+            assert "paper-workspace --today" not in prompt
+            assert "run_lock.py name" not in prompt
+
+    def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
+        with pytest.raises(SystemExit):
+            run_main(tmp_path, monkeypatch, [], FakeScheduler(registered_like_spec([])),
+                     argv=["--fresh-advice"])
+
     def test_now_never_removes_a_copy_that_is_running(self, tmp_path, monkeypatch, capsys):
         # Measured live: `cron rm` on a running one-shot aborted its session
         # right after it took the workspace lock. The lock outlived the run,
@@ -559,7 +621,7 @@ class TestExtraDailyHours:
             [topic("t_1", kind="section")], "03:00", TZ, 45, extra_hours=["10:30"],
         )
         prompt = jobs[1]["prompt"]
-        assert "--name paper-workspace --today" in prompt
+        assert "--name paper-workspace" in prompt
         assert "post_to_chat.py" in prompt
         assert "Do not finish the run before post_to_chat.py confirms" in prompt
         assert "short status for the cron run record" in prompt
@@ -632,7 +694,7 @@ class TestFocusedPapers:
         assert jobs[1]["schedule"] == "30 12 * * *"
         assert jobs[2]["schedule"] == "0 18 * * *"
         assert "deliver_at is 12:30" in jobs[1]["prompt"]
-        assert "--name paper-workspace --today" in jobs[1]["prompt"]
+        assert "--name paper-workspace" in jobs[1]["prompt"]
         assert "Do not finish the run before post_to_chat.py confirms" in jobs[1]["prompt"]
 
     def test_deliver_at_equal_to_main_hour_rides_the_daily_job(self):
@@ -929,7 +991,7 @@ class TestRunPromptsDelegateDelivery:
 
     def test_all_papers_share_a_lock_longer_than_the_tournament(self):
         for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt(focus="12:00")):
-            assert "--name paper-workspace --today" in prompt
+            assert "--name paper-workspace" in prompt
             assert "--stale-minutes 200" in prompt
 
     def test_scheduled_papers_reuse_only_todays_advice(self):
@@ -1038,7 +1100,7 @@ def test_no_prompt_asks_the_model_to_work_out_a_date():
     # the date is run_lock.py's to compute, on the owner's clock.
     for prompt in (crons.paper_prompt(), crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
         assert "<today" not in prompt and "<date>" not in prompt
-        assert prompt.count("--name paper-workspace --today") == 3  # acquire, release on refusal, release
+        assert prompt.count("--name paper-workspace") == 3  # acquire, release on refusal, release
     assert "check-paper --deliver-at main --as-of today" in crons.paper_prompt()
 
 
