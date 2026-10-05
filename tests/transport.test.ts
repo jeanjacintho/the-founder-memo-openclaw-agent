@@ -646,13 +646,18 @@ test("out-of-order adoption records its cursor and remembers both sources across
   assert.deepEqual(calls, ["first", "second"]);
 });
 
-for (const listed of [true, false]) test(`restart mid-turn replays unfinished chats once; listed=${listed}`, async t => {
+for (const listed of [true, false]) for (const [laterDirection, unfinished] of [["inbound", "pending"], ["outbound", "pending"], ["outbound", "incomplete"]] as const) test(`restart mid-turn replays unfinished chats once; listed=${listed}, later=${laterDirection}, unfinished=${unfinished}`, async t => {
   const { root, server, apiBase, abortAfter } = await websocketFixture(t);
   const chats = ["slow", "fast"].map(acceptedChat);
+  await mkdir(`${root}/plow-checkpoints`);
+  await writeFile(`${root}/plow-checkpoints/slow`, JSON.stringify({ uid: "old", recent: ["old"] }));
+  const later = { ...inbound("later"), direction: laterDirection,
+    ...(laterDirection === "outbound" ? { sender: chats[0].participants[0] } : {}) };
+  const logs: string[] = [];
   let boot = 0;
   t.mock.method(globalThis, "fetch", async (url: string) => Response.json(
     url.endsWith("/chats") ? { data: listed || boot > 0 ? chats : [], has_more: !listed } :
-    url.includes("limit=50") ? { data: url.includes("/slow/") ? [inbound("later"), inbound("slow")] : [inbound("fast")], has_more: false } :
+    url.includes("limit=50") ? { data: url.includes("/slow/") ? [later, inbound("slow")] : [inbound("fast")], has_more: false } :
     url.includes("/messages?") ? { data: [], has_more: false } :
     chats.find(chat => url.endsWith(`/chats/${chat.uid}`)) ?? { ticket: "ticket" }));
   server.on("connection", (socket: { send: (text: string) => void }) => {
@@ -664,11 +669,13 @@ for (const listed of [true, false]) test(`restart mid-turn replays unfinished ch
   for (; boot < 3; boot++) {
     const controller = abortAfter();
     await listen({ ...account, apiBase, lineUid: "line" }, controller.signal, text => {
-      if (boot === 0 && completed.includes("fast") && completed.includes("later") && text.startsWith("acked")) controller.abort();
+      logs.push(text);
+      if (boot === 0 && logs.some(line => line.startsWith("acked chat=fast message=fast")) &&
+        logs.some(line => line.startsWith("acked chat=slow message=later"))) controller.abort();
     }, async (_chat, message, _first, _history, ingress) => {
       ingress.onSubmitted();
       if (boot === 0 && message.uid === "slow") {
-        await new Promise<void>(resolve => controller.signal.addEventListener("abort", () => resolve(), { once: true }));
+        if (unfinished === "pending") await new Promise<void>(resolve => controller.signal.addEventListener("abort", () => resolve(), { once: true }));
         interrupted.push(message.uid);
         return "incomplete";
       }
@@ -676,12 +683,17 @@ for (const listed of [true, false]) test(`restart mid-turn replays unfinished ch
       return "completed";
     });
     if (boot === 0) {
-      assert.deepEqual([...completed].sort(), ["fast", "later"]);
-      assert.notEqual(await checkpointUid(`${root}/plow-checkpoints/slow`), "slow");
+      assert.deepEqual([...completed].sort(), laterDirection === "inbound" ? ["fast", "later"] : ["fast"]);
+      const saved = JSON.parse(await readFile(`${root}/plow-checkpoints/slow`, "utf8"));
+      assert.equal(saved.uid, "old", "later acknowledgements cannot skip unfinished work");
+      assert.ok(saved.recent.includes("later"));
+      assert.ok(!saved.recent.includes("slow"));
     }
   }
   assert.deepEqual(interrupted, ["slow"]);
-  assert.deepEqual([...completed].sort(), ["fast", "later", "slow"]);
+  assert.deepEqual([...completed].sort(), laterDirection === "inbound" ? ["fast", "later", "slow"] : ["fast", "slow"]);
+  assert.equal(logs.filter(line => line.startsWith("acked chat=slow message=later")).length, 1);
+  assert.equal(logs.filter(line => line.startsWith("acked chat=slow message=slow")).length, 1);
   assert.equal(await checkpointUid(`${root}/plow-checkpoints/slow`), "slow");
   assert.equal(await checkpointUid(`${root}/plow-checkpoints/fast`), "fast");
 });
