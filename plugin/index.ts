@@ -372,7 +372,7 @@ export default defineChannelPluginEntry({
         properties: {
           members: { type: "array", minItems: 1, items: { type: "string", pattern: "^\\+[1-9][0-9]{1,14}$" }, description: "Recipient phone numbers in E.164 format. The owner is included automatically." },
           body: { type: "string", minLength: 1, description: "The first message to send." },
-          trusted: { type: "boolean", description: "The owner's full-trust choice, required in ask mode. Preset modes enforce their configured choice." },
+          trusted: { type: "boolean", description: "The Plow trust flag, required in ask mode. Preset modes enforce their configured choice. Neither value changes this newspaper's listen-only group policy." },
         },
       },
       async execute(_id, args: { members: string[]; body: string; trusted?: boolean }) {
