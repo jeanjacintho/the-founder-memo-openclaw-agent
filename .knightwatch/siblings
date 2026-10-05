@@ -13,11 +13,15 @@
 # OpenClaw base this repo's `boot/` duplicates. It is listed so a reviewer can
 # tell when boot logic already exists there.
 #
-# `plow-pbc/plow` stays out although the scripts call its API: it is private
-# and this repo is public, so a citation into it would publish private paths.
+# `plow-pbc/plow` is the server for every `/v1/...` call this repo makes, so a
+# reviewer checks those calls against the real routes, not only against
+# another client. It is private and this repo is public: cite it by
+# `path:line`, don't quote its code. The exposure is accepted, as it is for
+# latch, hermes-plugin-plow and the other public plow-pbc repos that list it.
 
 plow-pbc/latch
 plow-pbc/plow-wiki
 plow-pbc/agent-index-client
 plow-pbc/plow-agents
 plow-pbc/plow-openclaw-agent
+plow-pbc/plow
