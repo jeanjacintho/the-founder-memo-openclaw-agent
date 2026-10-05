@@ -9,7 +9,7 @@ import pytest
 
 from conftest import ROOT, load_module
 
-render = load_module("render_edition", "pt-edition/scripts/render_edition.py")
+render = load_module("render_edition", "memo-render/scripts/render_edition.py")
 RECOMMENDATION = {
     "headline": "Put retention at the center of Monday's investor conversation",
     "body": "Lead with the segment that returns, what those users repeatedly ask the product to do, and the milestone this round buys.",
@@ -536,7 +536,7 @@ class TestMasthead:
         assert render.masthead() == render.DEFAULT_MASTHEAD
 
     def test_printed_page_carries_the_mayfield_credit(self):
-        template = (ROOT / "pt-edition" / "template.html").read_text()
+        template = (ROOT / "memo-render" / "template.html").read_text()
         page = render.render_html(edition(), render.DEFAULT_MASTHEAD, template)
         assert render.DEFAULT_MASTHEAD in page
         assert "inspired by Mayfield" in page
@@ -722,7 +722,7 @@ class TestHtml:
     def test_weather_icons_are_vendored_atlas_glyphs(self):
         # Forecast keys stay the paper's vocabulary; the drawings are
         # Atlas Icons weather glyphs (MIT), inlined, never fetched.
-        notice = (ROOT / "pt-edition" / "assets" / "weather" / "NOTICE").read_text()
+        notice = (ROOT / "memo-render" / "assets" / "weather" / "NOTICE").read_text()
         assert "Atlas Icons" in notice
         assert "MIT" in notice
         for key in render.FORECAST_ICONS:
@@ -733,7 +733,7 @@ class TestHtml:
             assert "<path" in svg
             assert "https://" not in svg
             assert 'circle cx="12"' not in svg
-            assert (ROOT / "pt-edition" / "assets" / "weather" / f"{key}.svg").is_file()
+            assert (ROOT / "memo-render" / "assets" / "weather" / f"{key}.svg").is_file()
 
     def test_calendar_schedule_draws_kind_icons(self):
         data = edition(sections=[{
@@ -1189,7 +1189,7 @@ class TestLabelsFollowTheOwnersLanguage:
         return html + chat + empty
 
     def test_a_written_language_leaves_no_english_label(self, tmp_path, monkeypatch):
-        phrases = load_module("owner_phrases", "pt-shared/scripts/owner_phrases.py")
+        phrases = load_module("owner_phrases", "memo-shared/scripts/owner_phrases.py")
         monkeypatch.setenv("PT_HOME", str(tmp_path))
         table = {k: (f"〔{k}〕" if k.startswith("page.") else v) for k, v in phrases.SOURCE.items()}
         (tmp_path / "owner-phrases.json").write_text(

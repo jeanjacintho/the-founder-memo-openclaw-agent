@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from conftest import load_module
 
-prepare = load_module("prepare_daily_run", "pt-shared/scripts/prepare_daily_run.py")
+prepare = load_module("prepare_daily_run", "memo-shared/scripts/prepare_daily_run.py")
 NOW = datetime(2026, 9, 20, 11, 7, 10, tzinfo=timezone.utc)
 
 

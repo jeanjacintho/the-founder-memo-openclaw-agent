@@ -10,8 +10,8 @@ import pytest
 
 from conftest import load_module
 
-signals = load_module("signals", "pt-shared/scripts/signals.py")
-recent_mod = load_module("signals_recent", "pt-priority/scripts/signals_recent.py")
+signals = load_module("signals", "memo-shared/scripts/signals.py")
+recent_mod = load_module("signals_recent", "memo-tournament/scripts/signals_recent.py")
 
 NOW = datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc)
 LABEL = "unverified signal — evidence, not fact"

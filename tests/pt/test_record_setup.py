@@ -1,4 +1,4 @@
-"""record_setup.py — the only way pt-setup writes .setup-draft.json."""
+"""record_setup.py — the only way memo-setup writes .setup-draft.json."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ import pytest
 
 from conftest import load_module
 
-record = load_module("record_setup", "pt-shared/scripts/record_setup.py")
+record = load_module("record_setup", "memo-shared/scripts/record_setup.py")
 
 
 def draft_of(tmp_path):
@@ -43,14 +43,14 @@ class TestNextQuestion:
                  "priority": {"configured": False}}
         assert record.next_question(draft) == "mail"
 
-    def test_hour_printer_mail_asks_news(self):
+    def test_hour_printer_mail_asks_signals(self):
         draft = {
             "local_hour": "07:00",
             "printer": {"configured": True, "name": "HP LaserJet 4"},
             "priority": {"configured": False},
             "mail": {"configured": False},
         }
-        assert record.next_question(draft) == "news"
+        assert record.next_question(draft) == "signals"
 
     def test_everything_present_is_close(self):
         draft = {
@@ -58,15 +58,9 @@ class TestNextQuestion:
             "printer": {"configured": True, "name": "HP LaserJet 4"},
             "priority": {"configured": True},
             "mail": {"configured": True},
-            "news_asked": True,
-            "signals": {"group_chat": False, "email": True, "imessage": False},
+                "signals": {"group_chat": False, "email": True, "imessage": False},
         }
         assert record.next_question(draft) == "close"
-
-    def test_news_answered_asks_signals(self):
-        draft = {"local_hour": "07:00", "printer": {"configured": False}, "priority": {"configured": True},
-                 "mail": {"configured": True}, "news_asked": True}
-        assert record.next_question(draft) == "signals"
 
     @pytest.mark.parametrize("signals", [
         {"group_chat": True},
@@ -75,7 +69,7 @@ class TestNextQuestion:
     ])
     def test_incomplete_signals_is_still_open(self, signals):
         draft = {"local_hour": "07:00", "printer": {"configured": False}, "priority": {"configured": True},
-                 "mail": {"configured": True}, "news_asked": True, "signals": signals}
+                 "mail": {"configured": True}, "signals": signals}
         assert record.next_question(draft) == "signals"
 
     def test_printer_configured_string_not_bool_asks_printer(self):
@@ -153,9 +147,8 @@ class TestCLI:
         record.main(["record_setup.py", str(config), "local_hour=07:00"])
         record.main(["record_setup.py", str(config), "printer.configured=false"])
         record.main(["record_setup.py", str(config), "priority.configured=false"])
-        record.main(["record_setup.py", str(config), "mail.configured=true"])
         capsys.readouterr()
-        rc = record.main(["record_setup.py", str(config), "news_asked=true"])
+        rc = record.main(["record_setup.py", str(config), "mail.configured=true"])
         assert rc == 0
         out = capsys.readouterr().out.strip().splitlines()
         assert out == ["DRAFT:local_hour,printer,priority,mail", "NEXT_QUESTION=signals"]
@@ -190,7 +183,7 @@ class TestCLI:
 
 
 class TestDoneClearsTheDraft:
-    """The close step tells pt-setup to delete .setup-draft.json. It used to
+    """The close step tells memo-setup to delete .setup-draft.json. It used to
     say so with no command attached, and a live run reached for
     `python3 -c "import os; os.remove(...)"` -- tripping the dangerous-command
     gate and handing the owner an /approve prompt instead of their newspaper.
@@ -202,7 +195,6 @@ class TestDoneClearsTheDraft:
         "printer": {"configured": True, "name": "virtual_printer_online"},
         "priority": {"configured": False},
         "mail": {"configured": True},
-        "news_asked": True,
         "signals": {"group_chat": False, "email": True, "imessage": False},
     }
 
@@ -233,7 +225,7 @@ class TestDoneClearsTheDraft:
     def test_done_does_not_mix_with_key_value_pairs(self, tmp_path):
         self.write_draft(tmp_path, self.COMPLETE)
         rc = record.main(
-            ["record_setup.py", str(tmp_path / "config.json"), "--done", "news_asked=true"]
+            ["record_setup.py", str(tmp_path / "config.json"), "--done", "mail.configured=true"]
         )
         assert rc == 1
 

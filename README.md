@@ -108,7 +108,7 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
   the owner's turns the Plow channel runs the setup gate and hands the model
   its answer; groups get answers, never setup questions.
 - **Schedule.** Every paper is an OpenClaw scheduler job
-  (`openclaw cron`), registered by `pt-dashboard/scripts/register_crons.py`
+  (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
   from your topics: an isolated turn on the chat's own model, in **your**
   timezone (`--tz`), with no automatic delivery — the paper posts itself as a
   PDF. Jobs live in the state volume and survive restarts and
@@ -116,9 +116,9 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
   change in chat) registers them again. They also keep the prompt they were
   registered with: after updating the image of an existing install, register
   again so they pick up its changes (the model-switch command does it too):
-  `docker compose exec agent bash -l -c /opt/plow/skills/pt-dashboard/scripts/register_crons.py`
+  `docker compose exec agent bash -l -c /opt/plow/skills/memo-schedule/scripts/register_crons.py`
   (on a VM, the same in an SSH session).
-- **Scripts.** The `pt-*` skills' Python scripts run on Python 3.13 with
+- **Scripts.** The `memo-*` skills' Python scripts run on Python 3.13 with
   WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The paper's state is
   `/var/lib/plow/pt` (config, topics, run scratch).
 
@@ -157,29 +157,6 @@ The sign-in is a real credential for your account, kept in the state volume
 where the agent's own tools can read it. Use it on an install only you
 talk to.
 
-## Moving a paper from the Hermes edition
-
-The owner's wiki lives on their Mac and does not move. The paper's own
-choices — `pt/config.json` and `pt/topics.json` in the old `agent-home`
-volume — can be brought over instead of answering setup again:
-
-```sh
-# From the Hermes checkout, with its agent still defined:
-docker compose cp agent:/var/lib/hermes/pt ./hermes-pt
-
-# From this checkout, with this agent running:
-docker compose cp ./hermes-pt agent:/tmp/hermes-pt
-docker compose exec -u root agent chown -R node:node /tmp/hermes-pt
-docker compose exec agent /opt/plow/skills/pt-setup/scripts/import_state.py \
-  --from /tmp/hermes-pt --previous-tz America/Sao_Paulo
-```
-
-`--previous-tz` is the `TZ` the old compose ran with (`PT_TZ`, default
-`America/Sao_Paulo`). The script refuses a config that fails the setup gate,
-a topic store of the wrong shape, or an install that already has a paper
-(`--replace` overwrites on purpose), then registers the jobs. Scratch, locks
-and the old scheduler's jobs stay behind.
-
 ## Known limitations
 
 - If the model provider is unreachable at a job's time, OpenClaw records the
@@ -194,12 +171,11 @@ and the old scheduler's jobs stay behind.
 
 - `boot/`, `plugin/`, `prompt/` — the OpenClaw base: identity, gateway config,
   Plow channel (with the setup-gate hook) and the agent prompt.
-- `skills/pt-*` — setup, intake, research, priority, edition, print, dashboard
+- `skills/memo-*` — setup, intake, tournament, render, print, schedule
   and the shared scripts behind them. `skills/owners-mac`,
   `skills/google-workspace` come from the base.
 - `tests/*.test.ts` — boot and plugin tests (`node --test`); `tests/pt/` —
   newspaper tests and the repo contract (`pytest`).
-- `index/` — Agent Index images, shot from the synthetic `index/edition.json`.
 
 ## Development
 

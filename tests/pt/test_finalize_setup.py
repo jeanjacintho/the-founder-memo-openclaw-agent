@@ -1,4 +1,4 @@
-"""finalize_setup.py — the only way pt-setup writes pt/config.json.
+"""finalize_setup.py — the only way memo-setup writes pt/config.json.
 
 Measured live (2026-09-16): the close step said "**Write**
 /var/lib/plow/pt/config.json from the draft" and named no command, and no
@@ -16,14 +16,13 @@ import pytest
 
 from conftest import load_module
 
-finalize = load_module("finalize_setup", "pt-setup/scripts/finalize_setup.py")
+finalize = load_module("finalize_setup", "memo-setup/scripts/finalize_setup.py")
 
 COMPLETE = {
     "local_hour": "07:00",
     "printer": {"configured": True, "name": "virtual_printer_online"},
     "priority": {"configured": False},
     "mail": {"configured": True},
-    "news_asked": True,
     "signals": {"group_chat": False, "email": True, "imessage": False},
 }
 
@@ -53,7 +52,7 @@ class TestWritesAValidConfig:
 
     @pytest.mark.parametrize(("hour", "lead"), [("07:00", 150), ("00:20", 150)])
     def test_priority_lead_minutes(self, tmp_path, hour, lead):
-        # The lead covers pt-priority's three mandatory generations, so it is the tournament's own
+        # The lead covers memo-tournament's three mandatory generations, so it is the tournament's own
         # 150-minute window. The nominal lead is stored unclamped -- 00:20 keeps its 150 here and
         # registration clamps it per slot. Chat still waits for the hour: lead is the start clock,
         # not the send clock.
@@ -121,8 +120,8 @@ class TestRefusesRatherThanWriteGarbage:
 
 class TestCarriesTheLanguage:
     """owner.language is gate check 7 and what a SCHEDULED edition writes in.
-    pt-intake keeps it current from live chat, but a paper can be delivered
-    before pt-intake ever runs, so setup must plant it."""
+    memo-intake keeps it current from live chat, but a paper can be delivered
+    before memo-intake ever runs, so setup must plant it."""
 
     def test_writes_owner_language_from_the_draft(self, tmp_path):
         draft = dict(COMPLETE, owner={"language": "Portuguese"})

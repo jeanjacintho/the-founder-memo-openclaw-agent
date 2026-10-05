@@ -9,7 +9,7 @@ import pytest
 from conftest import load_module
 from wiki import EDITIONS, Wiki, join_page
 
-history = load_module("history", "pt-priority/scripts/history.py")
+history = load_module("history", "memo-tournament/scripts/history.py")
 TODAY = date(2026, 9, 19)
 
 

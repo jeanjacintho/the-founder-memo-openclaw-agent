@@ -8,7 +8,7 @@ import pytest
 
 from conftest import load_module
 
-owner_time = load_module("owner_time", "pt-shared/scripts/owner_time.py")
+owner_time = load_module("owner_time", "memo-shared/scripts/owner_time.py")
 
 
 class TestOwnerNow:
@@ -32,7 +32,7 @@ class TestOwnerNow:
         assert owner_time.owner_today(tmp_path / "nope.json") == date.today()
 
     def test_the_default_config_path_follows_pt_home(self, tmp_path, monkeypatch):
-        # Same override every other pt script honors (topics.py, run_lock.py,
+        # Same override every other pt script honors (run_lock.py,
         # record_edition.py) -- tests point it at a tmp dir; CONFIG must read
         # it at call time, not bake in whatever it was at import.
         monkeypatch.setenv("PT_HOME", str(tmp_path))

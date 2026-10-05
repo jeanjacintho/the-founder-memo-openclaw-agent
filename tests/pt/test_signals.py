@@ -8,7 +8,7 @@ import pytest
 
 from conftest import load_module
 
-signals = load_module("signals", "pt-shared/scripts/signals.py")
+signals = load_module("signals", "memo-shared/scripts/signals.py")
 
 NOW = datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc)
 BASE = {"source": "group_chat", "from_name": "Maya", "chat_or_thread_id": "cht_1",

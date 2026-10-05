@@ -10,7 +10,7 @@ import pytest
 
 from conftest import load_module
 
-attempts = load_module("run_attempts", "pt-shared/scripts/run_attempts.py")
+attempts = load_module("run_attempts", "memo-shared/scripts/run_attempts.py")
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_simultaneous_starts_count_each_once(pt_home, chat):
 
     from conftest import ROOT
 
-    script = ROOT / "pt-shared" / "scripts" / "run_attempts.py"
+    script = ROOT / "memo-shared" / "scripts" / "run_attempts.py"
     env = {**__import__("os").environ, "PT_HOME": str(pt_home)}
     procs = [subprocess.Popen([sys.executable, str(script), "begin", "--key", "t_race"], env=env,
                               stdout=subprocess.PIPE, text=True) for _ in range(attempts.MAX_ATTEMPTS)]

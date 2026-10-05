@@ -5,7 +5,7 @@ import { renderConfig, syncConfig } from "./config.js";
 import { identityFromApi } from "./identity.js";
 import { llmRoute, modelName } from "./llm.js";
 import { installBootLog } from "./log.js";
-import { newspaperEnv } from "./newspaper-env.js";
+import { skillEnv } from "./skill-env.js";
 import { renderPrompt } from "./prompt.js";
 import { startGateway } from "./process.js";
 
@@ -24,7 +24,7 @@ try {
   const config = renderConfig(identity, base, route);
   // PT_MODEL is the model the paper's scheduled jobs are registered with, so
   // they follow the chat to the same provider.
-  Object.assign(process.env, newspaperEnv(identity), { PT_MODEL: route.primary });
+  Object.assign(process.env, skillEnv(identity), { PT_MODEL: route.primary });
   await mkdir("/var/lib/plow/workspace", { recursive: true });
   await mkdir("/var/lib/plow/pt", { recursive: true, mode: 0o700 });
   await writeFile("/var/lib/plow/gateway-password", process.env.OPENCLAW_GATEWAY_PASSWORD + "\n", { mode: 0o600 });

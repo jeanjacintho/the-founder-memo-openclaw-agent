@@ -2,7 +2,7 @@ from pathlib import Path
 
 from conftest import load_module
 
-paths = load_module("pt_paths", "pt-shared/scripts/pt_paths.py")
+paths = load_module("pt_paths", "memo-shared/scripts/pt_paths.py")
 
 
 def test_defaults_are_the_image_paths(monkeypatch):
@@ -11,14 +11,14 @@ def test_defaults_are_the_image_paths(monkeypatch):
     assert paths.pt_home() == Path("/var/lib/plow/pt")
     assert paths.config_file() == Path("/var/lib/plow/pt/config.json")
     assert paths.skills() == Path("/opt/plow/skills")
-    assert paths.script("pt-shared", "run_lock.py") == Path("/opt/plow/skills/pt-shared/scripts/run_lock.py")
+    assert paths.script("memo-shared", "run_lock.py") == Path("/opt/plow/skills/memo-shared/scripts/run_lock.py")
 
 
 def test_env_overrides_are_read_at_call_time(monkeypatch, tmp_path):
     monkeypatch.setenv("PT_HOME", str(tmp_path / "pt"))
     monkeypatch.setenv("PT_SKILLS", str(tmp_path / "skills"))
     assert paths.config_file() == tmp_path / "pt" / "config.json"
-    assert paths.script("pt-intake", "topics.py") == tmp_path / "skills" / "pt-intake" / "scripts" / "topics.py"
+    assert paths.script("memo-schedule", "register_crons.py") == tmp_path / "skills" / "memo-schedule" / "scripts" / "register_crons.py"
 
 
 def test_blank_override_falls_back_to_the_default(monkeypatch):
