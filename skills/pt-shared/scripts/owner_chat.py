@@ -24,7 +24,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bearer_http import TIMEOUT, open_no_redirect, require  # noqa: E402
+from bearer_http import TIMEOUT, open_no_redirect, post_json, require  # noqa: E402
 
 
 def find_owner_chat(identity: dict) -> str | None:
@@ -72,6 +72,12 @@ def home_channel() -> str:
     if not uid:
         sys.exit("error: PLOW_HOME_CHANNEL is not set and the owner's chat does not exist yet")
     return uid
+
+
+def post_owner_text(text: str) -> None:
+    """Post one plain text message to the owner's chat (setup's hang-on, the spent-day notice)."""
+    base = require("PLOW_API_BASE").rstrip("/")
+    post_json(base, f"/v1/chats/{home_channel()}/messages", require("PLOW_AGENT_TOKEN"), "Plow Chat", {"body": text})
 
 
 if __name__ == "__main__":

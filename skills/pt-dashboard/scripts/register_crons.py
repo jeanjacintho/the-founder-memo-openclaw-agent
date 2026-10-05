@@ -156,12 +156,20 @@ SKILL_LOADING = (
     "owner's Mac, which does not have them. "
 )
 
-TOPIC_PROMPT = (
-    PAPER_RUN_MARKER + " " + SKILL_LOADING +
-    "Run pt-research on topic {tid} now (depth {depth}), then pt-edition for it, "
-    "delivering with post_to_chat.py per pt-edition/SKILL.md step 2. "
-    + DELIVERY_FAILURE_NOTICE
-)
+def topic_prompt(tid, depth, scheduled):
+    """One topic's own edition. It counts its starts under its own key, apart from the papers',
+    so a failing topic cannot spend the main paper's day (nor the other way round)."""
+    attempts = script("pt-shared", "run_attempts.py")
+    return (
+        PAPER_RUN_MARKER + " " + SKILL_LOADING +
+        f"First run {attempts} begin --key {tid}{' --scheduled' if scheduled else ''}: on 'proceed' go on; "
+        f"on 'stop' or 'stop-untold' this edition's attempts for the day are spent (retries after a "
+        f"provider rate limit only feed it) and begin has told the owner, or tried to, itself -- "
+        f"stop without researching, writing nothing to the owner. "
+        f"Then run pt-research on topic {tid} now (depth {depth}), then pt-edition for it, "
+        f"delivering with post_to_chat.py per pt-edition/SKILL.md step 2, with --clear-attempts {tid}. "
+        + DELIVERY_FAILURE_NOTICE
+    )
 
 
 def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False):
@@ -202,9 +210,10 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
             f"do not research unscoped sections, sections of another hour, or assignments)"
         )
     hold = (
-        f" with --hold-until {hold_until} so chat waits for that clock "
-        f"(if that hour has already passed, post immediately; never wait until tomorrow)"
-        if hold_until else ""
+        f", with --hold-until {hold_until} so chat waits for that clock "
+        f"(if that hour has already passed, post immediately; never wait until tomorrow), "
+        f"and with --clear-attempts"
+        if hold_until else ", with --clear-attempts"
     )
     lock = script("pt-shared", "run_lock.py")
     advice = (
@@ -228,6 +237,8 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
         "tournament only if none has ever been accepted. An older checkpoint is never a "
         "reason to stop the paper; continue research and compile the edition with its as-of date"
     )
+    attempts = script("pt-shared", "run_attempts.py")
+    next_flag = " --scheduled" if hold_until else ""
     # A fresh-advice copy waits like a scheduled paper: it was promised to the owner, and
     # a paper that starts in the minute before it runs would otherwise end it at 'held'.
     waits = bool(hold_until) or fresh_advice
@@ -258,7 +269,10 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
         f"Run {title} now, in one session. First run {lock} acquire "
         f"{lock_arg} --stale-minutes {STALE_RUN_MINUTES}{wait}; "
         f"if its output is 'held', "
-        f"{held}. Then "
+        f"{held}. Then run {attempts} begin{next_flag}: on 'proceed' go on; on 'stop' or "
+        f"'stop-untold' the day's attempts are spent (retries after a provider rate limit only "
+        f"feed it) and begin has told the owner, or tried to, itself -- run {lock} release "
+        f"{lock_arg} and stop, writing nothing to the owner. Then "
         f"/opt/plow/skills/pt-shared/scripts/prepare_daily_run.py --preserve-priority "
         f"(it archives prior scratch after the lock; do not inspect or reuse old run files). Then "
         f"/opt/plow/skills/pt-intake/scripts/topics.py reopen-sections "
@@ -503,7 +517,7 @@ def subscription_job(topic, delivery_hour, owner_tz):
         "name": f"pt-subscription-{topic['id']}",
         "schedule": f"{minute} {hour} * * *",
         "tz": owner_tz,
-        "prompt": TOPIC_PROMPT.format(tid=topic["id"], depth="deep"),
+        "prompt": topic_prompt(topic["id"], "deep", scheduled=True),
     }
 
 
@@ -513,7 +527,7 @@ def oneoff_job(topic):
         "name": f"pt-oneoff-{topic['id']}",
         "schedule": topic["scheduled_for"],
         "tz": None,
-        "prompt": TOPIC_PROMPT.format(tid=topic["id"], depth=topic["depth"]),
+        "prompt": topic_prompt(topic["id"], topic["depth"], scheduled=False),
     }
 
 

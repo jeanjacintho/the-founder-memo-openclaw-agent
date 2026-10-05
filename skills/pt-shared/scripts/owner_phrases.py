@@ -46,6 +46,10 @@ SOURCE = {
     "print.no_pdf": "no PDF to print at {path}",
     "turn.failed": ("I couldn't finish handling your last message. Part of the request "
                     "may have already happened, so please check before resending."),
+    "attempts.spent_scheduled": ("The edition was not delivered after repeated attempts, so I am not "
+                                 "trying again now. The next scheduled paper comes tomorrow."),
+    "attempts.spent_on_demand": ("The edition was not delivered after repeated attempts, so I am not "
+                                 "trying again now. Ask me again later."),
     "page.first_step": "FIRST STEP",
     "page.questions": "QUESTIONS FOR YOU · TEXT “Q2: …”",
     "page.sources": "Sources:",
@@ -65,6 +69,10 @@ PORTUGUESE = {
     "print.no_pdf": "nenhum PDF para imprimir em {path}",
     "turn.failed": ("Não consegui terminar de tratar sua última mensagem. Parte do pedido "
                     "pode já ter acontecido — confira antes de mandar de novo."),
+    "attempts.spent_scheduled": ("A edição não foi entregue depois de várias tentativas, então não vou "
+                                 "tentar de novo agora. O próximo jornal agendado sai amanhã."),
+    "attempts.spent_on_demand": ("A edição não foi entregue depois de várias tentativas, então não vou "
+                                 "tentar de novo agora. Peça de novo mais tarde."),
     "page.first_step": "PRIMEIRO PASSO",
     "page.questions": "PERGUNTAS PARA VOCÊ · RESPONDA “Q2: …”",
     "page.sources": "Fontes:",

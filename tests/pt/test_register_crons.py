@@ -95,7 +95,7 @@ class TestPaperPrompts:
 
     @pytest.mark.parametrize("prompt", [
         crons.paper_prompt(), crons.paper_prompt("09:30", 60), crons.paper_prompt(focus="18:00"),
-        crons.TOPIC_PROMPT.format(tid="t_1", depth="quick")])
+        crons.topic_prompt("t_1", "quick", scheduled=True)])
     def test_every_paper_says_how_its_skills_load(self, prompt):
         # A model that guessed plow__plow_read_skill got "no skill" and
         # gave up the paper: the prompt names the container path and tool.
@@ -962,7 +962,7 @@ class TestRunPromptsDelegateDelivery:
     @pytest.mark.parametrize("p", [
         crons.paper_prompt(),
         crons.paper_prompt(focus="12:00"),
-        crons.TOPIC_PROMPT,
+        crons.topic_prompt("t_1", "quick", scheduled=False),
     ])
     def test_prompt_delegates_delivery_to_the_edition_skill(self, p):
         assert "pt-edition/SKILL.md step 2" in p
@@ -976,7 +976,7 @@ class TestRunPromptsDelegateDelivery:
     @pytest.mark.parametrize("p", [
         crons.paper_prompt(),
         crons.paper_prompt(focus="12:00"),
-        crons.TOPIC_PROMPT,
+        crons.topic_prompt("t_1", "quick", scheduled=False),
     ])
     def test_pre_delivery_failure_sends_exactly_one_owner_notice(self, p):
         assert p.count("send exactly one short message to the owner") == 1
@@ -1100,8 +1100,45 @@ def test_no_prompt_asks_the_model_to_work_out_a_date():
     # the date is run_lock.py's to compute, on the owner's clock.
     for prompt in (crons.paper_prompt(), crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
         assert "<today" not in prompt and "<date>" not in prompt
-        assert prompt.count("--name paper-workspace") == 3  # acquire, release on refusal, release
+        # acquire, release on a spent day, release on refusal, release
+        assert prompt.count("--name paper-workspace") == 4
     assert "check-paper --deliver-at main --as-of today" in crons.paper_prompt()
+
+
+def test_a_paper_counts_its_starts_and_stops_instead_of_retrying_all_day():
+    # A paper that dies on a provider rate limit is retried by OpenClaw; each retry
+    # redoes the whole paper. After the day's attempts the run stops before research.
+    scheduled = crons.paper_prompt(hold_until="09:30", lead_minutes=150)
+    on_demand = crons.paper_prompt()
+    for prompt in (scheduled, on_demand):
+        begin = prompt.index("run_attempts.py begin")
+        assert prompt.index("run_lock.py acquire") < begin < prompt.index("prepare_daily_run.py")
+        assert "'proceed'" in prompt and "'stop'" in prompt and "'stop-untold'" in prompt
+        assert "--clear-attempts" in prompt, "the count is cleared by post_to_chat.py, not by a command the model must remember"
+        # begin posts and records the notice itself, in the owner's language from the fixed phrases:
+        # the model writes nothing to the owner and passes no text to any command.
+        spent = prompt[prompt.index("'stop' or"):prompt.index("prepare_daily_run.py")]
+        assert "writing nothing to the owner" in spent and "release" in spent
+        for gone in ("notify", "--text", "heredoc", "run_attempts.py told", "give-up"):
+            assert gone not in prompt, gone
+        assert "message(action=send)" not in spent
+    assert "run_attempts.py begin --scheduled" in scheduled
+    assert "--scheduled" not in on_demand
+
+
+def test_a_topic_edition_counts_its_own_starts_under_its_own_key():
+    # Subscriptions and one-offs run without the workspace lock and are retried like the papers;
+    # their count is apart from the papers', so neither spends the other's day.
+    nightly = crons.topic_prompt("t_9f2a", "deep", scheduled=True)
+    one_off = crons.topic_prompt("t_0c11", "quick", scheduled=False)
+    assert "run_attempts.py begin --key t_9f2a --scheduled" in nightly
+    assert "run_attempts.py begin --key t_0c11:" in one_off and "--scheduled" not in one_off
+    for prompt, tid in ((nightly, "t_9f2a"), (one_off, "t_0c11")):
+        assert prompt.index("begin --key") < prompt.index("pt-research on topic")
+        assert f"--clear-attempts {tid}" in prompt
+        assert "'stop-untold'" in prompt and "writing nothing to the owner" in prompt
+    jobs = crons.desired_jobs([topic("t_9f2a")], "07:00", TZ)
+    assert any("begin --key t_9f2a --scheduled" in j["prompt"] for j in jobs)
 
 
 def test_jobs_follow_the_model_boot_exports(monkeypatch):

@@ -83,12 +83,52 @@ function alreadyMessagedOwner(messages: unknown[] | undefined): boolean {
   return visit(messages);
 }
 
+const toolResultRole = new Set(["tool", "toolResult", "tool_result"]);
+
+/** Ids of the assistant's tool calls that ran `run_attempts.py <subcommand>`. */
+function callIds(messages: unknown[], subcommand: string): Set<string> {
+  const ids = new Set<string>();
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (value === null || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    const args = record.arguments ?? record.input ?? record.args;
+    if (typeof record.id === "string" && args !== undefined && JSON.stringify(args).includes(`run_attempts.py ${subcommand}`)) ids.add(record.id);
+    Object.values(record).forEach(visit);
+  };
+  for (const message of messages) {
+    const record = message as Record<string, unknown> | null;
+    if (record !== null && typeof record === "object" && (record.role ?? (record.message as Record<string, unknown> | undefined)?.role) === "assistant") visit(record);
+  }
+  return ids;
+}
+
+// A run that stopped because the day's attempts are spent did so on purpose, and `begin` owns the
+// notice: it answered `stop` (the owner is told, now or on an earlier start). A generic failure
+// notice on top would repeat it. `stop-untold` (the notice could not be posted) is not a deliberate
+// quiet, so the generic notice still goes out. Only the script's own result counts: the tool result
+// paired with the call that ran it, never text the model or another tool produced.
+function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
+  const all = messages ?? [];
+  const begins = callIds(all, "begin");
+  if (begins.size === 0) return false;
+  return all.some(message => {
+    if (message === null || typeof message !== "object") return false;
+    const record = message as Record<string, unknown>;
+    const nested = record.message as Record<string, unknown> | undefined;
+    if (!toolResultRole.has(String(record.role ?? nested?.role))) return false;
+    const callId = record.toolCallId ?? record.tool_call_id ?? record.toolUseId ?? nested?.toolCallId ?? nested?.tool_call_id;
+    return typeof callId === "string" && begins.has(callId) &&
+      textValues(record.content ?? nested?.content).some(text => text.trim() === "stop");
+  });
+}
+
 /** Alert the owner once when a paper cron ends without confirmed delivery. */
 export async function notifyFailedPaperRun(event: AgentEnd, context: AgentContext): Promise<void> {
   const runId = event.runId;
   const jobId = context.jobId;
   if (
-    deliveryWasConfirmed(event.messages) || alreadyMessagedOwner(event.messages) ||
+    deliveryWasConfirmed(event.messages) || alreadyMessagedOwner(event.messages) || stoppedOnPurpose(event.messages) ||
     !isPaperRun(event.messages, context) || !runId
   ) return;
   const key = `${jobId ?? context.sessionKey ?? context.sessionId ?? "paper"}:${runId}`;

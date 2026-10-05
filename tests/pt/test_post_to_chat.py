@@ -385,10 +385,50 @@ class TestOutboxDelivery:
         instant = datetime(2026, 9, day, hh, mm, tzinfo=self.ZONE)
         monkeypatch.setattr(post, "_now", lambda: instant)
 
-    def _hold(self, monkeypatch, run, hhmm="09:30"):
+    def _hold(self, monkeypatch, run, hhmm="09:30", extra=()):
         monkeypatch.setattr(sys, "argv", ["post_to_chat.py", "--pdf", str(run / "edition.pdf"),
-                                          "--text-file", str(run / "edition.companion.txt"), "--hold-until", hhmm])
+                                          "--text-file", str(run / "edition.companion.txt"), "--hold-until", hhmm, *extra])
         post.main()
+
+    def _spend_the_day(self, capsys):
+        for _ in range(post.run_attempts.MAX_ATTEMPTS):
+            post.run_attempts.begin()
+        capsys.readouterr()
+
+    def _next_attempt(self, capsys):
+        capsys.readouterr()
+        post.run_attempts.begin()
+        return capsys.readouterr().out.strip()
+
+    @pytest.mark.parametrize("hh,mm,staged", [(8, 0, True), (9, 45, False)])
+    def test_clear_attempts_starts_the_owners_day_over_once_staged_or_posted(self, tmp_path, monkeypatch, capsys, hh, mm, staged):
+        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
+        self._at(monkeypatch, hh, mm)
+        self._spend_the_day(capsys)
+        self._hold(monkeypatch, run, extra=["--clear-attempts"])
+        assert (home / "outbox").exists() is staged
+        assert self._next_attempt(capsys) == "proceed"
+
+    def test_clear_attempts_with_a_key_clears_that_jobs_count_only(self, tmp_path, monkeypatch, capsys):
+        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
+        self._at(monkeypatch, 8, 0)
+        for key in ("paper", "t_9f2a"):
+            for _ in range(post.run_attempts.MAX_ATTEMPTS):
+                post.run_attempts.begin(key)
+        capsys.readouterr()
+        self._hold(monkeypatch, run, extra=["--clear-attempts", "t_9f2a"])
+        capsys.readouterr()
+        post.run_attempts.begin("t_9f2a")
+        assert capsys.readouterr().out.strip() == "proceed"
+        post.run_attempts.begin("paper")
+        assert capsys.readouterr().out.strip() in ("stop", "stop-untold")
+
+    def test_without_the_flag_a_delivery_leaves_the_count_alone(self, tmp_path, monkeypatch, capsys):
+        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
+        self._at(monkeypatch, 8, 0)
+        self._spend_the_day(capsys)
+        self._hold(monkeypatch, run)
+        assert self._next_attempt(capsys) in ("stop", "stop-untold")
 
     def test_flush_recovers_persisted_post_without_reposting(self, tmp_path, monkeypatch):
         home = tmp_path / "pt"
