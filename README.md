@@ -158,7 +158,9 @@ talk to.
 
 Every phone group is listen-only, including groups the agent starts from the
 owner's main DM. Every member, including the owner, gets only
-`plow_record_signal`; the agent never replies there. The inherited
+`plow_record_signal`; inbound group turns never receive replies. Owner-initiated
+messages and follow-ups requested from the owner's DM can still be posted into
+the group. The inherited
 `PLOW_THREAD_TRUST=ask|trusted|untrusted` policy and `plow_set_thread_trust`
 set the Plow trust flag, but never make a group interactive or grant Mac tools
 in this newspaper. In an untrusted non-owner DM the sender gets replies only,
