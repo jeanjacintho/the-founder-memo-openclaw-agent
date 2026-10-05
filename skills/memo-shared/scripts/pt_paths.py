@@ -1,8 +1,8 @@
 """Where the paper lives inside the image -- the one place that says so.
 
-    PT_HOME  /var/lib/plow/pt    config.json, run/, locks: the
+    PT_HOME  /var/lib/plow/pt    config.json, topics.json, run/, locks: the
                                  agent's own state, on the state volume
-    SKILLS   /opt/plow/skills    the pt-* skills, root-owned and read-only
+    SKILLS   /opt/plow/skills    the memo-* skills, root-owned and read-only
 
 Both are absolute because a turn's working directory is not something a
 script can trust. `PT_HOME` and `PT_SKILLS` override them (tests point them

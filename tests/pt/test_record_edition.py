@@ -312,7 +312,7 @@ class TestSectionMemoryIsRecordedWhereverTheEditionFileSits:
     """Measured live 2026-09-24: the edition file sat at run/edition.json, not
     run/<id>/edition.json, so the recorder looked for notes beside `pt/` and
     recorded `printed: []` for every news section -- the next paper then had no
-    history to stay off. Notes live where the research pass writes them."""
+    history to stay off. Notes live where memo-research writes them."""
 
     @pytest.mark.parametrize("edition_at", ["run/edition.json", "run/daily-2026-09-24/edition.json"])
     def test_printed_claims_are_recorded(self, mac, tmp_path, monkeypatch, edition_at):

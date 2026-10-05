@@ -38,7 +38,7 @@ from zoneinfo import ZoneInfo
 from pt_paths import config_file
 
 # A sentinel, not a Path: PT_HOME (tests point it at a tmp dir, same as
-# run_lock.py/record_edition.py) has to be read at call time, not
+# topics.py/run_lock.py/record_edition.py) has to be read at call time, not
 # baked in as a default at import time.
 CONFIG = object()
 

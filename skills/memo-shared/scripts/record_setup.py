@@ -64,7 +64,7 @@ from pt_paths import config_file  # noqa: E402
 DEFAULT_CONFIG = str(config_file())
 # The order memo-setup/SKILL.md's questions are asked in, plus the close step.
 # next_question() returns the first of these whose draft field is missing.
-QUESTION_ORDER = ("hour", "printer", "priority", "mail", "signals")
+QUESTION_ORDER = ("hour", "printer", "priority", "mail", "news", "signals")
 # The priority-signal sources question 5 switches; all three must be recorded.
 SIGNAL_SOURCES = ("group_chat", "email", "imessage")
 
@@ -110,8 +110,11 @@ def apply_pairs(draft, pairs):
 
 def next_question(draft):
     """The first interview field still missing from the draft, in
-    memo-setup/SKILL.md's own question order. Each step advances only once
-    its own field lands in the draft."""
+    memo-setup/SKILL.md's own question order. `news` has no stored value of
+    its own (naming zero topics is a valid answer) -- record_setup.py is
+    called with news_asked=true once that question has been asked and
+    answered (even "nothing for now"), the same way every other step
+    advances only once its own field lands in the draft."""
     hour = draft.get("local_hour")
     if not (isinstance(hour, str) and hour.strip()):
         return "hour"
@@ -124,6 +127,8 @@ def next_question(draft):
     mail = draft.get("mail")
     if not (isinstance(mail, dict) and isinstance(mail.get("configured"), bool)):
         return "mail"
+    if not isinstance(draft.get("news_asked"), bool):
+        return "news"
     signals = draft.get("signals")
     if not (isinstance(signals, dict) and all(isinstance(signals.get(s), bool) for s in SIGNAL_SOURCES)):
         return "signals"

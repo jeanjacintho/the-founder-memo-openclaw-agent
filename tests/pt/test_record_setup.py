@@ -43,14 +43,14 @@ class TestNextQuestion:
                  "priority": {"configured": False}}
         assert record.next_question(draft) == "mail"
 
-    def test_hour_printer_mail_asks_signals(self):
+    def test_hour_printer_mail_asks_news(self):
         draft = {
             "local_hour": "07:00",
             "printer": {"configured": True, "name": "HP LaserJet 4"},
             "priority": {"configured": False},
             "mail": {"configured": False},
         }
-        assert record.next_question(draft) == "signals"
+        assert record.next_question(draft) == "news"
 
     def test_everything_present_is_close(self):
         draft = {
@@ -58,9 +58,15 @@ class TestNextQuestion:
             "printer": {"configured": True, "name": "HP LaserJet 4"},
             "priority": {"configured": True},
             "mail": {"configured": True},
-                "signals": {"group_chat": False, "email": True, "imessage": False},
+            "news_asked": True,
+            "signals": {"group_chat": False, "email": True, "imessage": False},
         }
         assert record.next_question(draft) == "close"
+
+    def test_news_answered_asks_signals(self):
+        draft = {"local_hour": "07:00", "printer": {"configured": False}, "priority": {"configured": True},
+                 "mail": {"configured": True}, "news_asked": True}
+        assert record.next_question(draft) == "signals"
 
     @pytest.mark.parametrize("signals", [
         {"group_chat": True},
@@ -69,7 +75,7 @@ class TestNextQuestion:
     ])
     def test_incomplete_signals_is_still_open(self, signals):
         draft = {"local_hour": "07:00", "printer": {"configured": False}, "priority": {"configured": True},
-                 "mail": {"configured": True}, "signals": signals}
+                 "mail": {"configured": True}, "news_asked": True, "signals": signals}
         assert record.next_question(draft) == "signals"
 
     def test_printer_configured_string_not_bool_asks_printer(self):
@@ -147,8 +153,9 @@ class TestCLI:
         record.main(["record_setup.py", str(config), "local_hour=07:00"])
         record.main(["record_setup.py", str(config), "printer.configured=false"])
         record.main(["record_setup.py", str(config), "priority.configured=false"])
+        record.main(["record_setup.py", str(config), "mail.configured=true"])
         capsys.readouterr()
-        rc = record.main(["record_setup.py", str(config), "mail.configured=true"])
+        rc = record.main(["record_setup.py", str(config), "news_asked=true"])
         assert rc == 0
         out = capsys.readouterr().out.strip().splitlines()
         assert out == ["DRAFT:local_hour,printer,priority,mail", "NEXT_QUESTION=signals"]
@@ -195,6 +202,7 @@ class TestDoneClearsTheDraft:
         "printer": {"configured": True, "name": "virtual_printer_online"},
         "priority": {"configured": False},
         "mail": {"configured": True},
+        "news_asked": True,
         "signals": {"group_chat": False, "email": True, "imessage": False},
     }
 
@@ -225,7 +233,7 @@ class TestDoneClearsTheDraft:
     def test_done_does_not_mix_with_key_value_pairs(self, tmp_path):
         self.write_draft(tmp_path, self.COMPLETE)
         rc = record.main(
-            ["record_setup.py", str(tmp_path / "config.json"), "--done", "mail.configured=true"]
+            ["record_setup.py", str(tmp_path / "config.json"), "--done", "news_asked=true"]
         )
         assert rc == 1
 

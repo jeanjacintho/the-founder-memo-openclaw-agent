@@ -23,6 +23,7 @@ COMPLETE = {
     "printer": {"configured": True, "name": "virtual_printer_online"},
     "priority": {"configured": False},
     "mail": {"configured": True},
+    "news_asked": True,
     "signals": {"group_chat": False, "email": True, "imessage": False},
 }
 

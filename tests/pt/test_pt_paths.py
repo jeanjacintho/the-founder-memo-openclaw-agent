@@ -18,7 +18,7 @@ def test_env_overrides_are_read_at_call_time(monkeypatch, tmp_path):
     monkeypatch.setenv("PT_HOME", str(tmp_path / "pt"))
     monkeypatch.setenv("PT_SKILLS", str(tmp_path / "skills"))
     assert paths.config_file() == tmp_path / "pt" / "config.json"
-    assert paths.script("memo-schedule", "register_crons.py") == tmp_path / "skills" / "memo-schedule" / "scripts" / "register_crons.py"
+    assert paths.script("memo-intake", "topics.py") == tmp_path / "skills" / "memo-intake" / "scripts" / "topics.py"
 
 
 def test_blank_override_falls_back_to_the_default(monkeypatch):

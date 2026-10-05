@@ -19,6 +19,16 @@ CONFIG = {
 }
 
 
+def topic(tid, kind="subscription", status="pending", depth="deep", run_on=None,
+          deliver_at=None):
+    row = {"id": tid, "text": f"topic {tid}", "kind": kind, "depth": depth,
+           "status": status, "created_at": "now", "last_edition_at": None,
+           "scheduled_for": None, "run_on": run_on}
+    if deliver_at is not None:
+        row["deliver_at"] = deliver_at
+    return row
+
+
 def write_config(tmp_path, config=CONFIG):
     path = tmp_path / "pt" / "config.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,7 +94,8 @@ class TestPaperPrompts:
         assert "or more, run the tournament" in prompt
 
     @pytest.mark.parametrize("prompt", [
-        crons.paper_prompt(), crons.paper_prompt("09:30", 60)])
+        crons.paper_prompt(), crons.paper_prompt("09:30", 60), crons.paper_prompt(focus="18:00"),
+        crons.topic_prompt("t_1", "quick", scheduled=True)])
     def test_every_paper_says_how_its_skills_load(self, prompt):
         # A model that guessed plow__plow_read_skill got "no skill" and
         # gave up the paper: the prompt names the container path and tool.
@@ -162,38 +173,69 @@ class TestDesiredJobs:
     @pytest.mark.parametrize("lead_minutes", [200, 180])
     def test_workspace_spacing_allows_papers_at_effective_lead_distance(self, lead_minutes):
         # Starts 201 minutes apart fit the lock's stale limit and the lead.
-        crons.desired_jobs("07:00", TZ, lead_minutes=lead_minutes,
+        crons.desired_jobs([], "07:00", TZ, lead_minutes=lead_minutes,
                            extra_hours=["10:21"])
 
     def test_workspace_spacing_refuses_starts_closer_than_the_stale_limit(self):
         # With a 220-minute lead the starts are 03:20 and 06:40: 200 minutes apart.
         with pytest.raises(SystemExit, match="201 minutes apart"):
-            crons.desired_jobs("07:00", TZ, lead_minutes=220,
+            crons.desired_jobs([], "07:00", TZ, lead_minutes=220,
                                extra_hours=["10:20"])
+
+    def test_one_job_per_active_subscription(self, tmp_path):
+        path = write_config(tmp_path)
+        topics = [topic("t_9f2a"), topic("t_0c11")]
+        jobs = crons.desired_jobs(topics, "07:00", TZ)
+        assert [j["name"] for j in jobs] == [
+            crons.DAILY_NAME,
+            "pt-subscription-t_9f2a", "pt-subscription-t_0c11"]
+        subs = [j for j in jobs if j["name"].startswith("pt-subscription-")]
+        assert all(j["schedule"] == "0 7 * * *" for j in subs)
+        assert all(j["tz"] == TZ for j in jobs)
+        assert all("deliver" not in j for j in jobs)
+        assert path.name == "config.json"  # config untouched
 
     def test_early_extra_slot_clamps_its_lead_instead_of_refusing(self):
         # The main paper's 40-minute lead must not abort registration for a
         # slot at 00:20: that slot starts at midnight, not the evening before.
-        jobs = crons.desired_jobs("07:00", TZ, lead_minutes=40, extra_hours=["00:20"])
+        jobs = crons.desired_jobs(
+            [topic("t_9f2a", kind="section", deliver_at="12:30")], "07:00", TZ, lead_minutes=40, extra_hours=["00:20"])
         by_name = {j["name"]: j["schedule"] for j in jobs}
-        assert by_name == {crons.DAILY_NAME: "20 6 * * *", f"{crons.DAILY_NAME}-2": "0 0 * * *"}
+        assert by_name[crons.DAILY_NAME] == "20 6 * * *"
+        assert by_name[f"{crons.DAILY_NAME}-2"] == "0 0 * * *"
+        assert by_name[crons.paper_job_name("12:30")] == "50 11 * * *"
 
     def test_lead_clamps_to_owner_midnight(self):
         # The owner's 00:20 with a 40-minute lead starts at owner midnight,
         # not the evening before; the owner's 10:30 keeps the full lead.
-        jobs = crons.desired_jobs("00:20", "America/Sao_Paulo", 40, extra_hours=["10:30"])
+        jobs = crons.desired_jobs(
+            [topic("t_1", kind="section", deliver_at="14:30")], "00:20",
+            "America/Sao_Paulo", 40, extra_hours=["10:30"],
+        )
         assert jobs[0]["schedule"] == "0 0 * * *"
         assert jobs[1]["schedule"] == "50 9 * * *"
+        assert jobs[2]["schedule"] == "50 13 * * *"
         assert {j["tz"] for j in jobs} == {"America/Sao_Paulo"}
 
     def test_every_cron_job_fires_on_the_owner_clock(self):
         # The owner's 07:00 in Tokyo is registered as 07:00 with --tz
         # Asia/Tokyo: the scheduler converts, daylight saving included.
-        (daily,) = crons.desired_jobs("07:00", "Asia/Tokyo")
-        assert daily["name"] == crons.DAILY_NAME
+        jobs = crons.desired_jobs(
+            [topic("t_9f2a"), topic("t_1", kind="section", deliver_at="12:00")], "07:00",
+            "Asia/Tokyo")
+        by_name = {j["name"]: j for j in jobs}
+        daily = by_name[crons.DAILY_NAME]
         assert (daily["schedule"], daily["tz"]) == ("0 7 * * *", "Asia/Tokyo")
         assert "--hold-until 07:00 " in daily["prompt"]
-        assert "deliver" not in daily
+        assert by_name["pt-subscription-t_9f2a"]["schedule"] == "0 7 * * *"
+        paper = by_name[crons.paper_job_name("12:00")]
+        assert "--deliver-at 12:00" in paper["prompt"]
+        assert (paper["schedule"], paper["tz"]) == ("0 12 * * *", "Asia/Tokyo")
+
+    def test_one_off_is_a_one_shot_at_its_own_offset(self):
+        oneoff = {**topic("t_0c11", kind="one_off", depth="quick"), "scheduled_for": FUTURE}
+        (job,) = [j for j in crons.desired_jobs([oneoff], "07:00", TZ) if j["name"] == "pt-oneoff-t_0c11"]
+        assert (job["schedule"], job["tz"]) == (FUTURE, None)
 
     @pytest.mark.parametrize("owner_tz", ["America/Los_Angeles", "Asia/Tokyo"])
     def test_local_hour_from_before_owner_clock_hours_is_retired_never_copied(
@@ -221,29 +263,91 @@ class TestDesiredJobs:
         path = write_config(tmp_path, {**CONFIG, "delivery": delivery})
         assert crons.load_extra_hours(path) == hours
 
+    def test_cancelled_subscription_gets_no_job(self):
+        jobs = crons.desired_jobs(
+            [topic("t_9f2a", status="cancelled")], "07:00", TZ)
+        assert [j["name"] for j in jobs] == [crons.DAILY_NAME]
+
+    @pytest.mark.parametrize("status,scheduled_for,fires_at", [
+        ("pending", FUTURE, [FUTURE]),
+        ("pending", "2000-01-01T07:03:00-03:00", []),  # past: not re-armed
+        ("running", FUTURE, []),
+        ("delivered", FUTURE, []),
+    ])
+    def test_only_a_pending_one_off_still_ahead_gets_its_job(
+            self, status, scheduled_for, fires_at):
+        oneoff = {**topic("t_0c11", kind="one_off", status=status, depth="quick"),
+                  "scheduled_for": scheduled_for}
+        jobs = crons.desired_jobs([oneoff], "07:00", TZ)
+        assert [j["schedule"] for j in jobs if j["name"] == "pt-oneoff-t_0c11"] == fires_at
+
+    def test_running_subscription_still_has_its_job(self):
+        jobs = crons.desired_jobs([topic("t_9f2a", status="running")], "07:00", TZ)
+        assert [j["name"] for j in jobs] == [crons.DAILY_NAME, "pt-subscription-t_9f2a"]
+
+    def test_hour_derived_without_leading_zero(self):
+        jobs = crons.desired_jobs([topic("t_9f2a")], "23:00", TZ)
+        sub = next(j for j in jobs if j["name"] == "pt-subscription-t_9f2a")
+        assert sub["schedule"] == "0 23 * * *"
+
+
+class TestStaleNames:
+    def test_cancelled_subscription_pruned(self):
+        stale = crons.stale_names(
+            [topic("t_9f2a", status="cancelled")],
+            {"pt-subscription-t_9f2a": True},
+        )
+        assert stale == ["pt-subscription-t_9f2a"]
+
+    def test_delivered_oneoff_pruned(self):
+        stale = crons.stale_names(
+            [topic("t_0c11", kind="one_off", status="delivered", depth="quick")],
+            {"pt-oneoff-t_0c11": True},
+        )
+        assert stale == ["pt-oneoff-t_0c11"]
+
+    def test_pending_oneoff_kept(self):
+        stale = crons.stale_names(
+            [topic("t_0c11", kind="one_off", status="pending", depth="quick")],
+            {"pt-oneoff-t_0c11": True},
+        )
+        assert stale == []
+
+    def test_job_with_no_topic_pruned(self):
+        assert crons.stale_names([], {"pt-subscription-t_ffff": True}) == \
+            ["pt-subscription-t_ffff"]
+
+    def test_foreign_names_never_touched(self):
+        registered = {"ld-weather": True, "pt-subscription-notanid": True,
+                      "pt-subscription-t_9f2a-extra": True}
+        assert crons.stale_names([topic("t_9f2a")], registered) == []
+
+
 class TestArgv:
     def test_cron_job_is_an_isolated_undelivered_turn_in_the_owner_zone(self):
-        (daily,) = crons.desired_jobs("07:00", TZ)
-        argv = backend_mod.CronBackend().create_argv(daily)
+        jobs = crons.desired_jobs([topic("t_9f2a")], "07:00", TZ)
+        sub = next(j for j in jobs if j["name"] == "pt-subscription-t_9f2a")
+        argv = backend_mod.CronBackend().create_argv(sub)
         assert argv[:4] == ["node", "/app/openclaw.mjs", "cron", "add"]
-        assert argv[argv.index("--name") + 1] == crons.DAILY_NAME
+        assert argv[argv.index("--name") + 1] == "pt-subscription-t_9f2a"
         assert argv[argv.index("--cron") + 1] == "0 7 * * *"
         assert argv[argv.index("--tz") + 1] == TZ
         assert argv[argv.index("--session") + 1] == "isolated"
-        assert argv[argv.index("--message") + 1] == daily["prompt"]
+        assert argv[argv.index("--message") + 1] == sub["prompt"]
         assert argv[argv.index("--model") + 1] == "plow/openai/gpt-6-sol"
         assert "--no-deliver" in argv and "--exact" in argv and "--json" in argv
         assert argv[argv.index("--timeout-seconds") + 1] == "10800"
         assert "--announce" not in argv and "--token" not in argv
 
     def test_one_shot_uses_at_without_a_zone(self):
-        job = {"name": crons.NOW_NAME, "schedule": FUTURE, "tz": None, "prompt": crons.paper_prompt()}
+        oneoff = {**topic("t_0c11", kind="one_off", depth="quick"), "scheduled_for": FUTURE}
+        job = crons.oneoff_job(oneoff)
         argv = backend_mod.CronBackend().create_argv(job)
         assert argv[argv.index("--at") + 1] == FUTURE
         assert "--cron" not in argv and "--tz" not in argv
 
     def test_edit_patches_the_job_by_id(self):
-        daily = crons.desired_jobs("07:00", TZ)[0]
+        daily = crons.desired_jobs([topic("t_9f2a")], "07:00", TZ)[0]
         argv = backend_mod.CronBackend().edit_argv("abc", daily)
         assert argv[:5] == ["node", "/app/openclaw.mjs", "cron", "edit", "abc"]
         assert argv[argv.index("--cron") + 1] == daily["schedule"]
@@ -257,28 +361,29 @@ class TestArgv:
             "node", "/app/openclaw.mjs", "cron", "rm", "abc", "--json"]
 
 
-def run_main(tmp_path, monkeypatch, sched, argv=None, config=CONFIG, env=None):
+def run_main(tmp_path, monkeypatch, topics_list, sched, argv=None, config=CONFIG, env=None):
     pt_home = tmp_path / "pt"
     pt_home.mkdir(exist_ok=True)
     (pt_home / "config.json").write_text(json.dumps(config))
+    (pt_home / "topics.json").write_text(json.dumps({"topics": topics_list}))
     monkeypatch.setenv("PT_HOME", str(pt_home))
     monkeypatch.chdir(tmp_path)
     return crons.main(argv, backend=sched.backend(), config_path=pt_home / "config.json",
                       env=env if env is not None else {})
 
 
-def registered_like_spec(**overrides):
+def registered_like_spec(topics_list, **overrides):
     """Rows exactly as a previous run of this script would have left them."""
     return [row(j["name"], expr=j["schedule"] if j["tz"] else None,
                 at=None if j["tz"] else j["schedule"], tz=j["tz"], message=j["prompt"],
                 model="plow/openai/gpt-6-sol", **overrides)
-            for j in crons.desired_jobs("07:00", TZ)] + [deliver_row()]
+            for j in crons.desired_jobs(topics_list, "07:00", TZ)] + [deliver_row()]
 
 
 class TestMain:
     def test_needs_no_container_tz(self, tmp_path, monkeypatch):
         sched = FakeScheduler()
-        assert run_main(tmp_path, monkeypatch, sched, env={}) == 0
+        assert run_main(tmp_path, monkeypatch, [], sched, env={}) == 0
         assert [w[0] for w in sched.writes] == ["add", "add"]  # the daily paper and pt-deliver
 
     def test_now_queues_the_main_papers_own_prompt_as_a_one_shot(
@@ -286,8 +391,8 @@ class TestMain:
         # "Send me the paper now" is the SAME job the 7am run fires. Measured
         # live: a variant of the recipe skipped the advisor, so an on-demand
         # paper came back with a gap card and one story.
-        sched = FakeScheduler(registered_like_spec())
-        rc = run_main(tmp_path, monkeypatch, sched, argv=["--now"])
+        sched = FakeScheduler(registered_like_spec([]))
+        rc = run_main(tmp_path, monkeypatch, [], sched, argv=["--now"])
         assert rc == 0
         (create,) = [w for w in sched.writes if crons.NOW_NAME in w]
         at = create[create.index("--at") + 1]
@@ -302,22 +407,22 @@ class TestMain:
         # A failed create must not cancel a copy the owner was already promised.
         def fail(argv):
             return create_rc if argv[3] == "add" and crons.NOW_NAME in argv else 0
-        rows = registered_like_spec() + [row(crons.NOW_NAME, jid="old123", at=FUTURE)]
+        rows = registered_like_spec([]) + [row(crons.NOW_NAME, jid="old123", at=FUTURE)]
         sched = FakeScheduler(rows, fail=fail)
         if create_rc:
             with pytest.raises(SystemExit, match="could not queue"):
-                run_main(tmp_path, monkeypatch, sched, argv=["--now"])
+                run_main(tmp_path, monkeypatch, [], sched, argv=["--now"])
             assert not any(w[0] == "rm" for w in sched.writes)
         else:
-            run_main(tmp_path, monkeypatch, sched, argv=["--now"])
+            run_main(tmp_path, monkeypatch, [], sched, argv=["--now"])
             assert [w[:2] for w in sched.writes] == [["add", "--name"], ["rm", "old123"]]
 
     # Measured live 2026-09-30: asked to "re-evaluate today's priorities",
     # the chat fired the daily job after its hour; it skipped the tournament by
     # its window rule, and the plain on-demand copy reuses yesterday's advice.
     def test_fresh_advice_queues_a_copy_that_runs_the_tournament(self, tmp_path, monkeypatch, capsys):
-        sched = FakeScheduler(registered_like_spec())
-        assert run_main(tmp_path, monkeypatch, sched, argv=["--now", "--fresh-advice"]) == 0
+        sched = FakeScheduler(registered_like_spec([]))
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
         (create,) = [w for w in sched.writes if crons.NOW_NAME in w]
         prompt = create[create.index("--message") + 1]
         assert prompt == crons.paper_prompt(fresh_advice=True)
@@ -331,13 +436,13 @@ class TestMain:
     @pytest.mark.parametrize("name", [crons.NOW_NAME, crons.DAILY_NAME])
     def test_fresh_advice_behind_a_running_paper_queues_nothing(self, tmp_path, monkeypatch,
                                                                 capsys, name):
-        listing = registered_like_spec()
+        listing = registered_like_spec([])
         if name == crons.NOW_NAME:
             listing.append(row(name, jid="live123", at=FUTURE))
         (running,) = [r for r in listing if r["name"] == name]
         running["state"] = {"runningAtMs": 1790620326000}
         sched = FakeScheduler(listing)
-        assert run_main(tmp_path, monkeypatch, sched, argv=["--now", "--fresh-advice"]) == 0
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
         assert sched.writes == []
         out = capsys.readouterr().out
         assert f"not queued: {name}" in out and "no fresh evaluation was queued" in out
@@ -366,7 +471,7 @@ class TestMain:
 
     def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
         with pytest.raises(SystemExit):
-            run_main(tmp_path, monkeypatch, FakeScheduler(registered_like_spec()),
+            run_main(tmp_path, monkeypatch, [], FakeScheduler(registered_like_spec([])),
                      argv=["--fresh-advice"])
 
     def test_now_never_removes_a_copy_that_is_running(self, tmp_path, monkeypatch, capsys):
@@ -375,67 +480,84 @@ class TestMain:
         # and every later --now copy read 'held' and stopped for 390 minutes.
         running = row(crons.NOW_NAME, jid="live123", at=FUTURE)
         running["state"] = {"runningAtMs": 1790620326000}
-        sched = FakeScheduler(registered_like_spec() + [running])
-        assert run_main(tmp_path, monkeypatch, sched, argv=["--now"]) == 0
+        sched = FakeScheduler(registered_like_spec([]) + [running])
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now"]) == 0
         assert not any(crons.NOW_NAME in w or w[0] == "rm" for w in sched.writes)
         assert "already running: pt-daily-edition-now" in capsys.readouterr().out
 
+    def test_rebuild_recreates_a_pending_one_offs_job(self, tmp_path, monkeypatch):
+        # A fresh state volume has no jobs: a one-off the owner was promised
+        # must come back from topics.json like any subscription does.
+        oneoff = {**topic("t_0c11", kind="one_off", depth="quick"), "scheduled_for": FUTURE}
+        sched = FakeScheduler(registered_like_spec([]))
+        run_main(tmp_path, monkeypatch, [oneoff], sched)
+        (create,) = [w for w in sched.writes if "pt-oneoff-t_0c11" in w]
+        assert create[create.index("--at") + 1] == FUTURE
+        assert "topic t_0c11 now (depth quick)" in create[create.index("--message") + 1]
+
     def test_registration_never_sweeps_a_queued_copy(self, tmp_path, monkeypatch):
-        sched = FakeScheduler(registered_like_spec() + [row(crons.NOW_NAME, at=FUTURE)])
-        run_main(tmp_path, monkeypatch, sched)
+        sched = FakeScheduler(registered_like_spec([]) + [row(crons.NOW_NAME, at=FUTURE)])
+        run_main(tmp_path, monkeypatch, [], sched)
         assert sched.writes == []
 
+    def test_registers_missing_subscription(self, tmp_path, monkeypatch):
+        sched = FakeScheduler(registered_like_spec([]))
+        assert run_main(tmp_path, monkeypatch, [topic("t_9f2a")], sched) == 0
+        assert [w[0] for w in sched.writes] == ["add"]
+        assert "pt-subscription-t_9f2a" in sched.writes[0]
+
     def test_idempotent_run_skips_present(self, tmp_path, monkeypatch):
-        sched = FakeScheduler(registered_like_spec())
-        assert run_main(tmp_path, monkeypatch, sched) == 0
+        topics_list = [topic("t_9f2a")]
+        sched = FakeScheduler(registered_like_spec(topics_list))
+        assert run_main(tmp_path, monkeypatch, topics_list, sched) == 0
         assert sched.writes == []  # nothing created, edited or removed
 
     def test_removes_stale_by_id_and_creates_missing(self, tmp_path, monkeypatch):
-        rows = [r for r in registered_like_spec() if r["name"] != crons.DAILY_NAME]
-        sched = FakeScheduler(rows + [row(f"{crons.DAILY_NAME}-2", jid="orphan")])
-        assert run_main(tmp_path, monkeypatch, sched) == 0
+        sched = FakeScheduler(registered_like_spec([]) + [row("pt-subscription-t_ffff", jid="orphan")])
+        assert run_main(tmp_path, monkeypatch, [topic("t_0c11")], sched) == 0
         assert ["rm", "orphan", "--json"] in sched.writes
-        assert any(w[0] == "add" and crons.DAILY_NAME in w for w in sched.writes)
+        assert any(w[0] == "add" and "pt-subscription-t_0c11" in w for w in sched.writes)
 
     def test_foreign_jobs_are_never_touched(self, tmp_path, monkeypatch):
-        sched = FakeScheduler(registered_like_spec() + [row("heartbeat-main", expr="*/30 * * * *")])
-        run_main(tmp_path, monkeypatch, sched)
+        sched = FakeScheduler(registered_like_spec([]) + [row("heartbeat-main", expr="*/30 * * * *")])
+        run_main(tmp_path, monkeypatch, [], sched)
         assert sched.writes == []
 
     def test_a_disabled_legacy_job_is_brought_to_the_spec_but_stays_disabled(self, tmp_path, monkeypatch, capsys):
-        rows = registered_like_spec(enabled=False)
+        rows = registered_like_spec([], enabled=False)
         for registered in rows:
             registered["payload"].pop("timeoutSeconds", None)  # registered before the run budget
         sched = FakeScheduler(rows)
         with pytest.raises(SystemExit, match="DISABLED"):
-            run_main(tmp_path, monkeypatch, sched)
+            run_main(tmp_path, monkeypatch, [], sched)
         edited = [w for w in sched.writes if w[0] == "edit" and "id-pt-daily-edition" in w]
         assert edited and edited[0][edited[0].index("--timeout-seconds") + 1] == "10800"
         assert not any(w[0] in ("enable", "add") for w in sched.writes), "never enabled, never duplicated"
         assert "leaves it disabled" in capsys.readouterr().out
 
     def test_disabled_job_is_left_alone_and_named(self, tmp_path, monkeypatch, capsys):
-        sched = FakeScheduler(registered_like_spec(enabled=False))
+        sched = FakeScheduler(registered_like_spec([], enabled=False))
         with pytest.raises(SystemExit, match="DISABLED"):
-            run_main(tmp_path, monkeypatch, sched)
+            run_main(tmp_path, monkeypatch, [], sched)
         assert sched.writes == []  # not duplicated, not edited
         assert "cron enable id-pt-daily-edition" in capsys.readouterr().out
 
     def test_unreadable_listing_writes_nothing(self, tmp_path, monkeypatch):
         sched = FakeScheduler(listing="not json")
         with pytest.raises(SystemExit, match="refusing to register"):
-            run_main(tmp_path, monkeypatch, sched)
+            run_main(tmp_path, monkeypatch, [topic("t_9f2a")], sched)
         assert sched.writes == []
 
     def test_failed_create_fails_loud(self, tmp_path, monkeypatch):
         sched = FakeScheduler(fail=lambda argv: 1)
         with pytest.raises(SystemExit, match="could not register"):
-            run_main(tmp_path, monkeypatch, sched)
+            run_main(tmp_path, monkeypatch, [topic("t_9f2a")], sched)
 
 
 class TestDailySchedule:
     def test_default_lead_is_zero(self):
-        jobs = crons.desired_jobs("07:00", TZ)
+        jobs = crons.desired_jobs(
+            [topic("t_1", kind="section")], "07:00", TZ)
         assert jobs[0]["schedule"] == "0 7 * * *"
         assert crons.DEFAULT_LEAD_MINUTES == 0
 
@@ -465,6 +587,16 @@ class TestDailySchedule:
             crons.load_lead_minutes(path)
 
 
+class TestSubscriptionJob:
+    def test_carries_the_owner_chosen_minute(self):
+        job = crons.subscription_job(topic("t_9f2a"), "10:25", TZ)
+        assert job["schedule"] == "25 10 * * *"
+
+    def test_whole_hour_still_works(self):
+        job = crons.subscription_job(topic("t_9f2a"), "07:00", TZ)
+        assert job["schedule"] == "0 7 * * *"
+
+
 class TestExtraDailyHours:
     # Regression: a user asked for a second daily edition at 10:30 and the
     # model, having no sanctioned way to do that, hand-registered a cron job
@@ -475,7 +607,7 @@ class TestExtraDailyHours:
     # unnecessary.
     def test_desired_jobs_adds_one_per_extra_hour(self):
         jobs = crons.desired_jobs(
-            "03:00", TZ,
+            [topic("t_1", kind="section")], "03:00", TZ,
             45, extra_hours=["10:30"],
         )
         names = [j["name"] for j in jobs]
@@ -486,7 +618,7 @@ class TestExtraDailyHours:
 
     def test_extra_job_prompt_shares_the_workspace_lock_and_has_the_pdf_leg(self):
         jobs = crons.desired_jobs(
-            "03:00", TZ, 45, extra_hours=["10:30"],
+            [topic("t_1", kind="section")], "03:00", TZ, 45, extra_hours=["10:30"],
         )
         prompt = jobs[1]["prompt"]
         assert "--name paper-workspace" in prompt
@@ -495,16 +627,22 @@ class TestExtraDailyHours:
         assert "short status for the cron run record" in prompt
 
     def test_no_extra_hours_is_unchanged(self):
-        jobs = crons.desired_jobs("03:00", TZ, 45)
+        jobs = crons.desired_jobs([topic("t_1", kind="section")], "03:00", TZ, 45)
         assert [j["name"] for j in jobs] == ["pt-daily-edition"]
 
-    def test_papers_less_than_three_hours_apart_are_refused(self):
+    @pytest.mark.parametrize("extra,section_hour", [
+        (["09:00"], None),
+        ([], "09:00"),
+    ])
+    def test_papers_less_than_three_hours_apart_are_refused(self, extra, section_hour):
+        topics = [topic("t_1", kind="section", deliver_at=section_hour)] if section_hour else []
+
         with pytest.raises(SystemExit, match="paper times 07:00 and 09:00 are less than 201 minutes apart"):
-            crons.desired_jobs("07:00", TZ, 0, extra_hours=["09:00"])
+            crons.desired_jobs(topics, "07:00", TZ, 0, extra_hours=extra)
 
     def test_multiple_extra_hours_are_numbered_in_order(self):
         jobs = crons.desired_jobs(
-            "03:00", TZ, 45,
+            [topic("t_1", kind="section")], "03:00", TZ, 45,
             extra_hours=["10:30", "16:00"],
         )
         assert [j["name"] for j in jobs] == [
@@ -513,6 +651,7 @@ class TestExtraDailyHours:
 
     def test_stale_extra_job_beyond_configured_count_is_pruned(self):
         stale = crons.stale_names(
+            [topic("t_1", kind="section")],
             ["pt-daily-edition", "pt-daily-edition-2", "pt-daily-edition-3"],
             extra_hours_count=1,
         )
@@ -520,14 +659,134 @@ class TestExtraDailyHours:
 
     def test_extra_job_kept_when_still_configured(self):
         stale = crons.stale_names(
+            [topic("t_1", kind="section")],
             ["pt-daily-edition", "pt-daily-edition-2"],
             extra_hours_count=1,
         )
         assert stale == []
 
-    def test_daily_and_foreign_names_are_never_stale(self):
-        registered = ["pt-daily-edition", "ld-weather", "pt-daily-edition-x", crons.NOW_NAME]
-        assert crons.stale_names(registered) == []
+    def test_extra_jobs_kept_when_news_topics_are_gone(self):
+        stale = crons.stale_names(
+            [], ["pt-daily-edition", "pt-daily-edition-2"], extra_hours_count=1,
+        )
+        assert stale == []
+
+
+class TestFocusedPapers:
+    def test_name_from_hour(self):
+        assert crons.paper_job_name("12:30") == "pt-paper-1230"
+        assert crons.paper_hour_from_name("pt-paper-1230") == "12:30"
+
+    def test_desired_jobs_adds_one_job_per_distinct_hour(self):
+        jobs = crons.desired_jobs(
+            [
+                topic("t_1", kind="section"),
+                topic("t_2", kind="section", deliver_at="12:30"),
+                topic("t_3", kind="section", deliver_at="12:30"),
+                topic("t_4", kind="section", deliver_at="18:00"),
+            ],
+            "07:00", TZ, 0,
+        )
+        names = [j["name"] for j in jobs]
+        assert names == [
+            "pt-daily-edition", "pt-paper-1230", "pt-paper-1800",
+        ]
+        assert jobs[1]["schedule"] == "30 12 * * *"
+        assert jobs[2]["schedule"] == "0 18 * * *"
+        assert "deliver_at is 12:30" in jobs[1]["prompt"]
+        assert "--name paper-workspace" in jobs[1]["prompt"]
+        assert "Do not finish the run before post_to_chat.py confirms" in jobs[1]["prompt"]
+
+    def test_deliver_at_equal_to_main_hour_rides_the_daily_job(self):
+        jobs = crons.desired_jobs(
+            [topic("t_1", kind="section", deliver_at="07:00")],
+            "07:00", TZ, 0,
+        )
+        assert [j["name"] for j in jobs] == ["pt-daily-edition"]
+
+    def test_cancelled_timed_section_is_not_a_paper(self):
+        jobs = crons.desired_jobs(
+            [topic("t_1", kind="section", deliver_at="12:30", status="cancelled")],
+            "07:00", TZ, 0,
+        )
+        assert [j["name"] for j in jobs] == ["pt-daily-edition"]
+
+    def test_papers_sit_between_extra_hours_and_subscriptions(self):
+        jobs = crons.desired_jobs(
+            [
+                topic("t_1", kind="section", deliver_at="14:00"),
+                topic("t_9f2a"),
+            ],
+            "07:00", TZ, 0, extra_hours=["10:30"],
+        )
+        assert [j["name"] for j in jobs] == [
+            "pt-daily-edition", "pt-daily-edition-2", "pt-paper-1400",
+            "pt-subscription-t_9f2a",
+        ]
+
+    def test_stale_paper_is_pruned_when_hour_is_empty(self):
+        stale = crons.stale_names(
+            [topic("t_1", kind="section")],
+            ["pt-daily-edition", "pt-paper-1230"],
+            delivery_hour="07:00",
+        )
+        assert stale == ["pt-paper-1230"]
+
+    def test_live_paper_is_kept(self):
+        stale = crons.stale_names(
+            [topic("t_1", kind="section", deliver_at="12:30")],
+            ["pt-daily-edition", "pt-paper-1230"],
+            delivery_hour="07:00",
+        )
+        assert stale == []
+
+    def test_paper_without_delivery_hour_is_left_alone(self):
+        stale = crons.stale_names(
+            [],
+            ["pt-paper-1230"],
+        )
+        assert stale == []
+
+
+class TestDailyJob:
+    def test_included_when_a_section_exists(self):
+        jobs = crons.desired_jobs(
+            [topic("t_1", kind="section", status="pending")], "07:00", TZ, 45)
+        assert jobs[0]["name"] == crons.DAILY_NAME
+        assert jobs[0]["schedule"] == "15 6 * * *"
+        assert jobs[0]["tz"] == TZ
+
+    def test_included_when_an_assignment_is_due(self):
+        jobs = crons.desired_jobs(
+            [topic("t_1", kind="assignment", status="pending", run_on="2026-09-11")],
+            "07:00", TZ, 45)
+        assert [j["name"] for j in jobs] == [crons.DAILY_NAME]
+
+    def test_present_even_without_news_sections(self):
+        jobs = crons.desired_jobs([topic("t_9f2a")], "07:00", TZ, 45)
+        assert [j["name"] for j in jobs] == [crons.DAILY_NAME, "pt-subscription-t_9f2a"]
+
+    def test_daily_precedes_subscriptions(self):
+        jobs = crons.desired_jobs(
+            [topic("t_1", kind="section"), topic("t_9f2a")], "07:00", TZ, 45)
+        assert [j["name"] for j in jobs] == [
+            crons.DAILY_NAME, "pt-subscription-t_9f2a"]
+
+
+class TestDailyStale:
+    def test_daily_kept_with_no_news_topics(self):
+        assert crons.stale_names([], {crons.DAILY_NAME: True}) == []
+
+    def test_daily_kept_while_a_section_lives(self):
+        stale = crons.stale_names(
+            [topic("t_1", kind="section")], {crons.DAILY_NAME: True})
+        assert stale == []
+
+    def test_daily_kept_while_an_assignment_runs(self):
+        stale = crons.stale_names(
+            [topic("t_1", kind="assignment", status="running", run_on="2026-09-11")],
+            {crons.DAILY_NAME: True})
+        assert stale == []
 
 
 class TestDrift:
@@ -558,37 +817,41 @@ class TestDrift:
 
     def test_one_shot_compared_as_an_instant(self):
         # The scheduler normalizes --at to UTC; the same instant is no drift.
-        job = {"name": crons.NOW_NAME, "schedule": "2026-09-25T09:00:00-03:00", "tz": None, "prompt": "p"}
+        job = {"name": "pt-oneoff-t_0c11", "schedule": "2026-09-25T09:00:00-03:00", "tz": None, "prompt": "p"}
         assert crons.job_drift(job, self.spec(at="2026-09-25T12:00:00.000Z")) is False
         assert crons.job_drift(job, self.spec(at="2026-09-25T13:00:00.000Z")) is True
 
 
 class TestDriftMain:
     def test_drifted_job_edited_in_place(self, tmp_path, monkeypatch):
-        rows = registered_like_spec()
+        rows = registered_like_spec([topic("t_1", kind="section")])
         rows[0]["schedule"]["expr"] = "15 6 * * *"
         sched = FakeScheduler(rows)
-        assert run_main(tmp_path, monkeypatch, sched) == 0
+        assert run_main(tmp_path, monkeypatch, [topic("t_1", kind="section")], sched) == 0
         assert [w[:2] for w in sched.writes] == [["edit", "id-pt-daily-edition"]]
         edit = sched.writes[0]
         assert edit[edit.index("--cron") + 1] == "0 7 * * *"
 
     def test_owner_zone_change_edits_every_cron_job(self, tmp_path, monkeypatch):
-        extra = {**CONFIG, "delivery": {"hour": "07:00", "extra_hours": ["12:00"]}}
-        rows = [row(j["name"], expr=j["schedule"], tz=j["tz"], message=j["prompt"], model="plow/openai/gpt-6-sol")
-                for j in crons.desired_jobs("07:00", TZ, extra_hours=["12:00"])] + [deliver_row()]
-        sched = FakeScheduler(rows)
-        moved = {**extra, "owner": {"timezone": "Europe/Lisbon"}}
-        run_main(tmp_path, monkeypatch, sched, config=moved)
-        assert sorted(w[1] for w in sched.writes) == ["id-pt-daily-edition", "id-pt-daily-edition-2"]
+        topics_list = [topic("t_9f2a")]
+        sched = FakeScheduler(registered_like_spec(topics_list))
+        moved = {**CONFIG, "owner": {"timezone": "Europe/Lisbon"}}
+        run_main(tmp_path, monkeypatch, topics_list, sched, config=moved)
+        assert sorted(w[1] for w in sched.writes) == ["id-pt-daily-edition", "id-pt-subscription-t_9f2a"]
         assert all(w[0] == "edit" and w[w.index("--tz") + 1] == "Europe/Lisbon" for w in sched.writes)
 
     def test_failed_edit_fails_loud(self, tmp_path, monkeypatch):
-        rows = registered_like_spec()
+        rows = registered_like_spec([])
         rows[0]["schedule"]["expr"] = "15 6 * * *"
         sched = FakeScheduler(rows, fail=lambda argv: 1)
         with pytest.raises(SystemExit, match="could not update drifted job"):
-            run_main(tmp_path, monkeypatch, sched)
+            run_main(tmp_path, monkeypatch, [], sched)
+        assert not any(w[0] == "rm" for w in sched.writes)
+
+    def test_daily_kept_while_only_a_subscription_lives(self, tmp_path, monkeypatch):
+        topics_list = [topic("t_9f2a")]
+        sched = FakeScheduler(registered_like_spec(topics_list))
+        run_main(tmp_path, monkeypatch, topics_list, sched)
         assert not any(w[0] == "rm" for w in sched.writes)
 
 
@@ -623,7 +886,7 @@ class TestScheduledHold:
     """Two clocks: cron starts at hour−lead; POST waits for the hour."""
 
     def test_daily_job_holds_until_delivery_hour(self):
-        jobs = crons.desired_jobs("07:00", TZ)
+        jobs = crons.desired_jobs([], "07:00", TZ)
         prompt = jobs[0]["prompt"]
         assert "--hold-until 07:00" in prompt
         assert "--stale-minutes 200" in prompt
@@ -636,7 +899,7 @@ class TestScheduledHold:
     def test_every_acquirer_of_the_daily_lock_uses_the_run_budget_not_the_lead(self):
         # A run is aborted at the scheduler's budget whatever its early start, and it
         # takes the lock no earlier than it starts: a longer lead lengthens nothing.
-        jobs = crons.desired_jobs("07:00", TZ, 40)
+        jobs = crons.desired_jobs([topic("t_1", kind="section")], "07:00", TZ, 40)
         assert "--stale-minutes 200" in jobs[0]["prompt"]
         assert crons.STALE_RUN_MINUTES > crons.PAPER_TIMEOUT_SECONDS / 60
 
@@ -653,6 +916,15 @@ class TestScheduledHold:
         with pytest.raises(SystemExit, match="00:20 and 03:40"):
             crons.require_workspace_spacing(["00:20", "03:40"], lead_minutes=180)
 
+    def test_paper_job_holds_until_its_hour(self):
+        jobs = crons.desired_jobs(
+            [topic("t_sec", kind="section", deliver_at="12:00")],
+            "07:00", TZ,
+        )
+        paper = next(j for j in jobs if j["name"] == "pt-paper-1200")
+        assert "--hold-until 12:00" in paper["prompt"]
+        assert "--stale-minutes 200" in paper["prompt"]
+
     def test_a_scheduled_paper_waits_out_a_fresh_holder_before_skipping(self):
         # An on-demand paper ("manda o jornal agora") holds the same workspace
         # lock for its whole run (~34 min measured live). A scheduled paper that
@@ -660,10 +932,13 @@ class TestScheduledHold:
         # 30-minute exec timeout -- and only then gives the day up.
         wait = f"--wait-seconds {crons.HELD_LOCK_WAIT_SECONDS}"
         assert crons.HELD_LOCK_WAIT_SECONDS == 1200
-        jobs = crons.desired_jobs("07:00", TZ, 150, extra_hours=["18:00"])
+        jobs = crons.desired_jobs(
+            [topic("t_sec", kind="section", deliver_at="12:00")], "07:00", TZ, 150, extra_hours=["18:00"],
+        )
         for job in jobs:
-            assert wait in job["prompt"], job["name"]
-            assert "run the same acquire once more" in job["prompt"], job["name"]
+            if job["name"].startswith(("pt-daily-edition", "pt-paper-")):
+                assert wait in job["prompt"], job["name"]
+                assert "run the same acquire once more" in job["prompt"], job["name"]
 
     def test_the_on_demand_copy_never_waits_on_the_lock(self):
         p = crons.paper_prompt(lead_minutes=150)
@@ -672,19 +947,23 @@ class TestScheduledHold:
 
     def test_extra_slot_holds_until_its_hour(self):
         jobs = crons.desired_jobs(
-            "03:00", TZ, 45, extra_hours=["10:30"],
+            [topic("t_1", kind="section")], "03:00", TZ, 45, extra_hours=["10:30"],
         )
         assert "--hold-until 03:00" in jobs[0]["prompt"]
         assert "--hold-until 10:30" in jobs[1]["prompt"]
 
 
 class TestRunPromptsDelegateDelivery:
-    """post_to_chat.py prints and records after its POST, so the
+    """post_to_chat.py prints, records and finalizes after its POST, so the
     model has no print step to skip. The prompts point at memo-render step 2
     for delivery and never tell the model to print (that would double-print).
     """
 
-    @pytest.mark.parametrize("p", [crons.paper_prompt(), crons.paper_prompt("07:00")])
+    @pytest.mark.parametrize("p", [
+        crons.paper_prompt(),
+        crons.paper_prompt(focus="12:00"),
+        crons.topic_prompt("t_1", "quick", scheduled=False),
+    ])
     def test_prompt_delegates_delivery_to_the_edition_skill(self, p):
         assert "memo-render/SKILL.md step 2" in p
         assert "post_to_chat.py" in p
@@ -694,7 +973,11 @@ class TestRunPromptsDelegateDelivery:
         assert "NO_REPLY" not in p
         assert "--deliver " not in p
 
-    @pytest.mark.parametrize("p", [crons.paper_prompt(), crons.paper_prompt("07:00")])
+    @pytest.mark.parametrize("p", [
+        crons.paper_prompt(),
+        crons.paper_prompt(focus="12:00"),
+        crons.topic_prompt("t_1", "quick", scheduled=False),
+    ])
     def test_pre_delivery_failure_sends_exactly_one_owner_notice(self, p):
         assert p.count("send exactly one short message to the owner") == 1
         assert "message(action=send)" in p
@@ -703,19 +986,16 @@ class TestRunPromptsDelegateDelivery:
         assert "Do not send this notice after confirmed delivery" in p
         assert "short status for the cron run record" in p
 
-    def test_paper_prompt_runs_the_priority_desk_from_its_reference(self):
-        prompt = crons.paper_prompt()
-        assert "memo-tournament/references/desk.md" in prompt
-        assert (ROOT / "memo-tournament" / "references" / "desk.md").is_file()
-        assert "topics.py" not in prompt and "pt-research" not in prompt
+    def test_paper_prompt_reopens_sections(self):
+        assert "reopen-sections" in crons.paper_prompt()
 
     def test_all_papers_share_a_lock_longer_than_the_tournament(self):
-        for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt()):
+        for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt(focus="12:00")):
             assert "--name paper-workspace" in prompt
             assert "--stale-minutes 200" in prompt
 
     def test_scheduled_papers_reuse_only_todays_advice(self):
-        for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt("12:00")):
+        for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt("12:00", focus="12:00")):
             assert "prepare_daily_run.py --preserve-priority" in prompt
             assert "reuse today's accepted checkpoint" in prompt
             assert "else run the tournament" in prompt
@@ -732,6 +1012,19 @@ class TestRunPromptsDelegateDelivery:
         assert "reuse today's" not in prompt
         assert "An older checkpoint is never a reason to stop the paper" in prompt
 
+    @pytest.mark.parametrize("prompt", [
+        crons.paper_prompt(),
+        crons.paper_prompt(focus="12:00"),
+    ])
+    def test_paper_prompt_stops_before_research_on_legacy_overfill(self, prompt):
+        assert "topics.py check-paper" in prompt
+        assert "before research" in prompt
+        refusal = prompt.index("If it refuses")
+        release = prompt.index("run_lock.py release", refusal)
+        research = prompt.index("Then run memo-research")
+        assert refusal < release < research
+
+
 class TestTournamentWindow:
     """A delivery hour near midnight clamps the lead far below what a fresh
     tournament needs; nothing refuses it, so the prompt states the window."""
@@ -744,7 +1037,7 @@ class TestTournamentWindow:
         assert crons.MIN_TOURNAMENT_MINUTES == 50
 
     def test_a_near_midnight_hour_states_the_clamped_window(self):
-        jobs = crons.desired_jobs("00:20", TZ, 150)
+        jobs = crons.desired_jobs([], "00:20", TZ, 150)
         assert "starts 20 minutes before 00:20" in jobs[0]["prompt"]
 
     def test_the_on_demand_copy_states_no_window(self):
@@ -765,7 +1058,7 @@ class TestDeliverJob:
 
     def test_it_is_registered_as_a_command_with_no_agent(self, tmp_path, monkeypatch):
         sched = FakeScheduler()
-        run_main(tmp_path, monkeypatch, sched)
+        run_main(tmp_path, monkeypatch, [], sched)
         (add,) = [w for w in sched.writes if "pt-deliver" in w]
         assert add[:3] == ["add", "--name", "pt-deliver"]
         assert add[add.index("--every") + 1] == "1m"
@@ -779,26 +1072,26 @@ class TestDeliverJob:
                                       "/opt/plow/skills/memo-shared/scripts/post_to_chat.py", "--flush-outbox"]
 
     def test_a_present_job_is_left_alone(self, tmp_path, monkeypatch):
-        sched = FakeScheduler(registered_like_spec())
-        run_main(tmp_path, monkeypatch, sched)
+        sched = FakeScheduler(registered_like_spec([]))
+        run_main(tmp_path, monkeypatch, [], sched)
         assert sched.writes == []
 
     def test_a_moved_command_is_edited_in_place(self, tmp_path, monkeypatch):
-        rows = [r for r in registered_like_spec() if r["name"] != "pt-deliver"]
+        rows = [r for r in registered_like_spec([]) if r["name"] != "pt-deliver"]
         sched = FakeScheduler(rows + [deliver_row(argv=["python3", "old.py"])])
-        run_main(tmp_path, monkeypatch, sched)
+        run_main(tmp_path, monkeypatch, [], sched)
         (edit,) = sched.writes
         assert edit[:2] == ["edit", "id-pt-deliver"]
         assert json.loads(edit[edit.index("--command-argv") + 1]) == crons.DELIVER_ARGV
 
     def test_it_is_never_stale(self):
-        assert "pt-deliver" not in crons.stale_names({"pt-deliver": object()}, 0)
+        assert "pt-deliver" not in crons.stale_names([], {"pt-deliver": object()}, 0, "07:00")
 
     def test_a_disabled_job_is_reported_not_duplicated(self, tmp_path, monkeypatch):
-        rows = [r for r in registered_like_spec() if r["name"] != "pt-deliver"]
+        rows = [r for r in registered_like_spec([]) if r["name"] != "pt-deliver"]
         sched = FakeScheduler(rows + [deliver_row(enabled=False)])
         with pytest.raises(SystemExit, match="pt-deliver"):
-            run_main(tmp_path, monkeypatch, sched)
+            run_main(tmp_path, monkeypatch, [], sched)
         assert sched.writes == []
 
 
@@ -807,8 +1100,9 @@ def test_no_prompt_asks_the_model_to_work_out_a_date():
     # the date is run_lock.py's to compute, on the owner's clock.
     for prompt in (crons.paper_prompt(), crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
         assert "<today" not in prompt and "<date>" not in prompt
-        # acquire, release on a spent day, release
-        assert prompt.count("--name paper-workspace") == 3
+        # acquire, release on a spent day, release on refusal, release
+        assert prompt.count("--name paper-workspace") == 4
+    assert "check-paper --deliver-at main --as-of today" in crons.paper_prompt()
 
 
 def test_a_paper_counts_its_starts_and_stops_instead_of_retrying_all_day():
@@ -830,6 +1124,21 @@ def test_a_paper_counts_its_starts_and_stops_instead_of_retrying_all_day():
         assert "message(action=send)" not in spent
     assert "run_attempts.py begin --scheduled" in scheduled
     assert "--scheduled" not in on_demand
+
+
+def test_a_topic_edition_counts_its_own_starts_under_its_own_key():
+    # Subscriptions and one-offs run without the workspace lock and are retried like the papers;
+    # their count is apart from the papers', so neither spends the other's day.
+    nightly = crons.topic_prompt("t_9f2a", "deep", scheduled=True)
+    one_off = crons.topic_prompt("t_0c11", "quick", scheduled=False)
+    assert "run_attempts.py begin --key t_9f2a --scheduled" in nightly
+    assert "run_attempts.py begin --key t_0c11:" in one_off and "--scheduled" not in one_off
+    for prompt, tid in ((nightly, "t_9f2a"), (one_off, "t_0c11")):
+        assert prompt.index("begin --key") < prompt.index("memo-research on topic")
+        assert f"--clear-attempts {tid}" in prompt
+        assert "'stop-untold'" in prompt and "writing nothing to the owner" in prompt
+    jobs = crons.desired_jobs([topic("t_9f2a")], "07:00", TZ)
+    assert any("begin --key t_9f2a --scheduled" in j["prompt"] for j in jobs)
 
 
 def test_jobs_follow_the_model_boot_exports(monkeypatch):

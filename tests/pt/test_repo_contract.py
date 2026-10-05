@@ -181,7 +181,7 @@ class TestSoul:
 
     def test_on_demand_copy_is_routed_and_not_filed_as_a_topic(self):
         # Measured live: "generate a copy for me to read right now" had no
-        # route -- the old intake's five rows are all "a new subject to research"
+        # route -- memo-intake's five rows are all "a new subject to research"
         # -- so it became a one_off topic reading "A current copy of my daily
         # newspaper" and the research pass went looking for that phrase on the
         # web. The paper came back with the standing desks and a news block
@@ -358,9 +358,32 @@ class TestSoul:
         # sourced -- including sports JSON that desks.md used to call a
         # "plain HTTP fetch" that "does not compete for the browser pass".
         soul = (AGENTS).read_text()
+        research = (ROOT / "memo-research" / "SKILL.md").read_text()
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
         # SOUL.md, loaded in every session, is the one statement of the rule.
         for name in ("plow__plow_browser_open", "Any other web tool runs in this container", "curl"):
             assert name in soul
+        assert "web_fetch" not in research, "the Latch-only rule is restated in memo-research"
+        assert "plain HTTP fetch" not in desks
+        assert "does not compete for the browser pass" not in desks
+        assert "plow_run_command can fetch this" not in desks
+        assert "plow_browser" in desks
+        assert "site.api.espn.com" in desks
+
+    def test_research_one_browser_session_does_not_retry_origin_errors(self):
+        # Measured live 2026-09-18: an on-demand paper spent ~30 minutes.
+        # ipapi.co NS_ERROR_UNKNOWN_HOST every run; then plow_browser_request
+        # with no origins ("needs origins and/or credential_items"); then
+        # goto techcrunch.com while only *.techcrunch.com was allowlisted;
+        # then MCP "Paused for ~44s" and the same call again. The contract:
+        # one open for the whole paper, apex+wildcard together, fail once.
+        research = (ROOT / "memo-research" / "SKILL.md").read_text()
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
+        assert "needs origins" in research
+        assert "apex" in research and "*.example.com" in research
+        assert "Paused" in research
+        assert "do not close" in desks or "Do not close" in desks
+        assert "do not retry ipapi" in desks or "never retry ipapi" in desks
 
     def test_setup_warns_against_wrapping_record_setup_in_python(self):
         # Measured live: with a real printer found (network:true worked),
@@ -385,10 +408,12 @@ class TestSoul:
         # (a real, unsandboxed browser on the owner's Mac) and hits
         # neither restriction.
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "plow_browser_open" in setup
-        assert "plow_browser_close" in setup
-        assert "xcrun" in setup
-        assert "Could not resolve host" in setup
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
+        for text in (setup, desks):
+            assert "plow_browser_open" in text
+            assert "plow_browser_close" in text
+        assert "xcrun" in desks
+        assert "Could not resolve host" in desks
         assert '"/usr/bin/python3"' not in setup
 
     def test_setup_location_lookup_falls_back_past_a_dead_domain(self):
@@ -396,11 +421,15 @@ class TestSoul:
         # back NS_ERROR_UNKNOWN_HOST on one owner's Mac -- a dead domain,
         # not a sandbox gap. The procedure must try other providers, not
         # give up (or retry the same host) after one goto error.
+        # desks.md §1 owns the fallback order; setup runs its steps 2-3.
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        for host in ("ipapi.co", "ipwho.is", "ifconfig.co"):
-            assert host in setup
-        assert "NS_ERROR_UNKNOWN_HOST" in setup
-        assert "never retry ipapi" in setup
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
+        for text in (setup, desks):
+            assert "ipapi.co" in text
+            assert "ipwho.is" in text
+            assert "ifconfig.co" in text
+        assert "NS_ERROR_UNKNOWN_HOST" in desks
+        assert "references/desks.md` §1" in setup
 
     def test_soul_warns_failure_replies_still_match_owner_language(self):
         # Measured live, three times now: an all-English interview got a
@@ -460,7 +489,7 @@ class TestSoul:
         # SOUL.md's, loaded in every session, not restated per skill.
         soul = (AGENTS).read_text()
         assert "silent between tool calls" in soul
-        for skill in ("memo-intake", "memo-render", "memo-print"):
+        for skill in ("memo-research", "memo-render", "memo-print"):
             text = (ROOT / skill / "SKILL.md").read_text()
             for restated in ("run silently", "runs silently", "happen silently", "between tool calls"):
                 assert restated not in text.lower(), f"{skill} restates the silence rule"
@@ -515,13 +544,14 @@ class TestSoul:
                   + (ROOT / "memo-shared" / "scripts" / "owner_phrases.py").read_text())
         assert "CHAT_VOICE" in soul
         assert "emoji, then a space, then one or two short spoken lines" in soul
-        for mark in ("📰", "🕖", "🖨️", "⭐", "✉️", "⏳"):
+        for mark in ("📰", "🕖", "🖨️", "⭐", "✉️", "🗞️", "⏳"):
             assert mark in soul
         assert "> 📰 " in setup
         assert "> 🕖 " in setup
         assert "> 🖨️ " in setup
         assert "> ⭐ " in setup
         assert "> ✉️ " in setup
+        assert "> 🗞️ " in setup
         spoken = "\n".join(
             line for line in setup.splitlines() if line.startswith("> ")
         )
@@ -539,7 +569,7 @@ class TestSoul:
         assert "| Asking which signals to listen to | 👂 |" in soul
         assert "> 👂 Quer que eu escute" in setup
         assert "> 👂 Want me to listen" in setup
-        assert "NEXT_QUESTION=<hour|printer|priority|mail|signals|close>" in setup
+        assert "NEXT_QUESTION=<hour|printer|priority|mail|news|signals|close>" in setup
         for field in ("signals.group_chat", "signals.email", "signals.imessage"):
             assert field in setup
         assert '"plow-messages", "search", "--limit", "200", "--order", "desc"' in setup
@@ -560,8 +590,8 @@ class TestSoul:
         # Mail and iMessage become signals only through scan -> triage ->
         # intake -> commit, inside the priority desk's own run and before
         # memo-tournament loads; an unreadable source is an unknown, never "no mail".
-        desk = (ROOT / "memo-tournament" / "references" / "desk.md").read_text()
-        step = desk[desk.index("### Signals"):]
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
+        step = desks[desks.index("### Signals"):desks.index("## 1. Location")]
         order = [step.index(s) for s in (
             "scan_private_signals.py scan", "signal-triage.md", "signal_intake.py", "scan_private_signals.py commit")]
         assert order == sorted(order)
@@ -590,6 +620,19 @@ class TestSoul:
         challenge = skill[skill.index("### 1. Challenge + research"):skill.index("### 2. Criticize")]
         criticize = skill[skill.index("### 2. Criticize"):skill.index("### 3. Cull")]
         assert "signal" in challenge and "unverified signal" in criticize
+
+    def test_a_failed_history_read_still_researches_with_a_caveat(self):
+        # A failed read of what a section printed loses de-duplication, not the
+        # ability to research: stopping there turned one connector failure
+        # into a blank news column. The error stays on record, the pass runs a
+        # fresh angle, and the page says a repeat is possible.
+        research = (ROOT / "memo-research" / "SKILL.md").read_text()
+        rule = research[research.index("An `error:` line is a failed read"):research.index("An assignment\n   has no history")]
+        assert "stop there" not in rule
+        assert "could_not_source" in rule
+        assert "fresh angle" in rule and "repeat is possible" in rule
+        assert "owner's language" in rule
+        assert "budget" in rule
 
     def test_fixed_lines_follow_any_owner_language(self):
         # owner.language is free-form; English and Portuguese are curated, and
@@ -702,7 +745,7 @@ class TestSoul:
         assert "never a hand-edited" in setup
         assert "record_setup.py" in setup
         assert "NEXT_QUESTION" in setup
-        for field in ("printer.configured", "mail.configured"):
+        for field in ("printer.configured", "mail.configured", "news_asked"):
             assert field in setup
 
     def test_soul_does_not_gate_the_hour_answer_behind_draft_none(self):
@@ -745,8 +788,8 @@ class TestNoProfile:
 
 
 class TestSkills:
-    def test_every_memo_dir_carries_a_skill_manifest(self):
-        for d in sorted(ROOT.glob("memo-*")):
+    def test_every_pt_dir_carries_a_skill_manifest(self):
+        for d in sorted(ROOT.glob("pt-*")):
             if not d.is_dir():
                 continue
             skill = d / "SKILL.md"
@@ -784,10 +827,12 @@ class TestSkills:
                 assert old not in text, f"{skill.relative_to(ROOT)} still names {old}"
 
     def test_priority_desk_is_documented_and_wired(self):
-        desks = (ROOT / "memo-tournament" / "references" / "desk.md").read_text()
-        assert "## Reuse a checkpoint, or run the tournament" in desks
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
+        assert "## Priority — first" in desks
+        assert "Complete this desk before opening the shared browser" in desks
         assert "create the run's wiki state page" in desks
         assert "never proof that today's desk is complete" in desks
+        assert "run/desk-calendar/events.json" in desks
         skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
         assert "run/desk-priority/tournament.json" in skill
         assert "`name` = `imessage`" in skill
@@ -796,11 +841,15 @@ class TestSkills:
         edition = (ROOT / "memo-render" / "SKILL.md").read_text()
         assert "record_edition.py" in edition
         assert "Skipping this desk in the canonical scheduled paper is a bug" in desks
-        # desk.md is the one statement of the priority rule (asserted in
-        # test_priority_evolution_contract); SOUL.md only names the skill.
+        # desks.md is the one statement of the priority rule (asserted in
+        # test_priority_evolution_contract); memo-research owns the rosters.
         soul = (AGENTS).read_text()
         assert "gap card" not in soul
-        assert "tournament" not in soul.replace("memo-tournament", ""), "SOUL.md restates desk.md's priority rule"
+        assert "tournament" not in soul.replace("memo-tournament", ""), (
+            "SOUL.md restates desks.md's priority rule rather than naming its skill"
+        )
+        research = (ROOT / "memo-research" / "SKILL.md").read_text()
+        assert "whose `deliver_at` is that hour" in research
         assert "the founder" in skill
         # The card's language is the owner's, read from config -- not inferred from this
         # file. A lone `você` exemplar was the only language signal the culler had, and it
@@ -846,10 +895,11 @@ class TestSkills:
             '`["wiki", "validate", "--writer", "thefoundertimes"]`',
         ):
             assert clause in text
-        desks = (ROOT / "memo-tournament" / "references" / "desk.md").read_text()
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
         assert "reserved 150-minute window" in desks
         assert "reserved 150-minute window; delivery waits" in desks
         assert "ending earlier when the delivery cutoff requires it" not in desks
+        assert "global batch budget starts after priority" in desks
         assert "One rule for every scheduled paper" in desks
         assert "never waits on a tournament" in desks and "`as_of`" in desks
         assert "an older checkpoint is never a reason to stop the" in desks
@@ -875,6 +925,16 @@ class TestSkills:
         advisor_readme = (advisor_dir / "README.md").read_text()
         assert "Add your own advisor" not in overview
         assert "Owner-added advisors" not in advisor_readme
+    def test_a_news_section_reads_back_what_it_printed(self):
+        # A section researched with no memory of its own past editions prints
+        # the same backgrounder every morning (issue #69). The instrument is
+        # the advisor desk's, one level down -- not a second mechanism.
+        research = (ROOT / "memo-research" / "SKILL.md").read_text()
+        assert "history.py recent --topic" in research
+        assert "already spent" in research
+        shared = (ROOT / "memo-shared" / "SKILL.md").read_text()
+        assert "--topic" in shared
+
     def test_a_claim_whose_item_will_not_reopen_is_unsupported(self):
         # A basis naming a file that does not exist kept its Answered standing
         # across three generations, because "missing access is unknown, never
@@ -891,6 +951,36 @@ class TestSkills:
         assert "rowid" in intake and "confirm" in intake
         # a mail id alone is not an item -- ids from different mail readers aren't interchangeable
         assert "named mail reader" in intake
+
+    def test_calendar_desk_uses_google_then_a_locked_applescript(self):
+        # Measured live 2026-09-18: two real appointments, paper said the
+        # day was empty. Google was called as `calendar today` (exit 2) and
+        # `calendar list` (empty calendars, not events); Calendar.app was
+        # queried while closed (-600) or with `time string of start date of
+        # item 1 of every event` (-1700).
+        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
+        script = (ROOT / "memo-research" / "assets" / "calendar.applescript").read_text()
+        assert '["plow-gog", "calendar", "events", "--from", "today", "--days", "8",' in desks
+        assert "unexpected argument today" in desks
+        assert "calendar list" in desks
+        assert "plow_run_applescript" in desks
+        assert "assets/calendar.applescript" in desks
+        assert "Nenhum evento hoje" in desks
+        assert "failed or returned no event today" in desks
+        assert '"attendees": []}' in desks
+        # Measured live 2026-09-25: Latch's AppleScript runner cannot start a
+        # closed app -- `launch` itself returned -600 in every run. `open -g -a
+        # Calendar` through plow_run_command starts it; then the script reads.
+        assert "to launch" not in script
+        open_call = '{"argv": ["open", "-g", "-a", "Calendar"], "apple_events": true,'
+        assert open_call in desks
+        assert desks.index(open_call) < desks.index('{"app": "Calendar", "script": "<exact file contents>"')
+        assert "time string of start date of item 1" not in script
+        assert "every event of item 1 of every calendar" not in script
+        assert 'date "Friday' not in script
+        assert "on error" not in script
+        edition = (ROOT / "memo-render" / "SKILL.md").read_text()
+        assert "could not read the agenda" in edition
 
     def test_shared_helpers_exist_and_are_referenced(self):
         shared = ROOT / "memo-shared" / "scripts"
@@ -959,10 +1049,39 @@ class TestSkills:
         # (measured: an empty black stripe where the "hidden" h2 was).
         assert "display: none" not in template
 
+    def test_index_screenshots_are_shot_from_synthetic_fixture(self):
+        # Agent Index thumbs used to be a live paper: the owner's city,
+        # their priority file, and third-party inbox rows. Re-shoot from
+        # index/edition.json (see index/render_screenshots.sh).
+        fixture_path = REPO / "index" / "edition.json"
+        render = load_module("render_edition", "memo-render/scripts/render_edition.py")
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        assert render.validate(fixture) == ""
+        blob = json.dumps(fixture)
+        for needle in (
+            "Blumenau",
+            "Delattre",
+            "McDonald",
+            "SW Blumenau",
+            "$1-10M",
+            "Blueprint",
+        ):
+            assert needle not in blob, needle
+        jpg = REPO / "index" / "edition-page-1.jpg"
+        assert jpg.is_file() and jpg.stat().st_size > 0
+        assert not (REPO / "index" / "edition-page-2.jpg").exists()
+        assert not (REPO / "index" / "edition-page-3.jpg").exists()
+
     def test_recorder_has_only_the_current_recommendation_schema(self):
         recorder = (ROOT / "memo-render" / "scripts" / "record_edition.py").read_text()
         assert "CARD_LINES" not in recorder
         assert 'card.get("why")' not in recorder
+
+    def test_cross_skill_imports_resolve(self):
+        # register_crons.py imports topics from memo-intake/scripts at run time;
+        # both must be seeded side by side for that to work.
+        assert (ROOT / "memo-intake" / "scripts" / "topics.py").is_file()
+        assert (ROOT / "memo-schedule" / "scripts" / "register_crons.py").is_file()
 
 
 class TestDeployment:
@@ -1075,14 +1194,14 @@ class TestDeployment:
         assert "plow-credentials" in (REPO / ".dockerignore").read_text()
         assert "plow-credentials" in (REPO / ".gitignore").read_text()
 
-    def test_dockerfile_bakes_every_memo_skill_root_owned(self):
+    def test_dockerfile_bakes_every_pt_skill_root_owned(self):
         text = self.DOCKERFILE.read_text()
         assert "COPY skills /opt/plow/skills" in text
         assert "chown -R root:root /opt/plow/skills" in text
         assert "install -d -o node -g node -m 0700 /var/lib/plow/pt" in text
         assert sorted(p.parent.name for p in ROOT.glob("memo-*/SKILL.md")) == [
-            "memo-intake", "memo-print", "memo-render", "memo-schedule",
-            "memo-setup", "memo-shared", "memo-tournament"]
+            "memo-intake", "memo-print", "memo-render", "memo-research",
+            "memo-schedule", "memo-setup", "memo-shared", "memo-tournament"]
 
     def test_dockerfile_installs_weasyprint_in_the_pinned_venv(self):
         # The base image has no HTML-to-PDF engine. The probe must RENDER (a

@@ -1,14 +1,14 @@
 ---
 name: memo-shared
-description: The helper library every pt-* skill imports — the pt-config gate, the bearer-HTTP helpers, the chat delivery POST and the owner's wiki, each script's calling contract one bullet each. Not a task; nothing here is invoked on its own.
+description: The helper library every memo-* skill imports — the pt-config gate, the bearer-HTTP helpers, the chat delivery POST and the owner's wiki, each script's calling contract one bullet each. Not a task; nothing here is invoked on its own.
 ---
 
-# memo-shared — the pt-* skills' shared helpers
+# memo-shared — the memo-* skills' shared helpers
 
-Every pt-* skill's scripts reach this directory by its absolute deploy path,
+Every memo-* skill's scripts reach this directory by its absolute deploy path,
 `/opt/plow/skills/memo-shared/scripts`, never a `../../` relative path
 (a turn's working directory is the agent workspace, not this skill, so a
-relative path never resolves). The image bakes every pt-* skill under
+relative path never resolves). The image bakes every memo-* skill under
 `/opt/plow/skills`, root-owned; this one carries a `SKILL.md` so the gateway
 lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 
@@ -120,7 +120,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   staged. Three undelivered starts spend the owner's day.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.
-  Every paper passes `--preserve-priority` (`memo-tournament/references/desk.md` decides which advisor checkpoint
+  Every paper passes `--preserve-priority` (desks.md decides which advisor checkpoint
   is reused); every other desk is cleared.
   It preserves topic workspaces, the live lock, and setup evidence. The wiki is delivered
   history; archived scratch is never today's completed work.

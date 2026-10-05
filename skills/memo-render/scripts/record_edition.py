@@ -150,7 +150,7 @@ def _section(section, notes):
 
 
 def _notes_path(run_dir, topic_id):
-    """Where this topic's research notes are. A research pass writes them to
+    """Where this topic's research notes are. memo-research writes them to
     $PT_HOME/run/<topic_id>/notes.json; the edition file usually sits beside
     them in run/<id>/, but a run that wrote it straight into run/ must not lose
     the section's memory (measured 2026-09-24: printed [] for every news

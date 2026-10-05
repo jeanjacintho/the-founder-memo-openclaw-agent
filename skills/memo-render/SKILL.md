@@ -1,6 +1,6 @@
 ---
 name: memo-render
-description: Compile one or more topics' research notes into edition.json, render the Letter PDF plus any chat-only desk companion, and post them via post_to_chat.py, which finalizes carried topics and prints when configured. Runs in the cron-fired session after the priority desk.
+description: Compile one or more topics' research notes into edition.json, render the Letter PDF plus any chat-only desk companion, and post them via post_to_chat.py, which finalizes carried topics and prints when configured. Runs in the cron-fired session after memo-research.
 ---
 
 # memo-render — notes become the edition
@@ -147,7 +147,7 @@ HTML.** Hand-write `edition.json` under the run directory:
   events, senders or games to list, not as a mandatory duplicate of the
   prose.
 - **`image` (news sections only) is optional: `{ "url", "credit" }`** —
-  only an image the research pass captured under its reuse rule. `url` is the
+  only an image memo-research captured under its reuse rule. `url` is the
   direct link to the image file itself, `credit` a short optional line
   ("Reuters", "AP Photo/Jane Doe") printed under the photo.
   render_edition.py fetches, grayscales and crops it; a bad URL, a timeout
@@ -162,7 +162,7 @@ HTML.** Hand-write `edition.json` under the run directory:
 - The daily paper always includes weather and calendar from
   `run/desk-*/notes.json`. If calendar notes list `could_not_source` and
   no events, the headline says the paper could not read the agenda (never
-  a free day). **Priority is the same when `pt/config.json` has
+  a free day — desks.md §2). **Priority is the same when `pt/config.json` has
   `priority.configured: true`: always a `"desk": "priority"` section.** Copy
   its `priority` object from `run/desk-priority/tournament.json` without rewriting. An
   on-demand copy reusing an older checkpoint also sets the section's `"as_of"` to that
@@ -184,7 +184,7 @@ HTML.** Hand-write `edition.json` under the run directory:
   `sports.configured: true` **and** `run/desk-sports/notes.json`
   exists; otherwise omit the sports block entirely — never fill it with
   a generic league digest just because a desk slot exists for it. Compile
-  **only** the news topics this run researched (the research pass decides which
+  **only** the news topics this run researched (memo-research decides which
   belong to this paper's hour). Owner
   `section` and `assignment` topics are always `"desk": "news"`. Do not put
   a news topic on the weather desk to make it look important.
@@ -217,11 +217,11 @@ HTML.** Hand-write `edition.json` under the run directory:
 
 ## On demand — "send me the paper now"
 
-Not built in the chat turn: `memo-intake` queues the
+Not a topic and not built in the chat turn: `memo-intake` queues the main
 paper's own prompt as a one-shot with
 `/opt/plow/skills/memo-schedule/scripts/register_crons.py --now`, and
 this skill delivers it from that session like any other paper (no
-`--hold-until`; the advisor card per `memo-tournament/references/desk.md`, dated with `as_of` when older). Asked to
+`--hold-until`; the advisor card per desks.md, dated with `as_of` when older). Asked to
 re-evaluate today's priorities, `memo-intake` queues `--now --fresh-advice`, whose copy runs
 the tournament instead of reusing a checkpoint.
 

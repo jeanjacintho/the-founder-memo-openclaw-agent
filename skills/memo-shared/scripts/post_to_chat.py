@@ -45,8 +45,9 @@ registered, enabled `pt-deliver` the paper posts now -- early, never stranded.
 After the POST returns, a separate recovery ticket snapshots the edition and
 the pending finalizers before they run. `pt-deliver` resumes that ticket without
 posting the edition again, then removes it when every finalizer completes.
-After a successful POST, two
-finalizers run independently and best-effort: print the run's PDF via print_edition.py when configured (a
+After a successful POST, three
+finalizers run independently and best-effort: finalize exactly the topics carried by
+`edition.json`, print the run's PDF via print_edition.py when configured (a
 miss posts one line saying why), and record via
 record_edition.py (`--pdf` and `--text-file` both) on the sibling
 `edition.json` -- one's failure never skips or undoes another, and nothing
@@ -89,6 +90,12 @@ RECORD_SCRIPT = (
     / "memo-render"
     / "scripts"
     / "record_edition.py"
+)
+TOPICS_SCRIPT = (
+    Path(__file__).resolve().parent.parent.parent
+    / "memo-intake"
+    / "scripts"
+    / "topics.py"
 )
 
 
@@ -180,7 +187,7 @@ def persist_posted_delivery(edition_json, pdf, text_file, delivered_at):
             "edition_json": "edition.json",
             "pdf": "edition.pdf" if (building / "edition.pdf").is_file() else None,
             "print_path": "edition.pdf" if (building / "edition.pdf").is_file() else str(actual_pdf),
-            "finalizers_pending": ["print", "record"],
+            "finalizers_pending": ["topics", "print", "record"],
             "attempts": {},
         }
         _write_delivery_state(building / "delivery.json", state)
@@ -223,19 +230,23 @@ def recover_delivery(ticket, *, notify_print_failure=False, wait=True):
                 not isinstance(value, int) or value < 0 for value in attempts.values()
             ):
                 raise ValueError("attempts must map finalizer names to non-negative integers")
-            if any(item not in ("print", "record") for item in pending):
+            if any(item not in ("topics", "print", "record") for item in pending):
                 raise ValueError("finalizers_pending contains an unknown finalizer")
         except (OSError, ValueError, TypeError, KeyError):
             return ["invalid delivery recovery state"]
         pending = list(pending)
         failures = []
-        for finalizer in ("print", "record"):
+        for finalizer in ("topics", "print", "record"):
             if finalizer not in pending:
                 continue
             if attempts.get(finalizer, 0) >= MAX_FINALIZER_ATTEMPTS:
                 failures.append(f"{finalizer} retry limit reached")
                 continue
-            if finalizer == "print":
+            if finalizer == "topics":
+                result = _best_effort(run_finalize_topics, (edition_json,), "topics not finalized")
+                print(result)
+                succeeded = not result.startswith("topics not finalized")
+            elif finalizer == "print":
                 print_path = state.get("print_path")
                 line = print_page(str(folder / print_path) if print_path == "edition.pdf" else print_path) if print_path else None
                 if line:
@@ -461,6 +472,20 @@ def run_record_edition(edition_json, delivered_at):
     return blob
 
 
+def run_finalize_topics(edition_json):
+    import subprocess
+
+    proc = subprocess.run(
+        [sys.executable, str(TOPICS_SCRIPT), "finalize-edition", edition_json],
+        capture_output=True,
+        text=True,
+    )
+    blob = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    if proc.returncode != 0:
+        return f"topics not finalized — {blob or proc.returncode}"
+    return blob
+
+
 def compose_payload(text, attachment_uid=None):
     """One chat message: PDF plus optional companion, or the chat edition.
 
@@ -575,7 +600,7 @@ def main():
 
 
 def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=None, on_posted=None):
-    """POST the edition, then the two finalizers. `on_posted` runs the moment
+    """POST the edition, then the three finalizers. `on_posted` runs the moment
     the POST returns, before any finalizer (the outbox drops its delivery.json
     there, so a flush never posts twice)."""
     attachment_uid = None
@@ -620,6 +645,11 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
             sys.exit("error: post-delivery finalization remains pending; pt-deliver retries it; do not repost")
         return
 
+    topics_result = (
+        _best_effort(run_finalize_topics, (edition_json,), "topics not finalized")
+        if edition_json else "skipped: no posted file"
+    )
+    print(topics_result)
     if pdf:
         suffix = " + companion" if text else " only"
         print(f"chat edition posted (pdf{suffix}) {pdf}")
@@ -639,6 +669,8 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
     )
     print(recorded)
     recoveries = []
+    if topics_result.startswith("topics not finalized"):
+        recoveries.append("topics.py finalize-edition <edition.json>")
     if "edition not recorded" in recorded:
         recoveries.append(f"record_edition.py <edition.json> --now {delivered_at.isoformat()}")
     if recoveries:

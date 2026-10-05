@@ -1,16 +1,21 @@
 ---
 name: memo-schedule
-description: The memo's cron spec — the daily job, its extra delivery hours and the outbox flusher — and the idempotent registration that replays them from pt/config.json. Use when asked to set up, re-register, inspect or repair the paper's crons, after rebuilding the agent's home, and after a delivery time changes.
+description: The Founder Times' cron spec — one nightly job per active subscription plus the pruning of stale pt-* jobs — and the idempotent registration that replays them from the topic store. Use when asked to set up, re-register, inspect or repair the paper's crons, after rebuilding the agent's home, and after memo-intake adds or cancels a subscription.
 ---
 
-# The cron spec
+# The Founder Times — the cron spec
 
-Every row is derived from `/var/lib/plow/pt/config.json` at run time:
+Two shapes plus the paper, all derived from `/var/lib/plow/pt/topics.json`
+at run time — unlike `ld-dashboard`'s fixed seven rows, this spec is the
+topic list:
 
 | job | schedule | notes |
 |---|---|---|
-| `pt-daily-edition` | `<min> <hour> * * *`, computed as `delivery.hour − delivery.lead_minutes` (default 0) in the owner's zone, never before that day's midnight | one job; the paper. Cron may start early; `post_to_chat.py --hold-until` is the send clock |
-| `pt-daily-edition-<n>` (n ≥ 2) | same computation, against `delivery.extra_hours[n-2]` | the **same** paper again later the same day |
+| `pt-daily-edition` | `<min> <hour> * * *`, computed as `delivery.hour − delivery.lead_minutes` (default 0) in the owner's zone, never before that day's midnight | one job; the **main** paper: desks, sections with no `deliver_at` (or `deliver_at` equal to this hour), and assignments due today. Cron may start early; `post_to_chat.py --hold-until` is the send clock |
+| `pt-daily-edition-<n>` (n ≥ 2) | same computation, against `delivery.extra_hours[n-2]` | reprint of that **same main** roster later the same day — not a different newspaper |
+| `pt-paper-HHMM` | `<min> <hour> * * *` from a section `deliver_at` that is not `delivery.hour` (same lead subtraction) | one job per distinct hour; desks plus only the sections at that hour. Two sections at 12:30 share `pt-paper-1230`. A cancelled last section at that hour is pruned |
+| `pt-subscription-<id>` | `<min> <hour> * * *` from `delivery.hour` | one per subscription topic not yet cancelled; created and removed as topics change |
+| `pt-oneoff-<id>` | one-shot at the topic's `scheduled_for` (memo-intake: `now + 3m` quick, next `delivery.hour` deep) | one per pending one-off still ahead, so a rebuild re-creates it; a past one is not re-armed. The sweep removes it once the topic is delivered, cancelled or missing |
 | `pt-deliver` | every minute | the outbox's flusher: a **no-agent command job** (`--command-argv` running `post_to_chat.py --flush-outbox` with the venv's python; no model, no tokens). Posts each staged paper once its hour has come. Every install has it; the sweep never removes it; it drifts only on its command |
 | `pt-daily-edition-now` | one-shot, a minute out | `register_crons.py --now`: the main paper on demand, same prompt as `pt-daily-edition` without `--hold-until`; the next `--now` replaces it unless it is running (then nothing is queued), the sweep never removes it; `--now --fresh-advice` runs the advice tournament instead of reusing a checkpoint |
 
@@ -36,7 +41,8 @@ until the hour is killed by the exec timeout).
 The daily run additionally takes a **run lock** with
 `memo-shared/scripts/run_lock.py` (see the prompt this script writes): two runs
 at once — a manual `openclaw cron run` beside the scheduled fire — would
-otherwise write the same desk scratch and deliver twice. The lock is a file created with O_EXCL, so the two runs agree on
+otherwise see every section already `running`, compile an empty edition, and
+deliver it. The lock is a file created with O_EXCL, so the two runs agree on
 one owner.
 
 ## Registering
@@ -45,11 +51,11 @@ one owner.
 in `/var/lib/plow/state/openclaw.sqlite`, on the state volume: they survive a
 gateway restart and `docker compose up --build` (the volume is kept), and are
 **gone on a fresh volume** — an instance brought up that way has
-a paper that never fires, and nothing to diff against, because the
+subscriptions that never fire, and nothing to diff against, because the
 failure looks identical to a producer running and finding nothing. Run it
 after any new state volume, at the close of `memo-setup` (so the first
-paper's job exists as soon as setup ends), and after a delivery time
-changes.
+paper's job exists as soon as setup ends), and after memo-intake adds or
+cancels a subscription, section or assignment.
 
     /opt/plow/skills/memo-schedule/scripts/register_crons.py
 
@@ -77,16 +83,20 @@ fields the scheduler reported; an absent field is left alone, not edited on
 a guess (one-shot times are compared as instants: the scheduler stores them
 in UTC).
 It removes `pt-daily-edition-<n>` whose number exceeds the current
-`delivery.extra_hours` count. The canonical `pt-daily-edition` stays
-registered after setup. It never touches a job whose name is not one of
-`pt-daily-edition`, `pt-daily-edition-<n>`, `pt-deliver` or
-`pt-daily-edition-now`: those are not this spec's to interpret or remove —
-**hand-registering a job by shell command instead of writing
-`delivery.extra_hours` and re-running this script is exactly the mistake
-this spec exists to make unnecessary**: such a job is invisible to this
-sweep forever. OpenClaw's own jobs in the same list
+`delivery.extra_hours` count, `pt-paper-HHMM` jobs whose hour no longer has
+an active section, `pt-subscription-*` jobs whose
+topic is cancelled, and `pt-oneoff-*` jobs whose topic is delivered,
+cancelled or missing. The canonical `pt-daily-edition` stays registered
+after setup — weather and calendar still need a run even with no news
+topics. It never touches a job whose name is not one of
+`pt-daily-edition`, `pt-daily-edition-<n>`, `pt-paper-*`, `pt-subscription-*` or
+`pt-oneoff-*` with a real topic id behind it: those are not this spec's to
+interpret or remove — **hand-registering a job by shell command instead of
+writing the topic or `delivery.extra_hours` and re-running this script is
+exactly the mistake this spec exists to make unnecessary**: such a job is
+invisible to this sweep forever. OpenClaw's own jobs in the same list
 (`heartbeat-main`, memory dreaming, skill review) are never touched. Registration never deletes runtime locks or
-run evidence; stale takeover belongs to `run_lock.py`, and evidence cleanup
+topic evidence; stale takeover belongs to `run_lock.py`, and evidence cleanup
 belongs to the producer that knows when its consumers are finished.
 
 Two refusals are the whole reason this is a script and not a habit:
@@ -117,10 +127,11 @@ From a turn (exec inherits the gateway token):
     node /app/openclaw.mjs cron run <job-id> --json      # force one (never a paper job)
     node /app/openclaw.mjs cron runs --id <job-id> --json  # then look for the edition in chat
 
-Never force a paper job (`pt-daily-edition`, `pt-daily-edition-<n>`) this way: past its
+Never force a paper job (`pt-daily-edition`, `pt-paper-*`) this way: past its
 delivery hour the window rule skips the advice tournament, so the copy prints
-no fresh advice. To re-run the paper, queue a copy with `register_crons.py --now`,
-or `--now --fresh-advice` when the owner asked to re-evaluate priorities.
+no fresh advice. To re-run the main paper, queue a copy with `register_crons.py --now`,
+or `--now --fresh-advice` when the owner asked to re-evaluate priorities. `--now` always
+builds the main paper's roster, so it is not a recovery for a `pt-paper-*` job.
 
 A forced run exercises the whole path a nightly fire would take once it
 starts; its `runId` starts with `manual:`. Only a scheduled fire proves the
@@ -129,6 +140,7 @@ did not research anything: OpenClaw retries only at the job's **next**
 scheduled time, so for the daily paper queue the day's copy with
 `register_crons.py --now` once the provider answers again.
 
-A paper delivered unattended at least once is the bar: confirm the
-edition in the chat, not just that the cron fired — a run that completes with no edition is the failure this whole
+A subscription delivered unattended at least once is the MVP's own bar
+of this migration: confirm the edition in the chat, not just that the cron
+fired — a run that completes with no edition is the failure this whole
 skill exists to surface.

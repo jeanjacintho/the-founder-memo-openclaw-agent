@@ -179,7 +179,7 @@ def connect():
 
     Boot fetches `/v1/agents/me` and exports its `mcp_url` as PLOW_MCP_URL
     into the gateway's environment, which exec passes to every script
-    (boot/skill-env.ts). There is nothing to derive here: re-fetching the
+    (boot/newspaper-env.ts). There is nothing to derive here: re-fetching the
     identity would be a second source of truth for a URL the runtime already
     owns, and the runtime's copy is the one that carries a proxied agent's
     proxied host. Boot also declares the one MCP server that reaches the Mac

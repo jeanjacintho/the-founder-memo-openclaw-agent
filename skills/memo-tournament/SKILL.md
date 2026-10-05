@@ -1,6 +1,6 @@
 ---
 name: memo-tournament
-description: The advisor desk evolves three researched recommendations through independent adversarial critics, then one culler ranks the winners and the owner's Q&A. Loaded by the paper run per references/desk.md; never on its own.
+description: The advisor desk evolves three researched recommendations through independent adversarial critics, then one culler ranks the winners and the owner's Q&A. Loaded by memo-research; never on its own.
 ---
 
 # memo-tournament: an overnight tournament for the advice that matters most

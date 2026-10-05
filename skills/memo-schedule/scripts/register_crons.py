@@ -1,32 +1,44 @@
 #!/usr/bin/env python3
-"""Register the memo's crons, idempotently, from pt/config.json.
+"""Register the Founder Times' crons, idempotently, from the topic store.
 
 Why this exists at all. The scheduler keeps its jobs in the gateway's state
 volume; a fresh volume has none, and nothing else replays them. Keeping the
-spec here, derived from pt/config.json, means "set up the crons" replays a
-reviewed derivation instead of improvising schedules from a sentence.
+spec here, derived from pt/topics.json (the one record of what the owner
+asked to be watched), means "set up the plow times crons" replays a reviewed
+derivation instead of improvising schedules from a sentence. The spec is
+data-driven rather than fixed: the topic list changes.
 
-The spec:
+The spec (design doc §3.6 and the personalized-paper plan §3.3/§6):
 
   pt-daily-edition       <min> <hour> * * *        one job; exists while
                          computed as                setup can register
                          delivery.hour -
                          lead_minutes (never
                          before midnight)
-  pt-daily-edition-<n>   same, extra_hours         another run of the same
-                         (n ≥ 2)                    paper later that day
-  pt-daily-edition-now   one-shot, a minute out    --now: the paper on
+  pt-daily-edition-<n>   same, extra_hours         reprint of the MAIN paper
+                         (n ≥ 2)                    (unscoped sections), not
+                                                    a different roster
+  pt-paper-HHMM          same computation          one job per distinct
+                         against a section's        section deliver_at that
+                         deliver_at                 is not delivery.hour
+  pt-subscription-<id>   0 <delivery.hour> * * *   one per subscription topic
+                                                   not yet cancelled
+  pt-oneoff-<id>         one-shot at the topic's   one per pending one-off
+                         scheduled_for             still ahead; swept once
+                                                   delivered
+  pt-daily-edition-now   one-shot, a minute out    --now: the main paper on
                                                    demand, same prompt, no hold
 
 Every cron job is registered with `--tz owner.timezone`: every stored hour --
-delivery.hour, extra_hours -- is the owner's wall clock, and the scheduler
-fires on it directly, daylight saving included.
+delivery.hour, extra_hours, a section's deliver_at -- is the owner's wall
+clock, and the scheduler fires on it directly, daylight saving included.
 post_to_chat.py's --hold-until waits on the same zone. Each job is an agent
 turn in an isolated session with delivery `none`; the paper reaches chat
 through post_to_chat.py.
 
-This script therefore CREATES missing jobs and REMOVES the extra-hour jobs
-the owner dropped. It never touches a job whose name does not start with pt-:
+This script therefore CREATES missing jobs and REMOVES pt-* jobs whose
+topic is gone -- cancelled, delivered one-offs, or names with no topic
+behind them. It never touches a job whose name does not start with pt-:
 those are not this agent's to manage (OpenClaw keeps its own jobs, such as
 its heartbeat, in the same list).
 
@@ -58,22 +70,30 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 _SKILLS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
-sys.path.insert(0, os.path.join(_SKILLS, "memo-shared", "scripts"))
+sys.path[:0] = [os.path.join(_SKILLS, "memo-intake", "scripts"), os.path.join(_SKILLS, "memo-shared", "scripts")]
 from record_owner_language import _write_json  # noqa: E402 -- the config's atomic writer
 from pt_paths import config_file, script  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
 CONFIG_FILE = str(config_file())
-# The one daily-paper job. Owned and swept by name.
+# The only job names this spec owns. Pinned as a fullmatch so a name that
+# does not parse is never interpreted, and a half-matching id never removes
+# a job (see stale_names).
+_JOB_NAME_RE = re.compile(r"^pt-(?P<kind>subscription|oneoff)-(?P<tid>t_[0-9a-f]{4})$")
+# The one daily-paper job; no topic id because it is the whole paper, not a
+# topic. Owned and swept by name, exactly like the id-borne jobs above.
 DAILY_NAME = "pt-daily-edition"
 # A second (or third, ...) full-paper delivery time, from
-# delivery.extra_hours -- same paper, re-researched and
+# delivery.extra_hours -- same paper, same sections, re-researched and
 # re-delivered at another hour of the same day. Numbered from 2 so the
 # canonical DAILY_NAME reads as "the" edition and these read as its
 # reruns, matching the lock-name convention (daily2-<date>, daily3-<date>)
 # a hand-registered job already used before this existed as a real spec.
 _EXTRA_DAILY_RE = re.compile(r"^pt-daily-edition-(?P<n>[2-9]\d*)$")
+# A focused paper at a section's deliver_at, named from the hour so two
+# sections at 12:30 share one job and a dropped hour is sweepable by name.
+_PAPER_RE = re.compile(r"^pt-paper-(?P<hhmm>(?:[01]\d|2[0-3])[0-5]\d)$")
 # The on-demand copy (--now): a one-shot the sweep below never removes, so
 # a queued paper survives a registration run; the next --now replaces it.
 NOW_NAME = "pt-daily-edition-now"
@@ -114,6 +134,7 @@ HELD_LOCK_WAIT_SECONDS = 1200
 # the desk writes its own reason instead of starting a tournament it cannot end.
 MIN_TOURNAMENT_MINUTES = 50
 
+# One topic's own edition: a subscription's nightly run or a one-off.
 DELIVERY_FAILURE_NOTICE = (
     "This is a paper execution, not a heartbeat: run the full paper pipeline. "
     "Do not finish the run before post_to_chat.py confirms the chat post or stages the edition. "
@@ -127,7 +148,7 @@ DELIVERY_FAILURE_NOTICE = (
 )
 PAPER_RUN_MARKER = "[PLOW_PAPER_RUN]"
 # Measured live: gpt-6-luna asked plow__plow_read_skill (the owner's Mac)
-# for a research skill, got "no skill named", and gave up the paper. The memo-*
+# for memo-research, got "no skill named", and gave up the paper. The memo-*
 # skills live in this container and only the read tool reaches them.
 SKILL_LOADING = (
     "Load each memo-* skill by reading /opt/plow/skills/<name>/SKILL.md with the read "
@@ -135,12 +156,31 @@ SKILL_LOADING = (
     "owner's Mac, which does not have them. "
 )
 
-def paper_prompt(hold_until=None, lead_minutes=0, fresh_advice=False):
+def topic_prompt(tid, depth, scheduled):
+    """One topic's own edition. It counts its starts under its own key, apart from the papers',
+    so a failing topic cannot spend the main paper's day (nor the other way round)."""
+    attempts = script("memo-shared", "run_attempts.py")
+    return (
+        PAPER_RUN_MARKER + " " + SKILL_LOADING +
+        f"First run {attempts} begin --key {tid}{' --scheduled' if scheduled else ''}: on 'proceed' go on; "
+        f"on 'stop' or 'stop-untold' this edition's attempts for the day are spent (retries after a "
+        f"provider rate limit only feed it) and begin has told the owner, or tried to, itself -- "
+        f"stop without researching, writing nothing to the owner. "
+        f"Then run memo-research on topic {tid} now (depth {depth}), then memo-render for it, "
+        f"delivering with post_to_chat.py per memo-render/SKILL.md step 2, with --clear-attempts {tid}. "
+        + DELIVERY_FAILURE_NOTICE
+    )
+
+
+def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False):
     """The one run prompt every paper is built from, scheduled or on demand.
 
-    Every paper shares one workspace lock because its desk scratch is shared.
-    A scheduled paper reuses today's accepted advisor checkpoint when one
-    exists, else runs the tournament.
+    focus=None is the MAIN paper: every active section with no deliver_at
+    (or deliver_at equal to delivery.hour) and every assignment due today.
+    focus="HH:MM" is the focused paper for sections booked at that hour.
+    Every paper shares one workspace lock because their desk and topic
+    scratch is shared. A scheduled paper reuses today's accepted advisor
+    checkpoint when one exists, else runs the tournament.
 
     hold_until is the send clock (delivery.hour / an extra or focused hour).
     The job may start earlier via lead_minutes; POST must still wait. The
@@ -153,9 +193,22 @@ def paper_prompt(hold_until=None, lead_minutes=0, fresh_advice=False):
     asked it not to do.
 
     The prompt carries only what the run cannot read from its skills: the
-    lock, the advice rule and the send clock. Delivery and print are
-    memo-render step 2's, never restated here.
+    lock, the roster, the advice rule and the send clock. Delivery, print
+    and topic finalization are memo-render step 2's, never restated here.
     """
+    if focus is None:
+        title, check = "the daily edition", "--deliver-at main --as-of today"
+        roster = (
+            "every active news section with no deliver_at (or deliver_at "
+            "equal to delivery.hour in pt/config.json — skip sections that belong "
+            "to another paper hour) and every assignment with run_on <= today"
+        )
+    else:
+        title, check = f"the {focus} paper", f"--deliver-at {focus}"
+        roster = (
+            f"ONLY active news sections whose deliver_at is {focus} (read topics.json; "
+            f"do not research unscoped sections, sections of another hour, or assignments)"
+        )
     hold = (
         f", with --hold-until {hold_until} so chat waits for that clock "
         f"(if that hour has already passed, post immediately; never wait until tomorrow), "
@@ -213,7 +266,7 @@ def paper_prompt(hold_until=None, lead_minutes=0, fresh_advice=False):
     lock_arg = f"--name {WORKSPACE_LOCK}"
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
-        f"Run the daily edition now, in one session. First run {lock} acquire "
+        f"Run {title} now, in one session. First run {lock} acquire "
         f"{lock_arg} --stale-minutes {STALE_RUN_MINUTES}{wait}; "
         f"if its output is 'held', "
         f"{held}. Then run {attempts} begin{next_flag}: on 'proceed' go on; on 'stop' or "
@@ -221,10 +274,16 @@ def paper_prompt(hold_until=None, lead_minutes=0, fresh_advice=False):
         f"feed it) and begin has told the owner, or tried to, itself -- run {lock} release "
         f"{lock_arg} and stop, writing nothing to the owner. Then "
         f"/opt/plow/skills/memo-shared/scripts/prepare_daily_run.py --preserve-priority "
-        f"(it archives prior scratch after the lock; do not inspect or reuse old run files). "
-        f"Then run the priority desk exactly as "
-        f"memo-tournament/references/desk.md says ({advice}). "
-        f"Then run memo-render for it, delivering with post_to_chat.py "
+        f"(it archives prior scratch after the lock; do not inspect or reuse old run files). Then "
+        f"/opt/plow/skills/memo-intake/scripts/topics.py reopen-sections "
+        f"(delivered sections are yesterday's paper, not a skip). Run "
+        f"/opt/plow/skills/memo-intake/scripts/topics.py check-paper {check}. "
+        f"If it refuses, repeat its named roster, run {lock} "
+        f"release {lock_arg}, and stop before research. "
+        f"Then run memo-research: first the priority desk exactly as "
+        f"memo-research/references/desks.md says ({advice}), "
+        f"then every other standing desk it lists, in its order, then {roster}. "
+        f"Then run memo-render for the batch, delivering with post_to_chat.py "
         f"per memo-render/SKILL.md step 2{hold}. "
         f"Release the lock with {lock} release {lock_arg}. "
         f"{DELIVERY_FAILURE_NOTICE}"
@@ -395,6 +454,35 @@ def deliver_job():
             "prompt": None, "command": DELIVER_ARGV}
 
 
+def paper_job_name(hour):
+    """pt-paper-HHMM from a strict HH:MM (12:30 → pt-paper-1230)."""
+    hh, mm = hour.split(":")
+    return f"pt-paper-{hh}{mm}"
+
+
+def paper_hour_from_name(name):
+    match = _PAPER_RE.fullmatch(name)
+    if match is None:
+        return None
+    hhmm = match.group("hhmm")
+    return f"{hhmm[:2]}:{hhmm[2:]}"
+
+
+def focused_paper_hours(topics, delivery_hour):
+    """Distinct section deliver_at values that are not the main paper hour."""
+    hours = []
+    seen = set()
+    for topic in topics:
+        if topic.get("kind") != "section" or topic.get("status") == "cancelled":
+            continue
+        at = topic.get("deliver_at")
+        if not at or at == delivery_hour or at in seen:
+            continue
+        seen.add(at)
+        hours.append(at)
+    return sorted(hours)
+
+
 def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
     """Refuse paper starts whose shared-workspace windows can overlap.
 
@@ -412,31 +500,119 @@ def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
                 )
 
 
-def desired_jobs(delivery_hour, owner_tz,
-                 lead_minutes=DEFAULT_LEAD_MINUTES, extra_hours=()):
-    """The jobs the config calls for, in spec order.
+def paper_job(hour, lead_minutes, owner_tz):
+    """One focused paper: desks plus sections whose deliver_at is this hour."""
+    return {
+        "name": paper_job_name(hour),
+        "schedule": daily_schedule(hour, lead_minutes),
+        "tz": owner_tz,
+        "prompt": paper_prompt(hold_until=hour, lead_minutes=lead_minutes, focus=hour),
+    }
 
-    The daily edition comes first, then one job per extra delivery time
-    (delivery.extra_hours -- the same paper, re-run later the same day).
-    Hours are the owner's and register in the owner's zone; lead_minutes is
-    the nominal lead, clamped per slot (see _lead).
+
+def subscription_job(topic, delivery_hour, owner_tz):
+    """The job spec for one subscription topic: nightly at the delivery hour."""
+    hour, minute = _hour_minute(delivery_hour)
+    return {
+        "name": f"pt-subscription-{topic['id']}",
+        "schedule": f"{minute} {hour} * * *",
+        "tz": owner_tz,
+        "prompt": topic_prompt(topic["id"], "deep", scheduled=True),
+    }
+
+
+def oneoff_job(topic):
+    """A pending one-off's own edition, one-shot at its scheduled_for."""
+    return {
+        "name": f"pt-oneoff-{topic['id']}",
+        "schedule": topic["scheduled_for"],
+        "tz": None,
+        "prompt": topic_prompt(topic["id"], topic["depth"], scheduled=False),
+    }
+
+
+def desired_jobs(topics, delivery_hour, owner_tz,
+                 lead_minutes=DEFAULT_LEAD_MINUTES, extra_hours=()):
+    """The jobs the topic store calls for, in spec order.
+
+    The daily edition comes first (it is the main paper), then one job per
+    extra delivery time (delivery.extra_hours -- the same MAIN roster,
+    re-researched later the same day), then one job per distinct section
+    deliver_at that is not delivery.hour (a different newspaper), then one
+    job per subscription, then one per pending one-off at its scheduled_for
+    still ahead (topics.py refuses one without an offset; a past one is
+    not re-armed). Hours are the owner's and register in the owner's zone;
+    lead_minutes is the nominal lead, clamped per slot (see _lead).
     """
-    require_workspace_spacing([delivery_hour, *extra_hours], lead_minutes=lead_minutes)
-    jobs = [daily_job(delivery_hour, _lead(delivery_hour, lead_minutes), owner_tz)]
+    focused_hours = focused_paper_hours(topics, delivery_hour)
+    require_workspace_spacing(
+        [delivery_hour, *extra_hours, *focused_hours], lead_minutes=lead_minutes
+    )
+    jobs = []
+    # The daily paper always exists once setup can register: weather and
+    # calendar run even with zero news sections.
+    jobs.append(daily_job(delivery_hour, _lead(delivery_hour, lead_minutes), owner_tz))
     for n, hour in enumerate(extra_hours, start=2):
         jobs.append(daily_job(hour, _lead(hour, lead_minutes), owner_tz, name=f"{DAILY_NAME}-{n}"))
+    for hour in focused_hours:
+        jobs.append(paper_job(hour, _lead(hour, lead_minutes), owner_tz))
+    jobs.extend(
+        subscription_job(t, delivery_hour, owner_tz)
+        for t in topics
+        if t["kind"] == "subscription" and t["status"] != "cancelled"
+    )
+    now = datetime.now().astimezone()
+    jobs.extend(
+        oneoff_job(t)
+        for t in topics
+        if t["kind"] == "one_off" and t["status"] == "pending" and t.get("scheduled_for")
+        and datetime.fromisoformat(t["scheduled_for"]).astimezone() > now
+    )
     return jobs
 
 
-def stale_names(registered, extra_hours_count=0):
-    """Registered pt-* jobs the spec no longer calls for.
+def stale_names(topics, registered, extra_hours_count=0, delivery_hour=None):
+    """Registered pt-* jobs the topic store no longer calls for.
 
-    The daily job is never stale; a numbered extra-daily job goes stale the
-    moment the owner removes that many delivery times. Names not starting
-    with pt- are never ours to remove.
+    A subscription job outlives only its non-cancelled topic; a one-off job
+    outlives only a topic still pending or running (a fired one-shot stays
+    registered as completed; this sweep prunes it once the topic is
+    delivered, cancelled or gone). The daily job is never stale; a
+    numbered extra-daily job goes stale the moment the owner removes that
+    many delivery times. A pt-paper-HHMM job outlives only an active section still at that
+    hour (and not the main delivery.hour). Names not starting with pt- are
+    never ours to remove.
     """
-    return [name for name in registered
-            if (m := _EXTRA_DAILY_RE.fullmatch(name)) and int(m.group("n")) > extra_hours_count + 1]
+    by_id = {t["id"]: t for t in topics}
+    live_papers = set()
+    if delivery_hour is not None:
+        live_papers = {paper_job_name(h) for h in focused_paper_hours(topics, delivery_hour)}
+    stale = []
+    for name in registered:
+        if name == DAILY_NAME:
+            continue
+        extra_match = _EXTRA_DAILY_RE.fullmatch(name)
+        if extra_match is not None:
+            n = int(extra_match.group("n"))
+            if n > extra_hours_count + 1:
+                stale.append(name)
+            continue
+        if _PAPER_RE.fullmatch(name):
+            if delivery_hour is not None and name not in live_papers:
+                stale.append(name)
+            continue
+        match = _JOB_NAME_RE.fullmatch(name)
+        if match is None:
+            continue
+        kind, tid = match.group("kind"), match.group("tid")
+        topic = by_id.get(tid)
+        if topic is None:
+            stale.append(name)
+        elif kind == "subscription" and topic["status"] == "cancelled":
+            stale.append(name)
+        elif kind == "oneoff" and topic["status"] in ("delivered", "cancelled"):
+            stale.append(name)
+    return stale
 
 
 def registered_jobs(listing):
@@ -500,7 +676,8 @@ def job_drift(job, spec):
 
 def _is_paper(name):
     """A job that runs a paper under the workspace lock."""
-    return name in (DAILY_NAME, NOW_NAME) or bool(_EXTRA_DAILY_RE.fullmatch(name))
+    return (name in (DAILY_NAME, NOW_NAME) or bool(_EXTRA_DAILY_RE.fullmatch(name))
+            or bool(_PAPER_RE.fullmatch(name)))
 
 
 def queue_now(backend, listing, lead_minutes, owner_tz, clock=None, fresh_advice=False):
@@ -570,6 +747,11 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
         backend = CronBackend()
 
     owner_tz = load_owner_zone(config_path)
+    # The topic store, via memo-intake's single reader -- so a broken
+    # topics.json refuses here too, rather than reading as "no topics" and
+    # pruning every subscription job this run could have kept.
+    import topics as topics_mod
+    topics = topics_mod.load_topics()
     adopt_owner_clock(owner_tz, (env.get("TZ") or "").strip() or owner_tz, config_path)
     delivery_hour = load_delivery_hour(config_path)
     extra_hours = load_extra_hours(config_path)
@@ -580,7 +762,7 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
     paused = []
     pending = []
 
-    for job in [*desired_jobs(delivery_hour, owner_tz, lead_minutes, extra_hours), deliver_job()]:
+    for job in [*desired_jobs(topics, delivery_hour, owner_tz, lead_minutes, extra_hours), deliver_job()]:
         current = registered.get(job["name"])
         if current is not None:
             if not current.enabled:
@@ -615,7 +797,7 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
             _check(backend.create(job), f"could not register {job['name']}")
             print(f"registered: {job['name']} ({job['schedule'] or 'every ' + job['every']})")
 
-    for name in stale_names(registered, len(extra_hours)):
+    for name in stale_names(topics, registered, len(extra_hours), delivery_hour):
         _check(backend.remove(registered[name].id), f"could not remove stale job {name}")
         print(f"removed stale job: {name}")
 
