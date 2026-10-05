@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import JSON5 from "json5";
-import { PLOW_ROUTE, type LlmRoute } from "./llm.ts";
+import { memoRoles, PLOW_ROUTE, type LlmRoute } from "./llm.ts";
 
 export type Participant =
   | { type: "member"; uid: string; role: string }
@@ -13,11 +13,26 @@ export type Identity = {
   mcp_url?: string | null;
 };
 
-export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE) {
+type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number } };
+
+export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
   const name = identity.agent?.name;
   if (typeof name !== "string" || !name.trim()) throw new Error(`Identity has no usable agent.name: ${JSON.stringify(name)}`);
   const email = identity.chats.flatMap(chat => chat.participants).find(p =>
     p.type === "agent" && p.relationship === "self" && p.line.provider_type === "email");
+  // Plow serves Sol with a 1,050,000-token window and publishes no price for it.
+  const plowModels: PlowModel[] = [
+    { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
+    { id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
+      cost: { input: 0.10, output: 0.50 } },
+  ];
+  // The memo's writer and critic run at the price the install names, listed or not.
+  const roles = memoRoles(env);
+  for (const role of roles ? [roles.writer, roles.critic] : []) {
+    const listed = plowModels.find(m => m.id === role.id);
+    if (listed) listed.cost = role.cost;
+    else plowModels.push({ id: role.id, name: role.id, input: ["text"], cost: role.cost });
+  }
   return {
     meta: {},
     gateway: {
@@ -32,12 +47,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     models: { providers: { plow: {
       baseUrl: `${apiBase}/v1`, apiKey: "${PLOW_AGENT_TOKEN}", api: "openai-completions", authHeader: true,
       request: { allowPrivateNetwork: true },
-      // Plow serves Sol with a 1,050,000-token window and publishes no price for it.
-      models: [
-        { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
-        { id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
-          cost: { input: 0.10, output: 0.50 } },
-      ],
+      models: plowModels,
     } } },
     agents: { entries: { main: { identity: { name } } }, defaults: {
       workspace: "/var/lib/plow/workspace", skipBootstrap: true,
@@ -55,9 +65,10 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       ...(llm.provider === "openai" ? {
         models: { "openai/*": { agentRuntime: { id: "openclaw" } } }, modelPolicy: { allow: [] },
       } : {}),
-      // The advisor tournament spawns up to six critics at once; children never spawn.
+      // The memo's conductor spawns phase coordinators, and each coordinator spawns
+      // up to ten leaf children (writers, critics, investigators); leaves never spawn.
       // Delegation stays a suggestion so owner chat turns are not pushed into sub-agents.
-      subagents: { maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest" },
+      subagents: { maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest" },
     } },
     mcp: { sessionIdleTtlMs: 300_000, ...(identity.mcp_url ? { servers: { plow: {
       url: "http://127.0.0.1:18790/mcp", transport: "streamable-http",
