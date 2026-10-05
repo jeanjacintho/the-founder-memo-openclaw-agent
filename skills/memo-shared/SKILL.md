@@ -62,6 +62,16 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   the root `projects/founder-memo` (writer `founder-memo`), the shared
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
   (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
+- `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
+  `entity_page.py merge --kind people|orgs --slug <slug> --title <title> --dossier <file|->`,
+  the dossier `{"description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
+  It replaces `## Now`, merges `## Timeline` on (date, item) newest first, capped at 20, keeps
+  every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
+  `wiki validate --writer shared`. Exit 1 names the problem on stderr; nothing is half-merged.
+- `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints
+  `{"usd": <float|null>, "sessions": n, "unpriced": m}` (tokens times each model's configured
+  price; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
+  --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not.
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
   the Mac has none, writes
