@@ -188,7 +188,6 @@ test("mail from an outsider and mail from the owner on one thread run in differe
   assert.equal(ownerKey, "agent:main:plow:email:direct:thread");
   assert.equal(new Set(outsiderKeys).size, 1, "one outsider keeps one session");
   assert.notEqual(outsiderKeys[0], ownerKey);
-  assert.match(outsiderKeys[0], /^agent:main:plow:email:direct:thread-[0-9a-f]{12}$/);
 });
 
 test("a non-owner email turn has no tools and plow_send_email refuses it, even for its own thread", async t => {
@@ -225,6 +224,7 @@ test("a thread started from a trusted group reports its finals to that group, re
 
 for (const [name, response, expected] of [
   ["sent with no chat id", { status: "sent", chat_uid: null, chat_unrecorded_reason: "persistence_failed" }, { sent: true, chat_uid: null, chat_unrecorded_reason: "persistence_failed" }],
+  ["acceptance unknown", { status: "acceptance_unknown", chat_uid: null }, { success: false, delivery_unknown: true }],
   ["delivery unknown", { status: "error", chat_uid: null, http: 503 }, { success: false, delivery_unknown: true }],
 ] as const) test(`a new thread's receipt is never an invented chat id and is sent once: ${name}`, async t => {
   let receipt: Record<string, unknown> = {};

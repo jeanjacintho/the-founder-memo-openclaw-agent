@@ -1,6 +1,6 @@
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/core";
 import { createHash } from "node:crypto";
-import { startDeliveryRun, finishDeliveryRun, installDeliveryGuard, threadIdempotencyKey } from "./delivery-guard.ts";
+import { startDeliveryRun, finishDeliveryRun, deliveryRunIsUnknown, installDeliveryGuard, threadIdempotencyKey } from "./delivery-guard.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { defineChannelPluginEntry, type ChannelPlugin, type PluginRuntime, type OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { createChannelMessageReplyPipeline, buildOutboundSessionContext, sendDurableMessageBatch, resolveOutboundSendDep } from "openclaw/plugin-sdk/channel-outbound";
@@ -210,12 +210,13 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
       ...(!senderIsOwner && (email || (!listening && !chat.trusted)) ? { disableTools: true } : {}),
       sourceReplyDeliveryMode: command && !senderIsOwner && chat.trusted ? "message_tool_only" : "automatic",
       onObservedReplyDelivery: () => { observedReplyDelivery = true; },
-      onAgentRunTerminalOutcome: outcome => { finishRun(); if (outcome === "failed") failure = new Error("Agent turn failed"); },
+      onAgentRunTerminalOutcome: outcome => { if (outcome === "failed") failure = new Error("Agent turn failed"); },
     },
     delivery: {
       durable: email ? false : { to: chat.uid, replyToId: null },
       observeMessageSent: true,
       preparePayload: (payload, info) => {
+        if (activeRunId !== undefined && deliveryRunIsUnknown(activeRunId) && info.kind === "final") { silent = true; return null; }
         if (listening) return null;
         if (payload.isFallbackNotice) { silent ||= email; return null; }
         if (email && info.kind !== "final") { log(`dropped ${info.kind} chat=${chat.uid} message=${message.uid}`); return null; }
@@ -224,6 +225,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
         return email ? payload : { ...payload, replyToId: undefined, replyToCurrent: false };
       },
       deliver: async payload => {
+        if (activeRunId !== undefined && deliveryRunIsUnknown(activeRunId)) throw new DeliveryUnknownError();
         if (listening) {
           log(`suppressed group reply chat=${chat.uid}`);
           return { messageIds: [] };
@@ -517,12 +519,13 @@ export default defineChannelPluginEntry({
         if (!args.to?.length || !args.subject) return refuse("A new thread needs to (email addresses) and a subject.");
         const sent = await requestDelivery<{ status: string; chat_uid?: string | null; chat_unrecorded_reason?: string | null }>(
           mailbox, "/chats", { line_uid: phone.emailLineUid, members: args.to, subject: args.subject, body });
+        if (sent.status === "acceptance_unknown") throw new DeliveryUnknownError();
         // A thread started from an email turn reports to the owner's 1:1, the default.
         // The mail is out: a lost origin only sends later finals to the owner's 1:1, so it never fails the send.
         if (sent.chat_uid && !emailTurn) await recordOrigin(sent.chat_uid, turn.chat.uid).catch(error => api.logger.info(`plow origin not recorded chat=${sent.chat_uid}: ${(error as Error).name}`));
         api.logger.info(`plow started email status=${sent.status} chat=${sent.chat_uid ?? "none"}`);
         if (sent.chat_uid) return receipt({ sent: true, chat_uid: sent.chat_uid });
-        return receipt({ sent: sent.status === "sent" ? true : "unknown", chat_uid: null, chat_unrecorded_reason: sent.chat_unrecorded_reason ?? null,
+        return receipt({ sent: true, chat_uid: null, chat_unrecorded_reason: sent.chat_unrecorded_reason ?? null,
           note: "Plow has no chat id for this thread. Do not resend and do not guess a chat id." });
       }
       return {

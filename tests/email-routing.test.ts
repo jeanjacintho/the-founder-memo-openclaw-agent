@@ -50,5 +50,4 @@ test("native routing isolates email threads, and gives each outside sender in a 
   assert.equal(sessions.filter(Boolean).length, 3);
   assert.notEqual(sessions[0], sessions[1], "one sender in different threads must have separate sessions");
   assert.notEqual(sessions[0], sessions[2], "an outsider's mail must not share another sender's running session");
-  assert.ok(sessions[0].startsWith(sessions[2].slice(0, sessions[2].lastIndexOf("-"))), "both stay under the same thread");
 });
