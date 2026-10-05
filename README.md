@@ -156,14 +156,15 @@ talk to.
 
 ## Groups, email and trust
 
-Groups the agent starts from the owner's main DM are untrusted by default;
-`PLOW_THREAD_TRUST=ask|trusted|untrusted` chooses the policy, and
-`plow_set_thread_trust` changes one group later. In an untrusted text
-conversation a non-owner gets replies only, no tools; a trusted group's
-members get the room's full tools. Groups the agent only listens to keep their
-one tool, `plow_record_signal`, whatever their trust. Non-owner senders carry
-their normalized phone number or email address as the sender id, so one person
-is one sender across chats; the owner is `plow-owner`.
+Every phone group is listen-only, including groups the agent starts from the
+owner's main DM. Every member, including the owner, gets only
+`plow_record_signal`; the agent never replies there. The inherited
+`PLOW_THREAD_TRUST=ask|trusted|untrusted` policy and `plow_set_thread_trust`
+set the Plow trust flag, but never make a group interactive or grant Mac tools
+in this newspaper. In an untrusted non-owner DM the sender gets replies only,
+no tools. Non-owner senders carry their normalized phone number or email
+address as the sender id, so one person is one sender across chats; the owner
+is `plow-owner`.
 
 An email turn's final text never reaches the sender: it goes privately to the
 owner (the chat the thread was started from, else their 1:1), and mail is sent
