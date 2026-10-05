@@ -18,7 +18,7 @@ prose and the code, in either direction.
 **Stage:** pre-PMF, early. A handful of installs, each one owner's paper
 running in Docker against their own Plow line. The agent holds that owner's
 credential and reaches their mail, calendar, browser and printer through
-Latch, so a credential, a chat id, an account name or a real person's data
+Latch, so a credential, a chat id, an account name or private personal data
 anywhere in the tracked tree is blocking. That includes the edition renders
 under `index/`, which are drawn from synthetic data.
 
