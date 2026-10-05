@@ -10,17 +10,19 @@ const prompt = await readFile(new URL("../prompt/AGENTS.md", import.meta.url), "
 const maxChars = renderConfig(probeIdentity, "http://api").agents.defaults.bootstrapMaxChars;
 
 test("no Mac still renders the default thread trust instruction", async () => {
-  assert.match(await renderPrompt(prompt, null, "test-token"), /ask the owner whether the group should have full trust/i);
+  assert.match(await renderPrompt(prompt, null, "test-token"), /ask the owner whether the group should have its Plow trusted flag set/i);
 });
 
 for (const [mode, expected] of [
-  ["ask", /ask the owner whether the group should have full trust/i],
+  ["ask", /ask the owner whether the group should have its Plow trusted flag set/i],
   ["trusted", /create groups with trusted: true/i],
   ["untrusted", /create groups with trusted: false/i],
 ] as const) test(`thread trust mode ${mode} renders its instruction`, async () => {
   const rendered = await renderPrompt(prompt, null, "test-token", mode);
   assert.match(rendered, expected);
-  if (mode !== "ask") assert.doesNotMatch(rendered, /ask the owner whether the group should have full trust/i);
+  assert.match(rendered, /Every phone group remains listen-only with only plow_record_signal, regardless of this flag/);
+  assert.doesNotMatch(rendered, /full trust \(access to your Mac, mail, files\)/);
+  if (mode !== "ask") assert.doesNotMatch(rendered, /ask the owner whether the group should have its Plow trusted flag set/i);
 });
 
 test("invalid thread trust mode fails at boot", async () => {

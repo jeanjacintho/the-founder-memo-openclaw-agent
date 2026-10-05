@@ -398,12 +398,12 @@ export default defineChannelPluginEntry({
     }));
     api.registerTool(context => ({
       name: "plow_set_thread_trust", label: "Set Plow group trust",
-      description: "From the owner's main Plow DM, set whether an existing group gives every member full access to tools, including the owner's Mac, mail and files. Use only when the owner asks to change that group's trust.",
+      description: "From the owner's main Plow DM, set an existing group's Plow trust flag. In this newspaper every phone group remains listen-only with only plow_record_signal, regardless of the flag. Use only when the owner asks to change that group's trust.",
       parameters: {
         type: "object", required: ["chat_uid", "trusted"], additionalProperties: false,
         properties: {
           chat_uid: { type: "string", pattern: "^cht_[A-Za-z0-9_-]+$", description: "The existing Plow group chat uid." },
-          trusted: { type: "boolean", description: "True grants all members full tools; false restricts non-owner members to replies only." },
+          trusted: { type: "boolean", description: "The Plow trust flag; neither value changes the newspaper group listening policy." },
         },
       },
       async execute(_id, args: { chat_uid: string; trusted: boolean }) {

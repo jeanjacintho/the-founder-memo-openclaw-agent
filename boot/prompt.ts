@@ -1,14 +1,14 @@
 export async function renderPrompt(prompt: string, mcpUrl: string | null | undefined, token: string, trustMode = process.env.PLOW_THREAD_TRUST ?? "ask", webUrl?: string | null): Promise<string> {
   const instruction = {
-    ask: "Before starting a group, ask the owner whether the group should have full trust (access to your Mac, mail, files) or be a normal chat. Wait for their answer. Use trusted: true only for full trust; otherwise use trusted: false.",
-    trusted: "The image creator chose full trust for new groups. Create groups with trusted: true without asking about trust.",
-    untrusted: "The image creator chose normal chat for new groups. Create groups with trusted: false without asking about trust.",
+    ask: "Before starting a group, ask the owner whether the group should have its Plow trusted flag set. Wait for their answer. Use trusted: true only for that choice; otherwise use trusted: false.",
+    trusted: "The image creator chose the Plow trusted flag for new groups. Create groups with trusted: true without asking about trust.",
+    untrusted: "The image creator chose the Plow untrusted flag for new groups. Create groups with trusted: false without asking about trust.",
   }[trustMode];
   if (!instruction) throw new Error("PLOW_THREAD_TRUST must be ask, trusted, or untrusted");
   const dashboard = webUrl
     ? `\nYour dashboard is ${webUrl}. Give that exact address when asked; never guess a dashboard URL.\n`
     : "\nYou have no dashboard. Say so when asked for its URL; never guess one.\n";
-  const rendered = `${prompt}\nThread trust: ${instruction}\n${dashboard}`;
+  const rendered = `${prompt}\nThread trust: ${instruction} Every phone group remains listen-only with only plow_record_signal, regardless of this flag.\n${dashboard}`;
   if (!mcpUrl) return rendered;
   try {
     const response = await fetch(mcpUrl, {
