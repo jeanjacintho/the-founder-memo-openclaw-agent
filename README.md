@@ -164,8 +164,11 @@ MEMO_MODEL_CRITIC=plow/<another provider>/<model>
 MEMO_MODEL_CRITIC_PRICE=<input>,<output>
 ```
 
-The price is what makes each child's `costUsd`, which the run's dollar
-ceiling is checked against. Boot refuses one without the other, a missing or
+The prices register the role models for OpenClaw's usage accounting. The run-cost
+reader and dollar ceiling land in later steps of issue #59; this PR does not
+enforce a spending limit. The current tournament still directly spawns leaf
+workers; phase coordinators and depth-2 execution also land later.
+Boot refuses one without the other, a missing or
 malformed price, and a critic from the writer's provider. With neither set,
 every child runs on the chat's model.
 

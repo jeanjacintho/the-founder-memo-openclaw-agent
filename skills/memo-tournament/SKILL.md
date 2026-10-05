@@ -156,17 +156,19 @@ call `sessions_yield` and keep yielding until every child in the set has returne
 Let `I` be the number of inherited champions at the start of this generation. Execute this loop in
 order; the stage sections below define each payload, but never reorder or merge these gates:
 
-1. Spawn one set of exactly three writer children.
+1. Spawn one set of exactly three writer children with `model` set to the writer model
+   named in AGENTS.md.
 2. Rewrite `RUN_PAGE` with all three Challenge results and set its `Stage` to Challenge complete.
    Do not spawn another child until that wiki write returns success.
 3. Spawn one set whose critic child count is `I + 3`: one child for each inherited
    champion and one for each challenger, so there is one independent critic per recommendation.
    With three inherited champions, this is six independent critic children in one spawn set.
+   Set every critic's `model` to the critic model named in AGENTS.md.
 4. Rewrite `RUN_PAGE` with every critic result and set its `Stage` to Criticize complete. Do not
    call the culler until that wiki write returns success.
 5. Every generation reaches Cull unless fewer than three fully criticized targets remain. With
    fewer than three, the generation is invalid and the prior checkpoint stands. Otherwise make
-   a spawn set of one child for Cull.
+   a spawn set of one child for Cull with `model` set to the writer model named in AGENTS.md.
 6. Rewrite `RUN_PAGE` with Cull and set its `Stage` to Cull complete before taking another action.
    Recovery from `Cull complete` proceeds to the next required action.
 7. Generations one and two advance from their wiki Cull checkpoint: immediately start the next
