@@ -164,8 +164,8 @@ MEMO_MODEL_CRITIC=plow/<another provider>/<model>
 MEMO_MODEL_CRITIC_PRICE=<input>,<output>
 ```
 
-The price is what makes each child's `costUsd`, which the run's dollar
-ceiling is checked against. Boot refuses one without the other, a missing or
+The price converts each child's listed input and output tokens to USD for
+the run's dollar ceiling check. Boot refuses one without the other, a missing or
 malformed price, and a critic from the writer's provider. With neither set,
 every child runs on the chat's model.
 

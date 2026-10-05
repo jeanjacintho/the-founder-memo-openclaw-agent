@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """run_cost.py -- what tonight's run has spent, and whether another generation fits.
 
-    run_cost.py total --since-minutes N [--provider-config PATH]
+    run_cost.py total --since-minutes N
     run_cost.py can-start --spent <usd|null> --longest <usd> --max <usd>
 
 `total` lists the sessions OpenClaw updated in the last N minutes
@@ -10,16 +10,16 @@ own model: input and output tokens times the USD-per-million price the install
 gave that model (boot writes it into the plow provider's config, which this
 reads). OpenClaw's listing carries tokens, not dollars. It prints
 {"usd": <float or null>, "sessions": n, "unpriced": m}: null when no session
-ran on a priced model -- unknown, never $0.00 -- and `unpriced` counts the
-sessions whose model has no price, which the total leaves out. A truncated
+ran on a priced model or any token-bearing session is unpriced -- unknown,
+never $0.00 -- and `unpriced` counts those unpriced sessions. A truncated
 listing is refused rather than summed short.
 
 Each session's tokens are its latest run's, so a session that ran more than
 once (a coordinator resumed after sessions_yield) counts only its last run.
 
 `can-start` exits 0 when one more generation as costly as the costliest so far
-still fits under the ceiling, 1 when it does not. An unknown spend cannot hold
-the run hostage; the window still bounds it.
+still fits under the ceiling, 1 when it does not. An unknown spend cannot
+approve another generation; the caller proceeds to Freshness and Publish.
 """
 from __future__ import annotations
 
@@ -58,6 +58,8 @@ def cost(row, table):
 
 
 def total(rows, table):
+    if unpriced(rows, table):
+        return None
     priced = [c for c in (cost(r, table) for r in rows) if c is not None]
     return round(sum(priced), 4) if priced else None
 
@@ -68,7 +70,7 @@ def unpriced(rows, table):
 
 
 def can_start(spent, longest_generation_usd, max_usd):
-    return spent is None or spent + longest_generation_usd <= max_usd
+    return spent is not None and spent + longest_generation_usd <= max_usd
 
 
 def _listing(argv):
@@ -80,7 +82,6 @@ def main(argv=None, run=_listing):
     sub = p.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("total")
     t.add_argument("--since-minutes", type=int, required=True)
-    t.add_argument("--provider-config", default=PROVIDER_CONFIG)
     c = sub.add_parser("can-start")
     for flag in ("--spent", "--longest", "--max"):
         c.add_argument(flag, type=lambda v: None if v == "null" else float(v), required=True)
@@ -88,7 +89,7 @@ def main(argv=None, run=_listing):
     if a.cmd == "can-start":
         return 0 if can_start(a.spent, a.longest, a.max) else 1
     try:
-        with open(a.provider_config, encoding="utf-8") as f:
+        with open(PROVIDER_CONFIG, encoding="utf-8") as f:
             table = prices(json.load(f))
         rows = sessions(json.loads(run([*OPENCLAW, "sessions", "--json", "--limit", "all",
                                         "--active", str(a.since_minutes)])))

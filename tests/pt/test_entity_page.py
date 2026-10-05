@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 
 import pytest
 
@@ -74,9 +75,40 @@ def test_a_page_the_wiki_refuses_fails_the_run(mac, tmp_path, capsys):
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(ep.merge(None, D, "people", "Jane Doe", "2026-10-01").replace(
         "category: entities", "category: entities\norg: not a link"))
+    original = page.read_text()
     f = tmp_path / "d.json"
     f.write_text(json.dumps(D))
     code = ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe",
                     "--dossier", str(f), "--today", "2026-10-02"], call_tool=mac.call_tool)
     assert code == 1
     assert "entities/people/jane-doe.md" in capsys.readouterr().err
+    assert page.read_text() == original
+
+
+@pytest.mark.parametrize("slug", ["../../owner/goals", "../jane", "a/b", "a\\b", ".", "..", "/jane", "jane\n"])
+def test_invalid_slug_never_calls_latch(slug, tmp_path):
+    def forbidden(*args):
+        pytest.fail("invalid slug reached Latch")
+    assert ep.main(["merge", "--kind", "people", "--slug", slug, "--title", "Jane",
+                    "--dossier", str(tmp_path / "missing")], call_tool=forbidden) == 1
+
+
+def test_rejected_new_page_is_removed(mac, tmp_path, capsys):
+    mac.wiki("init", "~/Plow/wiki")
+    f = tmp_path / "d.json"
+    f.write_text(json.dumps({**D, "sources": [{"resource": ""}]}))
+    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
+                    "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 1
+    assert "wiki validate" in capsys.readouterr().err
+    assert not (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
+
+
+def test_bare_cli_uses_owner_day(mac, tmp_path, monkeypatch):
+    mac.wiki("init", "~/Plow/wiki")
+    monkeypatch.setattr(ep, "owner_today", lambda: date(2026, 10, 2))
+    f = tmp_path / "d.json"
+    f.write_text(json.dumps(D))
+    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
+                    "--dossier", str(f)], call_tool=mac.call_tool) == 0
+    meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
+    assert meta["created"] == meta["updated"] == "2026-10-02"
