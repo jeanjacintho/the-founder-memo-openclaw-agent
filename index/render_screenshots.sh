@@ -15,7 +15,7 @@ docker compose -f "$ROOT/compose.yml" run --no-deps --rm \
   -v "$ROOT:/work" \
   -w /work \
   agent \
-  /opt/hermes/.venv/bin/python3 memo-render/scripts/render_edition.py \
+  /opt/plow/pt-venv/bin/python3 skills/memo-render/scripts/render_edition.py \
     index/edition.json --pdf index/.shoot-tmp/edition.pdf --config /dev/null
 
 pdftoppm -jpeg -r 96 -scale-to-x 783 -scale-to-y 1024 \
