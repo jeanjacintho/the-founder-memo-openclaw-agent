@@ -5,32 +5,31 @@ A paper that dies on a provider rate limit (HTTP 429) ends without an edition,
 and OpenClaw retries the job: 201 rate-limit errors and 909 model calls in one
 afternoon, an owner told nothing. Each retry redoes the whole paper, so the
 retries themselves feed the rate limit. This counts the paper's starts on the
-owner's day and, past MAX_ATTEMPTS undelivered ones, tells the run to stop
-before it spends another model call.
+owner's day and, past MAX_ATTEMPTS undelivered ones, stops the run before it
+spends another model call -- and tells the owner, once, itself.
 
-  begin       run once the workspace lock is held, before any research.
+  begin [--next-paper HH:MM]
+              run once the workspace lock is held, before any research.
               Prints one word:
-                proceed      attempt N of MAX_ATTEMPTS; go on
-                give-up      the day's attempts are spent and no one has told
-                             the owner yet: run `notify` while still holding
-                             the lock, then release it and stop
-                give-up-quiet  the owner was already told: release the lock, stop
+                proceed       attempt N of MAX_ATTEMPTS; go on
+                stop          the day's attempts are spent and the owner has been
+                              told (now, by this call, or on an earlier start):
+                              release the lock and stop
+                stop-untold   spent, but the notice could not be posted: release
+                              the lock and stop; the owner is still untold, so the
+                              next start tries again (and the failure-notice hook
+                              still tells them the edition did not arrive)
 
-  notify      read the message from stdin (one short message in the owner's
-              language: the edition was not delivered and the paper is not
-              trying again now), post it to the owner's chat and, in the same
-              process, record that they were told. The text comes on stdin, through
-              a quoted heredoc, because it is model-written: it must never sit
-              inside a shell-parsed argument.
-              Prints `told`. If the post fails it exits non-zero and records
-              nothing, so the next start tries again; one process does both
-              steps, so no model turn can fall between the send and the mark.
+The notice is sent here, in the same process that records it, in the owner's
+own language from the paper's fixed phrases (owner_phrases.py): no model turn
+falls between the send and the mark, and no model-written text reaches a
+shell. --next-paper is the scheduled paper's delivery hour, for the line that
+says when the next try is; without it the line says to ask again later.
 
 The count starts over when post_to_chat.py --clear-attempts confirms a post or
-stages the edition (see `clear`), not through a command the model has to
-remember. Always exits 0, like run_lock.py, so a cron-fired session reads the
-word. The count lives in $PT_HOME/paper-attempts-YYYY-MM-DD.json (the owner's
-day).
+stages the edition (see `clear`). Always exits 0, like run_lock.py, so a
+cron-fired session reads the word. The count lives in
+$PT_HOME/paper-attempts-YYYY-MM-DD.json (the owner's day).
 """
 from __future__ import annotations
 
@@ -39,6 +38,7 @@ import json
 import sys
 
 from owner_chat import post_owner_text
+from owner_phrases import phrase
 from owner_time import owner_today
 from pt_paths import pt_home
 
@@ -49,41 +49,35 @@ def _path():
     return pt_home() / f"paper-attempts-{owner_today().isoformat()}.json"
 
 
-def begin():
+def _save(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data))
+    tmp.replace(path)
+
+
+def _notice(next_paper):
+    if next_paper:
+        return phrase("attempts.spent_scheduled", hour=next_paper)
+    return phrase("attempts.spent_on_demand")
+
+
+def begin(next_paper=None):
     path = _path()
     data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
-    if data["starts"] >= MAX_ATTEMPTS:
-        word = "give-up-quiet" if data["told"] else "give-up"
-    else:
+    if data["starts"] < MAX_ATTEMPTS:
         data["starts"] += 1
         word = "proceed"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data))
-    tmp.replace(path)
+    else:
+        if not data["told"]:
+            try:
+                post_owner_text(_notice(next_paper))
+                data["told"] = True
+            except SystemExit as exc:  # the chat post refused or failed: record nothing
+                print(f"run_attempts: the spent-day notice was not posted: {exc}", file=sys.stderr)
+        word = "stop" if data["told"] else "stop-untold"
+    _save(path, data)
     print(word)
-    return 0
-
-
-def notify():
-    """Post the spent-day message (from stdin) to the owner's chat, then record that they were told."""
-    text = sys.stdin.read().strip()
-    if not text:
-        sys.exit("error: notify needs the message text on stdin")
-    post_owner_text(text)
-    return told()
-
-
-def told():
-    """The owner has been told the day is spent."""
-    path = _path()
-    data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
-    data["told"] = True
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data))
-    tmp.replace(path)
-    print("told")
     return 0
 
 
@@ -95,8 +89,9 @@ def clear():
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("begin", help="count this start; proceed or give up").set_defaults(func=lambda a: begin())
-    sub.add_parser("notify", help="send the give-up message from stdin and record that the owner was told").set_defaults(func=lambda a: notify())
+    start = sub.add_parser("begin", help="count this start; proceed, or stop and tell the owner once")
+    start.add_argument("--next-paper", metavar="HH:MM", default=None)
+    start.set_defaults(func=lambda a: begin(a.next_paper))
     args = parser.parse_args(argv)
     return args.func(args)
 

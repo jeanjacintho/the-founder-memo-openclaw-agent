@@ -103,27 +103,23 @@ function callIds(messages: unknown[], subcommand: string): Set<string> {
   return ids;
 }
 
-// A run that stopped because the day's attempts are spent did so on purpose, and the spent-day path
-// owns its notice: `begin` answered give-up-quiet (they were told earlier) or give-up (`notify` tells
-// them, and a failed `notify` leaves them untold so the next start tries again, never a second,
-// different notice), or `notify` answered told. A generic failure notice on top would repeat or
-// contradict it.
-// Only that script's own result counts: the tool result paired with the call that ran it, never
-// text the model or another tool produced.
+// A run that stopped because the day's attempts are spent did so on purpose, and `begin` owns the
+// notice: it answered `stop` (the owner is told, now or on an earlier start). A generic failure
+// notice on top would repeat it. `stop-untold` (the notice could not be posted) is not a deliberate
+// quiet, so the generic notice still goes out. Only the script's own result counts: the tool result
+// paired with the call that ran it, never text the model or another tool produced.
 function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
   const all = messages ?? [];
-  const expected = new Map<string, string[]>();
-  for (const id of callIds(all, "begin")) expected.set(id, ["give-up-quiet", "give-up"]);
-  for (const id of callIds(all, "notify")) expected.set(id, ["told"]);
-  if (expected.size === 0) return false;
+  const begins = callIds(all, "begin");
+  if (begins.size === 0) return false;
   return all.some(message => {
     if (message === null || typeof message !== "object") return false;
     const record = message as Record<string, unknown>;
     const nested = record.message as Record<string, unknown> | undefined;
     if (!toolResultRole.has(String(record.role ?? nested?.role))) return false;
     const callId = record.toolCallId ?? record.tool_call_id ?? record.toolUseId ?? nested?.toolCallId ?? nested?.tool_call_id;
-    return typeof callId === "string" && expected.has(callId) &&
-      textValues(record.content ?? nested?.content).some(text => expected.get(callId)!.includes(text.trim()));
+    return typeof callId === "string" && begins.has(callId) &&
+      textValues(record.content ?? nested?.content).some(text => text.trim() === "stop");
   });
 }
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import sys
 
 import pytest
 
@@ -18,10 +17,10 @@ def pt_home(tmp_path, monkeypatch):
     return tmp_path / "pt"
 
 
-def run(command):
+def run(command, *args):
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        assert attempts.main([command]) == 0
+        assert attempts.main([command, *args]) == 0
     return buf.getvalue().strip()
 
 
@@ -31,7 +30,7 @@ def test_the_first_attempts_proceed(pt_home):
 
 @pytest.fixture
 def chat(monkeypatch):
-    """The owner's chat: records what notify posts; set .fails to make the post fail."""
+    """The owner's chat: records what begin posts; set .fails to make the post fail."""
     class Chat:
         posts, fails = [], False
 
@@ -46,46 +45,35 @@ def chat(monkeypatch):
     return Chat
 
 
-def notify(monkeypatch, text="Not delivered; not trying again now."):
-    monkeypatch.setattr(sys, "stdin", io.StringIO(text + "\n"))
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        assert attempts.main(["notify"]) == 0
-    return buf.getvalue().strip()
-
-
-def test_the_next_one_gives_up_and_stays_quiet_only_once_the_owner_was_told(pt_home, chat, monkeypatch):
+def spend_the_day():
     for _ in range(attempts.MAX_ATTEMPTS):
-        run("begin")
-    assert run("begin") == "give-up"
-    assert notify(monkeypatch) == "told"
-    assert chat.posts == ["Not delivered; not trying again now."]
-    assert [run("begin"), run("begin")] == ["give-up-quiet", "give-up-quiet"]
+        assert run("begin") == "proceed"
 
 
-def test_a_failed_post_leaves_the_owner_untold_so_the_next_start_tries_again(pt_home, chat, monkeypatch):
-    for _ in range(attempts.MAX_ATTEMPTS):
-        run("begin")
+def test_the_next_start_tells_the_owner_once_in_the_same_call_and_stays_quiet_after(pt_home, chat):
+    spend_the_day()
+    assert run("begin") == "stop"
+    assert [run("begin"), run("begin")] == ["stop", "stop"]
+    assert chat.posts == ["The edition was not delivered after repeated attempts, so I am not trying again now. Ask me again later."]
+
+
+def test_the_notice_says_when_the_next_paper_is_and_speaks_the_owners_language(pt_home, chat):
+    (pt_home).mkdir(parents=True)
+    (pt_home / "config.json").write_text('{"owner": {"language": "Português"}}')
+    spend_the_day()
+    assert run("begin", "--next-paper", "07:00") == "stop"
+    assert chat.posts == ["A edição não foi entregue depois de várias tentativas, então não vou tentar de novo agora. O próximo jornal agendado sai amanhã às 07:00."]
+
+
+def test_a_failed_post_leaves_the_owner_untold_so_the_next_start_tries_again(pt_home, chat, capsys):
+    spend_the_day()
     chat.fails = True
-    with pytest.raises(SystemExit, match="503"):
-        notify(monkeypatch)
-    assert [run("begin"), run("begin")] == ["give-up", "give-up"]
+    assert [run("begin"), run("begin")] == ["stop-untold", "stop-untold"]
+    assert "was not posted" in capsys.readouterr().err
     chat.fails = False
-    assert notify(monkeypatch) == "told"
-    assert run("begin") == "give-up-quiet"
-
-
-def test_the_message_arrives_verbatim_on_stdin_whatever_it_contains(pt_home, chat, monkeypatch):
-    # Model-written text never rides in an argument, where a shell would evaluate it.
-    nasty = "Não entregue: \"$(touch pwned)\" `id` $HOME 'x'"
-    assert notify(monkeypatch, nasty) == "told"
-    assert chat.posts == [nasty]
-
-
-def test_notify_needs_a_message(pt_home, chat, monkeypatch):
-    with pytest.raises(SystemExit, match="needs the message text"):
-        notify(monkeypatch, "  ")
-    assert chat.posts == []
+    assert run("begin") == "stop"
+    assert run("begin") == "stop"
+    assert len(chat.posts) == 1
 
 
 def test_a_confirmed_delivery_starts_the_day_over(pt_home):

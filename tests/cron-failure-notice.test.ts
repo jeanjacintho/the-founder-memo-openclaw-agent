@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import { notifyFailedPaperRun } from "../plugin/cron-failure-notice.ts";
 
 test("a UUID paper cron ending NO_REPLY sends one owner notice, even on success", async t => {
@@ -103,44 +103,41 @@ test("paper job names in the real cron envelope include numbered daily editions"
   assert.equal(sent.length, 1);
 });
 
-const spentDay = (callId: string, resultId: string, resultRole = "toolResult", text = "give-up-quiet\n", subcommand = "begin") => ({ runId: `run-${callId}-${resultId}-${resultRole}-${subcommand}-${text.length}`, success: true, messages: [
-  { role: "user", content: [{ type: "text", text: "[cron:9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11 pt-daily-edition-now] Run the daily edition. On 'give-up-quiet' release the lock and stop." }] },
+const jobId = "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11";
+const spentDay = (callId: string, resultId: string, resultRole = "toolResult", text = "stop\n", subcommand = "begin") => ({ runId: `run-${callId}-${resultId}-${resultRole}-${subcommand}-${text.trim()}`, success: true, messages: [
+  { role: "user", content: [{ type: "text", text: `[cron:${jobId} pt-daily-edition-now] Run the daily edition. On 'stop' release the lock and stop.` }] },
   { role: "assistant", content: [{ type: "toolCall", id: callId, name: "exec", arguments: { command: `/opt/plow/skills/pt-shared/scripts/run_attempts.py ${subcommand}` } }] },
   { role: resultRole, toolCallId: resultId, toolName: "exec", content: [{ type: "text", text }] },
   { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
 ] });
 
-test("a run that stopped on a spent day does not repeat the failure notice", async t => {
-  t.mock.method(globalThis, "fetch", async () => { throw new Error("must not send"); });
-  await notifyFailedPaperRun(spentDay("call_1", "call_1"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
-});
-
-test("a spent day owns its notice: begin's give-up, with notify failed or not yet run, adds no generic one", async t => {
-  t.mock.method(globalThis, "fetch", async () => { throw new Error("must not send"); });
-  await notifyFailedPaperRun(spentDay("call_1", "call_1", "toolResult", "give-up\n"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
-});
-
-test("a run whose notify just told the owner does not send a second notice", async t => {
-  t.mock.method(globalThis, "fetch", async () => { throw new Error("must not send"); });
-  await notifyFailedPaperRun(spentDay("call_1", "call_1", "toolResult", "told\n", "notify"), { jobId: "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11" });
-});
-
-test("only run_attempts.py's own result counts as a deliberate stop; anything else still gets the notice", async t => {
+async function sentFor(t: TestContext, events: ReturnType<typeof spentDay>[]) {
   const sent: string[] = [];
   const env = { PLOW_API_BASE: process.env.PLOW_API_BASE, PLOW_HOME_CHANNEL: process.env.PLOW_HOME_CHANNEL, PLOW_AGENT_TOKEN: process.env.PLOW_AGENT_TOKEN };
   process.env.PLOW_API_BASE = "https://plow.example/";
   process.env.PLOW_HOME_CHANNEL = "cht_owner";
   process.env.PLOW_AGENT_TOKEN = "fixture-token";
-  t.after(() => { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   t.mock.method(globalThis, "fetch", async (_url: string | URL | Request, init?: RequestInit) => { sent.push(String(init?.body)); return Response.json({ uid: "notice" }); });
-  const jobId = "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11";
-  // The model's own words, a result of some other call, and a result in another role.
-  const spoofs = [
+  t.after(() => { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  for (const event of events) await notifyFailedPaperRun(event, { jobId });
+  return sent;
+}
+
+// begin owns the spent-day notice: it answered stop (the owner is told), so no generic notice goes out.
+test("a run that stopped on a spent day does not repeat the failure notice", async t => {
+  assert.equal((await sentFor(t, [spentDay("call_1", "call_1")])).length, 0);
+});
+
+// Anything but begin's own `stop` result still gets the notice: stop-untold (the post failed), the
+// model's own words, another call's result, another role, other text, another subcommand.
+test("only run_attempts.py begin's own stop counts as a deliberate stop; anything else still gets the notice", async t => {
+  const sent = await sentFor(t, [
+    spentDay("call_1", "call_1", "toolResult", "stop-untold\n"),
     spentDay("call_1", "call_1", "assistant"),
     spentDay("call_1", "call_2"),
-    spentDay("call_1", "call_1", "toolResult", "no give-up-quiet here"),
-    spentDay("call_1", "call_1", "toolResult", "told\n"),  // told is notify's word, not begin's
-  ];
-  for (const event of spoofs) await notifyFailedPaperRun(event, { jobId });
-  assert.equal(sent.length, 4);
+    spentDay("call_1", "call_1", "toolResult", "no stop here"),
+    spentDay("call_1", "call_1", "toolResult", "proceed\n"),
+    spentDay("call_1", "call_1", "toolResult", "stop\n", "clear"),
+  ]);
+  assert.equal(sent.length, 6);
 });

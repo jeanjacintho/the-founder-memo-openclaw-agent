@@ -14,9 +14,11 @@ on.
   release --name NAME [--today]
 
 `--today` appends `-YYYY-MM-DD`, the owner's day on the owner's clock
-(owner_time.py), so a paper's lock is `paper-workspace-2026-09-25` without
-the model working out a date: one once wrote last year and the paper never
-ran. Pass it to both acquire and release.
+(owner_time.py), so a per-day lock needs no date worked out by the model: one once
+wrote last year and the paper never ran. Pass it to both acquire and release.
+The papers' shared workspace lock is deliberately undated (`paper-workspace`): a dated
+name would give a paper that starts after midnight a different lock from the one the
+earlier paper still holds.
 
 `acquire` prints exactly one word and always exits 0, so a cron-fired
 session reads the decision instead of a status code:
@@ -70,15 +72,27 @@ def now():
     return datetime.now(timezone.utc).astimezone()
 
 
-def age_minutes(text):
-    """Minutes since the lock was written; None when it cannot be trusted."""
+def parse_stamp(text):
+    """The time a lock was written, or None when it cannot be trusted."""
     try:
         stamp = datetime.fromisoformat(text.strip())
     except (ValueError, AttributeError):
         return None
-    if stamp.tzinfo is None:
+    return stamp if stamp.tzinfo else None
+
+
+def taken_at(run_root, name):
+    """When the lock NAME under run_root was taken, or None."""
+    try:
+        return parse_stamp((pathlib.Path(run_root) / f"{name}.lock").read_text())
+    except OSError:
         return None
-    return (now() - stamp).total_seconds() / 60.0
+
+
+def age_minutes(text):
+    """Minutes since the lock was written; None when it cannot be trusted."""
+    stamp = parse_stamp(text)
+    return None if stamp is None else (now() - stamp).total_seconds() / 60.0
 
 
 @contextmanager

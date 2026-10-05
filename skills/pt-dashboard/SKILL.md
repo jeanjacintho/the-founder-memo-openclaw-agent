@@ -17,7 +17,7 @@ topic list:
 | `pt-subscription-<id>` | `<min> <hour> * * *` from `delivery.hour` | one per subscription topic not yet cancelled; created and removed as topics change |
 | `pt-oneoff-<id>` | one-shot at the topic's `scheduled_for` (pt-intake: `now + 3m` quick, next `delivery.hour` deep) | one per pending one-off still ahead, so a rebuild re-creates it; a past one is not re-armed. The sweep removes it once the topic is delivered, cancelled or missing |
 | `pt-deliver` | every minute | the outbox's flusher: a **no-agent command job** (`--command-argv` running `post_to_chat.py --flush-outbox` with the venv's python; no model, no tokens). Posts each staged paper once its hour has come. Every install has it; the sweep never removes it; it drifts only on its command |
-| `pt-daily-edition-now` | one-shot, a minute out | `register_crons.py --now`: the main paper on demand, same prompt as `pt-daily-edition` without `--hold-until`; the next `--now` replaces it unless it is running (then nothing is queued), the sweep never removes it |
+| `pt-daily-edition-now` | one-shot, a minute out | `register_crons.py --now`: the main paper on demand, same prompt as `pt-daily-edition` without `--hold-until`; the next `--now` replaces it unless it is running (then nothing is queued), the sweep never removes it; `--now --fresh-advice` runs the advice tournament instead of reusing a checkpoint |
 
 The daily schedule is computed in minutes, so `00:00 − 0min` is `0 0 * * *`
 (midnight itself). A lead that would reach back past midnight, such as
@@ -73,7 +73,8 @@ Create-if-missing, so it is safe to re-run: it reads what is already
 scheduled from `openclaw cron list --all --json` (every job, disabled ones
 included — a plain `cron list` hides them) and creates only what is absent.
 It also **reconciles drift**: a registered job whose reported schedule,
-zone, prompt or model no longer matches the spec — the owner changed the
+zone, prompt, model or run budget (`--timeout-seconds`, three hours: the scheduler's own
+60-minute watchdog would otherwise abort a slow paper with its lock held) no longer matches the spec — the owner changed the
 delivery hour, the lead or their zone, the prompt's contract moved — is
 patched in place with `openclaw cron edit <id>`, never removed and
 re-created. Without that, "already present, skipped" would mean a changed
@@ -113,17 +114,24 @@ Two refusals are the whole reason this is a script and not a habit:
   if the environment still names it — equals `owner.timezone`; otherwise the
   script refuses and names how to re-state the owner's times.
 
-A disabled job is neither skipped nor duplicated: it is left alone, named
-with the command that enables it, and the run exits non-zero after
-everything else finishes.
+A disabled job is neither skipped nor duplicated: it is left disabled (but
+reconciled to the spec like any other, so enabling it later does not bring
+back an old schedule or run budget), named with the command that enables it,
+and the run exits non-zero after everything else finishes.
 
 ## Verifying an unattended run
 
 From a turn (exec inherits the gateway token):
 
     node /app/openclaw.mjs cron list --all --json        # is the job there, and enabled?
-    node /app/openclaw.mjs cron run <job-id> --json      # force one
+    node /app/openclaw.mjs cron run <job-id> --json      # force one (never a paper job)
     node /app/openclaw.mjs cron runs --id <job-id> --json  # then look for the edition in chat
+
+Never force a paper job (`pt-daily-edition`, `pt-paper-*`) this way: past its
+delivery hour the window rule skips the advice tournament, so the copy prints
+no fresh advice. To re-run the main paper, queue a copy with `register_crons.py --now`,
+or `--now --fresh-advice` when the owner asked to re-evaluate priorities. `--now` always
+builds the main paper's roster, so it is not a recovery for a `pt-paper-*` job.
 
 A forced run exercises the whole path a nightly fire would take once it
 starts; its `runId` starts with `manual:`. Only a scheduled fire proves the

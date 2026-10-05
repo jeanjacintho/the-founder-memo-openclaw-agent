@@ -414,7 +414,7 @@ class TestOutboxDelivery:
         self._at(monkeypatch, 8, 0)
         self._spend_the_day(capsys)
         self._hold(monkeypatch, run)
-        assert self._next_attempt(capsys) == "give-up"
+        assert self._next_attempt(capsys) in ("stop", "stop-untold")
 
     def test_flush_recovers_persisted_post_without_reposting(self, tmp_path, monkeypatch):
         home = tmp_path / "pt"

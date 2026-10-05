@@ -36,7 +36,7 @@ def write_config(tmp_path, config=CONFIG):
     return path
 
 
-def row(name, enabled=True, jid=None, expr=None, tz=None, at=None, message=None, model=None):
+def row(name, enabled=True, jid=None, expr=None, tz=None, at=None, message=None, model=None, timeout=10800):
     """One automation as `openclaw cron list --json` returns it."""
     schedule = {}
     if at is not None:
@@ -48,6 +48,8 @@ def row(name, enabled=True, jid=None, expr=None, tz=None, at=None, message=None,
         payload["message"] = message
     if model is not None:
         payload["model"] = model
+    if timeout is not None:  # None: a job registered before the budget was set
+        payload["timeoutSeconds"] = timeout
     return {"id": jid or f"id-{name}", "name": name, "enabled": enabled,
             "sessionTarget": "isolated", "schedule": schedule, "payload": payload,
             "delivery": {"mode": "none"}}
@@ -86,6 +88,11 @@ class FakeScheduler:
 
 
 class TestPaperPrompts:
+    def test_a_scheduled_paper_records_a_short_window_with_the_script(self):
+        prompt = crons.paper_prompt("09:30", 150)
+        assert "advice_unavailable.py window --deliver-at 09:30 --reason" in prompt
+        assert "or more, run the tournament" in prompt
+
     @pytest.mark.parametrize("prompt", [
         crons.paper_prompt(), crons.paper_prompt("09:30", 60), crons.paper_prompt(focus="18:00"),
         crons.TOPIC_PROMPT.format(tid="t_1", depth="quick")])
@@ -165,13 +172,13 @@ class TestLoadOwnerZone:
 class TestDesiredJobs:
     @pytest.mark.parametrize("lead_minutes", [200, 180])
     def test_workspace_spacing_allows_papers_at_effective_lead_distance(self, lead_minutes):
-        # At 200 minutes apart, the old fixed 180-minute check could allow
-        # starts to overlap when both papers hold the workspace for 200 minutes.
+        # Starts 201 minutes apart fit the lock's stale limit and the lead.
         crons.desired_jobs([], "07:00", TZ, lead_minutes=lead_minutes,
-                           extra_hours=["10:20"])
+                           extra_hours=["10:21"])
 
-    def test_workspace_spacing_refuses_papers_inside_effective_lead(self):
-        with pytest.raises(SystemExit, match="220 minutes apart"):
+    def test_workspace_spacing_refuses_starts_closer_than_the_stale_limit(self):
+        # With a 220-minute lead the starts are 03:20 and 06:40: 200 minutes apart.
+        with pytest.raises(SystemExit, match="201 minutes apart"):
             crons.desired_jobs([], "07:00", TZ, lead_minutes=220,
                                extra_hours=["10:20"])
 
@@ -329,6 +336,7 @@ class TestArgv:
         assert argv[argv.index("--message") + 1] == sub["prompt"]
         assert argv[argv.index("--model") + 1] == "plow/openai/gpt-6-sol"
         assert "--no-deliver" in argv and "--exact" in argv and "--json" in argv
+        assert argv[argv.index("--timeout-seconds") + 1] == "10800"
         assert "--announce" not in argv and "--token" not in argv
 
     def test_one_shot_uses_at_without_a_zone(self):
@@ -345,6 +353,7 @@ class TestArgv:
         assert argv[argv.index("--cron") + 1] == daily["schedule"]
         assert argv[argv.index("--tz") + 1] == TZ
         assert argv[argv.index("--message") + 1] == daily["prompt"]
+        assert argv[argv.index("--timeout-seconds") + 1] == "10800"
         assert "--no-deliver" in argv
 
     def test_remove_is_by_id(self):
@@ -408,6 +417,63 @@ class TestMain:
             run_main(tmp_path, monkeypatch, [], sched, argv=["--now"])
             assert [w[:2] for w in sched.writes] == [["add", "--name"], ["rm", "old123"]]
 
+    # Measured live 2026-09-30: asked to "re-evaluate today's priorities",
+    # the chat fired the daily job after its hour; it skipped the tournament by
+    # its window rule, and the plain on-demand copy reuses yesterday's advice.
+    def test_fresh_advice_queues_a_copy_that_runs_the_tournament(self, tmp_path, monkeypatch, capsys):
+        sched = FakeScheduler(registered_like_spec([]))
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
+        (create,) = [w for w in sched.writes if crons.NOW_NAME in w]
+        prompt = create[create.index("--message") + 1]
+        assert prompt == crons.paper_prompt(fresh_advice=True)
+        assert "run the tournament now" in prompt and "reuse none" in prompt
+        assert "reuse the newest accepted checkpoint" not in prompt
+        assert "advice_unavailable.py" not in prompt and "the paper is not delivered" in prompt
+        assert "queued: pt-daily-edition-now" in capsys.readouterr().out
+
+    # A copy queued behind a running paper reads 'held' and stops, and the
+    # running one reuses its checkpoint: neither is the evaluation asked for.
+    @pytest.mark.parametrize("name", [crons.NOW_NAME, crons.DAILY_NAME])
+    def test_fresh_advice_behind_a_running_paper_queues_nothing(self, tmp_path, monkeypatch,
+                                                                capsys, name):
+        listing = registered_like_spec([])
+        if name == crons.NOW_NAME:
+            listing.append(row(name, jid="live123", at=FUTURE))
+        (running,) = [r for r in listing if r["name"] == name]
+        running["state"] = {"runningAtMs": 1790620326000}
+        sched = FakeScheduler(listing)
+        assert run_main(tmp_path, monkeypatch, [], sched, argv=["--now", "--fresh-advice"]) == 0
+        assert sched.writes == []
+        out = capsys.readouterr().out
+        assert f"not queued: {name}" in out and "no fresh evaluation was queued" in out
+        assert "queued: pt-daily-edition-now" not in out.replace("not queued:", "")
+
+    # Another paper can start in the minute before the queued copy runs; the copy
+    # the owner was promised waits for the workspace instead of stopping at 'held'.
+    def test_a_fresh_advice_copy_waits_for_the_workspace(self):
+        waits = f"--wait-seconds {crons.HELD_LOCK_WAIT_SECONDS}"
+        assert waits in crons.paper_prompt(fresh_advice=True)
+        fresh = crons.paper_prompt(fresh_advice=True)
+        # Two rounds (~40 min) can end before a paper that won the gap lets go.
+        assert "for as long as it prints 'held'" in fresh
+        assert "once more" not in fresh
+        assert waits not in crons.paper_prompt()
+
+    def test_every_paper_shares_one_undated_workspace_lock(self):
+        # A dated name gives a paper that starts after midnight a different lock from the one the
+        # earlier paper still holds (a fresh-advice copy waiting across midnight included), so two
+        # papers would archive and write the same scratch.
+        for prompt in (crons.paper_prompt(), crons.paper_prompt(fresh_advice=True),
+                       crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
+            assert "--name paper-workspace " in prompt or "--name paper-workspace," in prompt
+            assert "paper-workspace --today" not in prompt
+            assert "run_lock.py name" not in prompt
+
+    def test_fresh_advice_is_an_on_demand_option(self, tmp_path, monkeypatch):
+        with pytest.raises(SystemExit):
+            run_main(tmp_path, monkeypatch, [], FakeScheduler(registered_like_spec([])),
+                     argv=["--fresh-advice"])
+
     def test_now_never_removes_a_copy_that_is_running(self, tmp_path, monkeypatch, capsys):
         # Measured live: `cron rm` on a running one-shot aborted its session
         # right after it took the workspace lock. The lock outlived the run,
@@ -456,6 +522,18 @@ class TestMain:
         sched = FakeScheduler(registered_like_spec([]) + [row("heartbeat-main", expr="*/30 * * * *")])
         run_main(tmp_path, monkeypatch, [], sched)
         assert sched.writes == []
+
+    def test_a_disabled_legacy_job_is_brought_to_the_spec_but_stays_disabled(self, tmp_path, monkeypatch, capsys):
+        rows = registered_like_spec([], enabled=False)
+        for registered in rows:
+            registered["payload"].pop("timeoutSeconds", None)  # registered before the run budget
+        sched = FakeScheduler(rows)
+        with pytest.raises(SystemExit, match="DISABLED"):
+            run_main(tmp_path, monkeypatch, [], sched)
+        edited = [w for w in sched.writes if w[0] == "edit" and "id-pt-daily-edition" in w]
+        assert edited and edited[0][edited[0].index("--timeout-seconds") + 1] == "10800"
+        assert not any(w[0] in ("enable", "add") for w in sched.writes), "never enabled, never duplicated"
+        assert "leaves it disabled" in capsys.readouterr().out
 
     def test_disabled_job_is_left_alone_and_named(self, tmp_path, monkeypatch, capsys):
         sched = FakeScheduler(registered_like_spec([], enabled=False))
@@ -543,7 +621,7 @@ class TestExtraDailyHours:
             [topic("t_1", kind="section")], "03:00", TZ, 45, extra_hours=["10:30"],
         )
         prompt = jobs[1]["prompt"]
-        assert "--name paper-workspace --today" in prompt
+        assert "--name paper-workspace" in prompt
         assert "post_to_chat.py" in prompt
         assert "Do not finish the run before post_to_chat.py confirms" in prompt
         assert "short status for the cron run record" in prompt
@@ -559,7 +637,7 @@ class TestExtraDailyHours:
     def test_papers_less_than_three_hours_apart_are_refused(self, extra, section_hour):
         topics = [topic("t_1", kind="section", deliver_at=section_hour)] if section_hour else []
 
-        with pytest.raises(SystemExit, match="paper times 07:00 and 09:00 are less than 180 minutes apart"):
+        with pytest.raises(SystemExit, match="paper times 07:00 and 09:00 are less than 201 minutes apart"):
             crons.desired_jobs(topics, "07:00", TZ, 0, extra_hours=extra)
 
     def test_multiple_extra_hours_are_numbered_in_order(self):
@@ -616,7 +694,7 @@ class TestFocusedPapers:
         assert jobs[1]["schedule"] == "30 12 * * *"
         assert jobs[2]["schedule"] == "0 18 * * *"
         assert "deliver_at is 12:30" in jobs[1]["prompt"]
-        assert "--name paper-workspace --today" in jobs[1]["prompt"]
+        assert "--name paper-workspace" in jobs[1]["prompt"]
         assert "Do not finish the run before post_to_chat.py confirms" in jobs[1]["prompt"]
 
     def test_deliver_at_equal_to_main_hour_rides_the_daily_job(self):
@@ -636,13 +714,13 @@ class TestFocusedPapers:
     def test_papers_sit_between_extra_hours_and_subscriptions(self):
         jobs = crons.desired_jobs(
             [
-                topic("t_1", kind="section", deliver_at="13:30"),
+                topic("t_1", kind="section", deliver_at="14:00"),
                 topic("t_9f2a"),
             ],
             "07:00", TZ, 0, extra_hours=["10:30"],
         )
         assert [j["name"] for j in jobs] == [
-            "pt-daily-edition", "pt-daily-edition-2", "pt-paper-1330",
+            "pt-daily-edition", "pt-daily-edition-2", "pt-paper-1400",
             "pt-subscription-t_9f2a",
         ]
 
@@ -811,18 +889,32 @@ class TestScheduledHold:
         jobs = crons.desired_jobs([], "07:00", TZ)
         prompt = jobs[0]["prompt"]
         assert "--hold-until 07:00" in prompt
-        assert "--stale-minutes 240" in prompt
+        assert "--stale-minutes 200" in prompt
 
     def test_on_demand_copy_does_not_hold(self):
         p = crons.paper_prompt(lead_minutes=40)
         assert "--hold-until" not in p
-        assert "--stale-minutes 280" in p
+        assert "--stale-minutes 200" in p
 
-    def test_every_acquirer_of_the_daily_lock_outlives_the_early_start(self):
-        # A scheduled run with a 40-minute lead holds the lock 40 minutes
-        # before its own work; an on-demand copy must not call that stale.
+    def test_every_acquirer_of_the_daily_lock_uses_the_run_budget_not_the_lead(self):
+        # A run is aborted at the scheduler's budget whatever its early start, and it
+        # takes the lock no earlier than it starts: a longer lead lengthens nothing.
         jobs = crons.desired_jobs([topic("t_1", kind="section")], "07:00", TZ, 40)
-        assert "--stale-minutes 280" in jobs[0]["prompt"]
+        assert "--stale-minutes 200" in jobs[0]["prompt"]
+        assert crons.STALE_RUN_MINUTES > crons.PAPER_TIMEOUT_SECONDS / 60
+
+    def test_the_closest_accepted_pair_can_reclaim_the_first_papers_orphaned_lock(self):
+        # Takeover needs the lock strictly older than the stale limit, so exactly the limit apart
+        # is refused and one minute more is accepted.
+        crons.require_workspace_spacing(["07:00", "10:21"])
+        with pytest.raises(SystemExit):
+            crons.require_workspace_spacing(["07:00", "10:20"])
+
+    def test_spacing_is_judged_on_the_real_start_times_not_the_delivery_hours(self):
+        # With a 180-minute lead, 00:20 starts at 00:00 (clamped at midnight) and 03:40 at 00:40:
+        # 200 minutes apart as delivery hours, 40 as starts.
+        with pytest.raises(SystemExit, match="00:20 and 03:40"):
+            crons.require_workspace_spacing(["00:20", "03:40"], lead_minutes=180)
 
     def test_paper_job_holds_until_its_hour(self):
         jobs = crons.desired_jobs(
@@ -831,7 +923,7 @@ class TestScheduledHold:
         )
         paper = next(j for j in jobs if j["name"] == "pt-paper-1200")
         assert "--hold-until 12:00" in paper["prompt"]
-        assert "--stale-minutes 240" in paper["prompt"]
+        assert "--stale-minutes 200" in paper["prompt"]
 
     def test_a_scheduled_paper_waits_out_a_fresh_holder_before_skipping(self):
         # An on-demand paper ("manda o jornal agora") holds the same workspace
@@ -899,8 +991,8 @@ class TestRunPromptsDelegateDelivery:
 
     def test_all_papers_share_a_lock_longer_than_the_tournament(self):
         for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt(focus="12:00")):
-            assert "--name paper-workspace --today" in prompt
-            assert "--stale-minutes 240" in prompt
+            assert "--name paper-workspace" in prompt
+            assert "--stale-minutes 200" in prompt
 
     def test_scheduled_papers_reuse_only_todays_advice(self):
         for prompt in (crons.paper_prompt("07:00"), crons.paper_prompt("12:00", focus="12:00")):
@@ -1009,11 +1101,11 @@ def test_no_prompt_asks_the_model_to_work_out_a_date():
     for prompt in (crons.paper_prompt(), crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
         assert "<today" not in prompt and "<date>" not in prompt
         # acquire, release on a spent day, release on refusal, release
-        assert prompt.count("--name paper-workspace --today") == 4
+        assert prompt.count("--name paper-workspace") == 4
     assert "check-paper --deliver-at main --as-of today" in crons.paper_prompt()
 
 
-def test_a_paper_counts_its_starts_and_gives_up_instead_of_retrying_all_day():
+def test_a_paper_counts_its_starts_and_stops_instead_of_retrying_all_day():
     # A paper that dies on a provider rate limit is retried by OpenClaw; each retry
     # redoes the whole paper. After the day's attempts the run stops before research.
     scheduled = crons.paper_prompt(hold_until="09:30", lead_minutes=150)
@@ -1021,20 +1113,17 @@ def test_a_paper_counts_its_starts_and_gives_up_instead_of_retrying_all_day():
     for prompt in (scheduled, on_demand):
         begin = prompt.index("run_attempts.py begin")
         assert prompt.index("run_lock.py acquire") < begin < prompt.index("prepare_daily_run.py")
-        assert "'give-up'" in prompt and "'give-up-quiet'" in prompt
-        assert "exactly one short message" in prompt
-        assert "run_attempts.py delivered" not in prompt, "the count is cleared by post_to_chat.py, not by a command the model must remember"
-        assert "--clear-attempts" in prompt
-        # One helper posts the notice and records it, so no model step falls between the send and the
-        # mark; another run waiting on the lock must not get in before both are done.
-        spent = prompt[prompt.index("'give-up' the day's"):prompt.index("'give-up-quiet'")]
-        assert "run_attempts.py told" not in prompt and "message(action=send)" not in spent
-        # The text is model-written: stdin through a quoted heredoc, never a shell-parsed argument.
-        assert "--text" not in prompt and "<<'PLOW_NOTICE'" in spent
-        assert spent.index("still holding the lock") < spent.index("run_attempts.py notify") < spent.index("release --name paper-workspace")
-        assert "provider kept refusing" not in prompt, "the cause of the failures is not known"
-    assert "the next scheduled paper is tomorrow at 09:30" in scheduled
-    assert "they can ask again later" in on_demand
+        assert "'proceed'" in prompt and "'stop'" in prompt and "'stop-untold'" in prompt
+        assert "--clear-attempts" in prompt, "the count is cleared by post_to_chat.py, not by a command the model must remember"
+        # begin posts and records the notice itself, in the owner's language from the fixed phrases:
+        # the model writes nothing to the owner and passes no text to any command.
+        spent = prompt[prompt.index("'stop' or"):prompt.index("prepare_daily_run.py")]
+        assert "writing nothing to the owner" in spent and "release" in spent
+        for gone in ("notify", "--text", "heredoc", "run_attempts.py told", "give-up"):
+            assert gone not in prompt, gone
+        assert "message(action=send)" not in spent
+    assert "run_attempts.py begin --next-paper 09:30" in scheduled
+    assert "--next-paper" not in on_demand
 
 
 def test_jobs_follow_the_model_boot_exports(monkeypatch):
@@ -1049,6 +1138,15 @@ def test_jobs_follow_the_model_boot_exports(monkeypatch):
     on_plow = {"schedule": "15 6 * * *", "tz": TZ, "prompt": "same", "model": "plow/openai/gpt-6-sol", "command": None}
     assert crons.job_drift(job, on_plow) is True
     assert crons.job_drift(job, {**on_plow, "model": "openai/gpt-6-sol"}) is False
+
+
+def test_a_job_without_a_run_budget_drifts_so_the_next_register_sets_it():
+    job = {"name": "pt-daily-edition", "schedule": "15 6 * * *", "tz": TZ, "prompt": "same"}
+    spec = {"schedule": "15 6 * * *", "tz": TZ, "prompt": "same", "model": crons.MODEL, "command": None}
+    assert crons.job_drift(job, spec) is False  # a spec that reports no timeout field says nothing
+    assert crons.job_drift(job, {**spec, "timeout": crons.PAPER_TIMEOUT_SECONDS}) is False
+    assert crons.job_drift(job, {**spec, "timeout": None}) is True  # the scheduler's 60-minute default
+    assert crons.job_drift(job, {**spec, "timeout": 3600}) is True
 
 
 def test_without_pt_model_jobs_stay_on_plow(monkeypatch):

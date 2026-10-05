@@ -74,7 +74,7 @@ sys.path[:0] = [os.path.join(_SKILLS, "pt-intake", "scripts"), os.path.join(_SKI
 from record_owner_language import _write_json  # noqa: E402 -- the config's atomic writer
 from pt_paths import config_file, script  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from cron_backend import MODEL, OPENCLAW, CronBackend  # noqa: E402 -- sibling module
+from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
 CONFIG_FILE = str(config_file())
 # The only job names this spec owns. Pinned as a fullmatch so a name that
@@ -107,15 +107,25 @@ DELIVER_ARGV = ["/opt/plow/pt-venv/bin/python3",
                 "/opt/plow/skills/pt-shared/scripts/post_to_chat.py", "--flush-outbox"]
 WORKSPACE_LOCK = "paper-workspace"
 DEFAULT_LEAD_MINUTES = 0
-# Every acquirer of a lock uses one lifetime: the run itself plus
-# delivery.lead_minutes, since a scheduled run holds the lock through its early
-# start and the held POST. Every paper shares the workspace lock, so a smaller
-# number could call the scheduled run dead and start a competing paper.
-STALE_RUN_MINUTES = 240
+# Every acquirer of a lock uses one lifetime. A run cannot outlive its scheduler
+# budget (cron_backend.PAPER_TIMEOUT_SECONDS), and it takes the lock no earlier
+# than it starts, so a lock older than the budget belongs to a run that is gone:
+# one killed by a model error or by the budget itself, which never reaches its
+# release. The margin covers the run's own wind-down. Every paper shares the
+# workspace lock, so nothing shorter is safe: it could call a live run dead and
+# start a competing paper.
+STALE_RUN_MINUTES = PAPER_TIMEOUT_SECONDS // 60 + 20
+# The closest two papers may start. The first can wait up to two lock rounds before it takes the
+# lock and then be killed at its budget, so its lock is at most budget-minus-that-wait old when the
+# second starts; the second's own two rounds add the wait back. Spacing papers at least the stale
+# limit apart is what lets the second always reclaim an orphan, whatever the first waited.
+# One more than the limit: takeover needs the lock strictly older than it (run_lock.py).
+MIN_PAPER_SPACING_MINUTES = STALE_RUN_MINUTES + 1
 # A scheduled paper that finds the workspace held (an on-demand copy runs its
 # whole ~35-minute paper under the lock) waits two rounds of this before giving
 # the day up: ~40 minutes, inside the hold-until window, each round under
-# OpenClaw's 30-minute exec timeout. The on-demand copy never waits.
+# OpenClaw's 30-minute exec timeout. The plain on-demand copy never waits; a
+# fresh-advice copy does.
 HELD_LOCK_WAIT_SECONDS = 1200
 # The priority desk's floor: with less than this left before delivery, a fresh
 # three-generation tournament cannot finish (measured ~35-50 min) before the
@@ -154,7 +164,7 @@ TOPIC_PROMPT = (
 )
 
 
-def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
+def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False):
     """The one run prompt every paper is built from, scheduled or on demand.
 
     focus=None is the MAIN paper: every active section with no deliver_at
@@ -169,7 +179,10 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
     on-demand copy (--now) passes none, posts when done, and never waits
     ~150 minutes on a tournament: it reuses the newest accepted checkpoint
     of any date, printed with its as-of date, and runs the tournament only
-    when none has ever been accepted.
+    when none has ever been accepted. fresh_advice (--now --fresh-advice) is
+    the owner asking to re-evaluate today's priorities: that copy runs the
+    tournament and reuses no checkpoint, since reusing one is what they
+    asked it not to do.
 
     The prompt carries only what the run cannot read from its skills: the
     lock, the roster, the advice rule and the send clock. Delivery, print
@@ -196,12 +209,20 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
     )
     lock = script("pt-shared", "run_lock.py")
     advice = (
+        "run the tournament now, whatever run/desk-priority/tournament.json holds: the owner "
+        "asked to re-evaluate today's priorities, so reuse none, and no delivery hour bounds "
+        "it. If it cannot reach an accepted checkpoint, the paper is not delivered: never "
+        "print an unavailable advice card for a tournament that ran"
+        if fresh_advice else
         "reuse today's accepted checkpoint in run/desk-priority/tournament.json when "
         f"there is one, else run the tournament -- this job starts {lead_minutes} minutes "
         f"before {hold_until} (delivery.lead_minutes, clamped so it never starts before "
         f"midnight); once the lock is yours, run {script('pt-shared', 'owner_time.py')} "
-        f"minutes-until {hold_until} and, under {MIN_TOURNAMENT_MINUTES} minutes, write the "
-        f"desk's own unavailable reason per pt-priority/SKILL.md instead of starting one"
+        f"minutes-until {hold_until} and, under {MIN_TOURNAMENT_MINUTES} minutes, record the "
+        f"desk's unavailable reason with {script('pt-priority', 'advice_unavailable.py')} window "
+        f"--deliver-at {hold_until} --reason \"<why, in the owner's language>\" instead of "
+        f"starting one; with {MIN_TOURNAMENT_MINUTES} minutes "
+        f"or more, run the tournament"
         if hold_until else
         "reuse the newest accepted checkpoint in run/desk-priority/tournament.json whatever "
         "its date -- an older one prints with \"as_of\" per pt-edition -- and run the "
@@ -209,43 +230,54 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None):
         "reason to stop the paper; continue research and compile the edition with its as-of date"
     )
     attempts = script("pt-shared", "run_attempts.py")
-    next_try = (
-        f"the next scheduled paper is tomorrow at {hold_until}" if hold_until
-        else "they can ask again later"
-    )
-    wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if hold_until else ""
-    held = (
-        "run the same acquire once more; if that is also 'held', another paper owns "
-        "the workspace -- stop"
-        if hold_until else "another paper owns the workspace -- stop"
-    )
+    next_flag = f" --next-paper {hold_until}" if hold_until else ""
+    # A fresh-advice copy waits like a scheduled paper: it was promised to the owner, and
+    # a paper that starts in the minute before it runs would otherwise end it at 'held'.
+    waits = bool(hold_until) or fresh_advice
+    wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if waits else ""
+    if fresh_advice:
+        # The tournament alone takes 35-50 minutes, so two rounds can end before a
+        # paper that won the workspace in the scheduling gap lets go; its lock
+        # goes stale on its own after STALE_RUN_MINUTES, which bounds this.
+        held = (
+            "run the same acquire again, and again for as long as it prints 'held' "
+            "(each round waits; the other paper's lock expires on its own) -- never stop "
+            "at 'held', the owner was promised this evaluation"
+        )
+    elif waits:
+        held = (
+            "run the same acquire once more; if that is also 'held', another paper owns "
+            "the workspace -- stop"
+        )
+    else:
+        held = "another paper owns the workspace -- stop"
+    # One undated lock for the shared workspace: a dated name would give a paper that starts
+    # after midnight a different lock from the one the earlier paper still holds (and a
+    # fresh-advice copy waiting across midnight could take it), so two papers would archive and
+    # write the same scratch. A stuck lock is reclaimed by age (STALE_RUN_MINUTES) as before.
+    lock_arg = f"--name {WORKSPACE_LOCK}"
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
         f"Run {title} now, in one session. First run {lock} acquire "
-        f"--name {WORKSPACE_LOCK} --today --stale-minutes {STALE_RUN_MINUTES + lead_minutes}{wait}; "
+        f"{lock_arg} --stale-minutes {STALE_RUN_MINUTES}{wait}; "
         f"if its output is 'held', "
-        f"{held}. Then run {attempts} begin: on 'proceed' go on; on 'give-up' the day's "
-        f"attempts are spent (retries after a provider rate limit only feed it), so, still "
-        f"holding the lock, run {attempts} notify with the message on stdin through a quoted heredoc "
-        f"(<<'PLOW_NOTICE', the message, then a line PLOW_NOTICE; never inside an argument): one short "
-        f"message in the owner's language saying the edition was not delivered after repeated "
-        f"attempts, you are not trying again now, and {next_try} (it posts to the owner and records "
-        f"that they were told; if it fails the owner stays untold); then run {lock} release --name {WORKSPACE_LOCK} "
-        f"--today and stop (release and stop even when it failed); on 'give-up-quiet' release "
-        f"the lock and stop without a message. Then "
+        f"{held}. Then run {attempts} begin{next_flag}: on 'proceed' go on; on 'stop' or "
+        f"'stop-untold' the day's attempts are spent (retries after a provider rate limit only "
+        f"feed it) and begin has told the owner, or tried to, itself -- run {lock} release "
+        f"{lock_arg} and stop, writing nothing to the owner. Then "
         f"/opt/plow/skills/pt-shared/scripts/prepare_daily_run.py --preserve-priority "
         f"(it archives prior scratch after the lock; do not inspect or reuse old run files). Then "
         f"/opt/plow/skills/pt-intake/scripts/topics.py reopen-sections "
         f"(delivered sections are yesterday's paper, not a skip). Run "
         f"/opt/plow/skills/pt-intake/scripts/topics.py check-paper {check}. "
         f"If it refuses, repeat its named roster, run {lock} "
-        f"release --name {WORKSPACE_LOCK} --today, and stop before research. "
+        f"release {lock_arg}, and stop before research. "
         f"Then run pt-research: first the priority desk exactly as "
         f"pt-research/references/desks.md says ({advice}), "
         f"then every other standing desk it lists, in its order, then {roster}. "
         f"Then run pt-edition for the batch, delivering with post_to_chat.py "
         f"per pt-edition/SKILL.md step 2{hold}. "
-        f"Release the lock with {lock} release --name {WORKSPACE_LOCK} --today. "
+        f"Release the lock with {lock} release {lock_arg}. "
         f"{DELIVERY_FAILURE_NOTICE}"
     )
 
@@ -444,11 +476,15 @@ def focused_paper_hours(topics, delivery_hour):
 
 
 def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
-    """Refuse paper starts whose shared-workspace windows can overlap."""
-    minimum_minutes = max(180, lead_minutes)
+    """Refuse paper starts whose shared-workspace windows can overlap.
+
+    Compared on the jobs' real cron start times: a lead clamped at midnight pulls a late-night
+    paper's start toward its neighbour, so two delivery hours far enough apart can still start close."""
+    minimum_minutes = MIN_PAPER_SPACING_MINUTES
+    starts = {hour: _minutes(hour) - _lead(hour, lead_minutes) for hour in hours}
     for index, first in enumerate(hours):
         for second in hours[index + 1:]:
-            distance = abs(_minutes(first) - _minutes(second))
+            distance = abs(starts[first] - starts[second])
             if min(distance, 24 * 60 - distance) < minimum_minutes:
                 raise SystemExit(
                     f"refusing to register: paper times {first} and {second} are less than "
@@ -609,9 +645,14 @@ def job_drift(job, spec):
     field is silence, not a mismatch. Schedule, zone, prompt and model are
     the fields a spec change actually moves (the delivery hour, the owner's
     zone, the lead, the delivery contract, the model the paper is tuned on).
+    The run budget is the exception: a job registered before it was set reports
+    no timeout at all, which is the scheduler's 60-minute default, so a reported
+    spec with no timeout drifts and the next register moves it.
     """
     if job.get("command") is not None:  # a command job has no prompt or model
         return spec.get("command") is not None and spec["command"] != job["command"]
+    if "timeout" in spec and spec["timeout"] != PAPER_TIMEOUT_SECONDS:
+        return True
     for key in ("schedule", "tz", "prompt", "model"):
         have = spec.get(key)
         want = job.get(key, MODEL) if key == "model" else job.get(key)
@@ -625,7 +666,13 @@ def job_drift(job, spec):
     return False
 
 
-def queue_now(backend, listing, lead_minutes, owner_tz, clock=None):
+def _is_paper(name):
+    """A job that runs a paper under the workspace lock."""
+    return (name in (DAILY_NAME, NOW_NAME) or bool(_EXTRA_DAILY_RE.fullmatch(name))
+            or bool(_PAPER_RE.fullmatch(name)))
+
+
+def queue_now(backend, listing, lead_minutes, owner_tz, clock=None, fresh_advice=False):
     """The on-demand copy: the main paper's own prompt as a one-shot job.
 
     The scheduler fires it exactly like the morning run -- its own session,
@@ -635,18 +682,25 @@ def queue_now(backend, listing, lead_minutes, owner_tz, clock=None):
     never cancels a copy the owner was already promised. A copy that is
     running is left alone and no second one is queued: `cron rm` aborts its
     session mid-paper, the workspace lock outlives it, and every later copy
-    reads 'held' and stops until the lock goes stale.
+    reads 'held' and stops until the lock goes stale. The same holds for any
+    paper mid-run: a copy queued behind it reads 'held' and stops. So while
+    one runs, a fresh-advice request queues nothing and says so -- the running
+    paper reuses its checkpoint, so its edition is not the fresh evaluation.
     """
-    running = [j for j in listing if j.name == NOW_NAME and j.running]
+    running = [j for j in listing if _is_paper(j.name) and j.running]
+    if running and fresh_advice:
+        print(f"not queued: {running[0].name} ({running[0].id}) is mid-paper -- "
+              "no fresh evaluation was queued; ask again once it is delivered")
+        return
     if running:
-        print(f"already running: {NOW_NAME} ({running[0].id}) -- its edition is on the way")
+        print(f"already running: {running[0].name} ({running[0].id}) -- its edition is on the way")
         return
     at =(clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
     job = {
         "name": NOW_NAME,
         "schedule": at.isoformat(timespec="seconds"),
         "tz": None,
-        "prompt": paper_prompt(lead_minutes=lead_minutes),
+        "prompt": paper_prompt(lead_minutes=lead_minutes, fresh_advice=fresh_advice),
     }
     previous = [j.id for j in listing if j.name == NOW_NAME]
     _check(backend.create(job), f"could not queue {NOW_NAME}")
@@ -669,7 +723,14 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
         help="after registering, queue the main paper as a one-shot a minute "
              "out -- the on-demand copy, same prompt, no send clock",
     )
+    parser.add_argument(
+        "--fresh-advice", action="store_true",
+        help="with --now: the owner asked to re-evaluate today's priorities, so the "
+             "copy runs the advice tournament instead of reusing a checkpoint",
+    )
     args = parser.parse_args(argv if argv is not None else [])
+    if args.fresh_advice and not args.now:
+        parser.error("--fresh-advice is an option of --now")
     env = os.environ if env is None else env
 
     if backend is None:
@@ -699,10 +760,14 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
             if not current.enabled:
                 print(
                     f"WARNING: {job['name']} is registered but DISABLED -- it will "
-                    "never fire, and this leaves it alone rather than "
+                    "never fire, and this leaves it disabled rather than "
                     f"duplicating it. Enable it: {' '.join(OPENCLAW)} cron enable {current.id}"
                 )
                 paused.append(job["name"])
+                # Still brought up to the spec (budget included), so enabling it later
+                # does not bring back an old job.
+                if job_drift(job, current.spec):
+                    pending.append(("edit", job, current))
                 continue
             if not job_drift(job, current.spec):
                 print(f"already present, skipped: {job['name']}")
@@ -729,7 +794,7 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
         print(f"removed stale job: {name}")
 
     if args.now:
-        queue_now(backend, listing, lead_minutes, owner_tz)
+        queue_now(backend, listing, lead_minutes, owner_tz, fresh_advice=args.fresh_advice)
 
     if paused:
         raise SystemExit(
