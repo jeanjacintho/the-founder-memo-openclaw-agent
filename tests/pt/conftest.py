@@ -68,3 +68,30 @@ class FakeMac:
 @pytest.fixture
 def mac(tmp_path):
     return FakeMac(tmp_path / "home")
+
+
+class FakeClock:
+    """Owner time that moves only when a script sleeps: now(), advance(seconds), on_advance(fn)."""
+
+    def __init__(self):
+        from datetime import datetime, timezone
+        self.start = datetime(2026, 10, 2, 1, 0, tzinfo=timezone.utc)
+        self.elapsed = 0
+        self._hooks = []
+
+    def now(self):
+        from datetime import timedelta
+        return self.start + timedelta(seconds=self.elapsed)
+
+    def advance(self, seconds):
+        self.elapsed += seconds
+        for fn in self._hooks:
+            fn(self.elapsed)
+
+    def on_advance(self, fn):
+        self._hooks.append(fn)
+
+
+@pytest.fixture
+def clock():
+    return FakeClock()

@@ -38,12 +38,12 @@ waits in the session (OpenClaw's exec is synchronous with a 30-minute
 ceiling, and a paper starts up to 150 minutes early): the PDF, companion or
 text, `edition.json` and each news section's notes are copied into
 `pt/outbox/<date>-<HHMM>/` with a `delivery.json`, it prints `held for HH:MM
-— pt-deliver posts it` and exits 0. The no-agent `pt-deliver` job runs
+— memo-deliver posts it` and exits 0. The no-agent `memo-deliver` job runs
 `post_to_chat.py --flush-outbox` every minute and posts each entry once its
 hour has come, through the same delivery as the direct path. Without a
-registered, enabled `pt-deliver` the paper posts now -- early, never stranded.
+registered, enabled `memo-deliver` the paper posts now -- early, never stranded.
 After the POST returns, a separate recovery ticket snapshots the edition and
-the pending finalizers before they run. `pt-deliver` resumes that ticket without
+the pending finalizers before they run. `memo-deliver` resumes that ticket without
 posting the edition again, then removes it when every finalizer completes.
 After a successful POST, two
 finalizers run independently and best-effort: print the run's PDF via print_edition.py when configured (a
@@ -127,7 +127,7 @@ def _now():
     return datetime.now(_hold_zone())
 
 
-DELIVER_JOB = "pt-deliver"
+DELIVER_JOB = "memo-deliver"
 MAX_FINALIZER_ATTEMPTS = 5
 DASHBOARD_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "memo-schedule" / "scripts"
 
@@ -268,7 +268,7 @@ def recover_delivery(ticket, *, notify_print_failure=False, wait=True):
 
 
 def deliver_job_runs():
-    """Whether the pt-deliver job is registered and enabled -- asked of the one
+    """Whether the memo-deliver job is registered and enabled -- asked of the one
     reader of the scheduler (cron_backend). Any doubt is "no", so a paper
     posts early rather than waiting on a job that will never flush it."""
     sys.path.insert(0, str(DASHBOARD_SCRIPTS))
@@ -288,7 +288,7 @@ def _notes_source(run_dir, topic_id):
 
 
 def stage(hhmm, due, pdf=None, text_file=None, text="", filename=None):
-    """Copy this paper into the outbox for pt-deliver; the run's own files may
+    """Copy this paper into the outbox for memo-deliver; the run's own files may
     be archived by the next paper before the hour comes."""
     name = f"{due:%Y-%m-%d}-{hhmm.replace(':', '')}"
     outbox = outbox_dir()
@@ -519,7 +519,7 @@ def main():
     )
     parser.add_argument(
         "--hold-until", default=None, metavar="HH:MM",
-        help="the send clock (owner's HH:MM): stage the paper for pt-deliver while "
+        help="the send clock (owner's HH:MM): stage the paper for memo-deliver while "
              "it is ahead, post now once it has passed (scheduled papers only)",
     )
     parser.add_argument(
@@ -529,7 +529,7 @@ def main():
     )
     parser.add_argument(
         "--flush-outbox", action="store_true",
-        help="post every staged paper whose hour has come (the pt-deliver job)",
+        help="post every staged paper whose hour has come (the memo-deliver job)",
     )
     args = parser.parse_args()
     if args.flush_outbox:
@@ -566,7 +566,7 @@ def main():
                       text=text, filename=args.filename)
                 if args.clear_attempts:
                     run_attempts.clear(args.clear_attempts)
-                print(f"held for {args.hold_until} — pt-deliver posts it")
+                print(f"held for {args.hold_until} — memo-deliver posts it")
                 return
             print(f"{DELIVER_JOB} is not running: posting now instead of holding for {args.hold_until}")
 
@@ -617,7 +617,7 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
         print(f"chat edition posted (pdf{suffix}) {pdf}" if pdf else f"chat edition posted ({len(text)} chars)")
         recoveries = recover_delivery(recovery_ticket, notify_print_failure=True)
         if recoveries:
-            sys.exit("error: post-delivery finalization remains pending; pt-deliver retries it; do not repost")
+            sys.exit("error: post-delivery finalization remains pending; memo-deliver retries it; do not repost")
         return
 
     if pdf:

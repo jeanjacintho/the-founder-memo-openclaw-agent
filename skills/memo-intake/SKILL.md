@@ -1,6 +1,6 @@
 ---
 name: memo-intake
-description: Route one owner chat turn once setup is READY — a status question, a delivery-time change, "send it now", "re-evaluate my priorities", a signal source switched on or off, or a correction for the advisor desk. Answered from the files and the scripts; never research inside the turn.
+description: Route one owner chat turn once setup is READY — a status question, a start-hour change, "run it now", a signal source switched on or off, or a correction for the advisor desk. Answered from the files and the scripts; never research inside the turn.
 ---
 
 # memo-intake — one chat turn, routed
@@ -22,53 +22,37 @@ change to narrate.
 
 ## Status questions — answer from the file, then stop
 
-- **"when will it land" / "did it come?"** — read `delivery.hour` and
-  `delivery.extra_hours` and answer in the owner's own clock. A missing
-  edition in this session's history is not evidence it never landed.
-- **"I want the paper twice a day" / "send it at 10:30 too" / "drop the
-  second edition"** — a second (or third) delivery time is
-  `delivery.extra_hours` in `pt/config.json`, a list of "HH:MM" strings
-  alongside `delivery.hour`, in the owner's own clock like it. Append (or
-  remove) the time they name in `extra_hours`, validate with
-  `pt_config_gate.py`, paste its output, then re-run
-  `/opt/plow/skills/memo-schedule/scripts/register_crons.py` so
-  `pt-daily-edition-2` (or `-3`, numbered by list order) exists or is
-  removed **now** — never a hand-registered cron (see `memo-schedule`).
-  Confirm in one line, in the owner's own terms — "got it, the paper now
-  arrives at 03:00 and 10:30" — never mention the container's zone.
+- **"when does it run" / "did it come?"** — read `memo.start` (default
+  `01:00`) and `memo.window_minutes` (default 240) and answer in the owner's
+  own clock: the memo starts then and prints when its run finishes. A missing
+  memo in this session's history is not evidence it never landed.
+- **"start it at 2am instead"** — set `memo.start` in `pt/config.json` to the
+  owner's own "HH:MM", validate with `pt_config_gate.py`, paste its output,
+  then re-run `/opt/plow/skills/memo-schedule/scripts/register_crons.py` so
+  `memo-nightly` moves **now** — never a hand-registered cron (see
+  `memo-schedule`). Confirm in one line, in the owner's own terms; never
+  mention the container's zone.
 - **"listen to my groups / mail / iMessage" / "stop listening to …"** —
   `memo-setup`'s "Turning a signal source on or off": probe first for mail
   and iMessage, then `set_signal_source.py <source> <on|off>`. Confirm in
   one line.
 
-## "Send me the paper now" — not a topic
+## "Run it now" / "re-evaluate my priorities" — not a topic
 
-| The owner says | What it is |
-|---|---|
-| "send me the paper now" / "generate a copy I can read right now" | queue the daily edition now |
-| "re-evaluate today's priorities" / "print another paper with fresh advice" | queue it now with fresh advice |
-
-It names no claim to look up; it asks you to run the paper the owner already
-configured, now instead of at the delivery hour.
+It names no claim to look up; it asks for tonight's run now instead of at
+`memo.start`. Every run evaluates the priorities afresh; there is no copy of
+an older memo to reprint.
 
 Queue it with `register_crons.py --now`, which `memo-render` documents
 under **On demand**; the paper arrives as its own message. If the output
 has a `queued:` line, reply with one ⏳ line in `owner.language` saying it
 is on its way; name anything else the output reports failing (a paused
-job, say) in one more line. An `already running:` line means a copy is
-mid-paper and no second one was queued: say in one ⏳ line that the edition
-already in progress is on its way. With neither line, say it could not be
-queued. Never research or render it in this turn.
-
-**"Re-evaluate my priorities" is the same paper with fresh advice.** When the
-owner asks for today's priorities to be analyzed again (a new advice card,
-not yesterday's reused), queue `register_crons.py --now --fresh-advice`: that
-copy runs the advice tournament instead of reusing a checkpoint, and takes
-longer than a plain copy. Only a `queued:` line means a fresh evaluation is
-coming: say so in one ⏳ line. A `not queued:` line means a paper is mid-run
-and no fresh evaluation was queued: say that in one line and ask the owner to
-ask again once that edition arrives. Never fire the daily job with `openclaw cron run` for this: after its
-delivery hour it skips the tournament by its own window rule.
+job, say) in one more line, and say the run takes up to its window
+(`memo.window_minutes`). An `already running:` line means a run is in flight
+and no second one was queued: say in one ⏳ line that the memo already in
+progress is on its way. With neither line, say it could not be queued. Never
+research or render it in this turn, and never fire a job with `openclaw cron
+run`.
 
 ## Corrections for the advisor desk
 

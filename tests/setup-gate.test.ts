@@ -106,7 +106,7 @@ for (const [label, ctx, injects] of [
   ["owner's DM", { channel: "plow", accountId: "chat", sessionKey: "agent:main:main", trigger: "user" }, true],
   ["heartbeat in the main session", { channel: "plow", accountId: "chat", sessionKey: "agent:main:main", trigger: "heartbeat" }, false],
   ["a group", { channel: "plow", accountId: "chat", sessionKey: "agent:main:plow:group:cht_group", trigger: "user" }, "listen"],
-  ["a scheduled job", { sessionKey: "cron:pt-daily-edition", trigger: "cron" }, false],
+  ["a scheduled job", { sessionKey: "cron:memo-nightly", trigger: "cron" }, false],
 ] as const) test(`outside dispatch, ${label} ${injects === "listen" ? "listens instead of" : injects ? "starts from" : "skips"} the real gate`, async t => {
   const home = await mkdtemp(`${tmpdir()}/pt-home-`);
   t.after(() => rm(home, { recursive: true }));

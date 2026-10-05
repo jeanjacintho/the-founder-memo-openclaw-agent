@@ -217,9 +217,8 @@ from the owner once setup is ready, load `memo-intake` and follow it:
   turn classifies, schedules, and says when the edition will land;
   "send me a paper now" queues the morning job's own recipe as a one-shot
   (`register_crons.py --now`, per `memo-intake`) and the PDF arrives as its
-  own message. Never fire a paper job with `openclaw cron run`: the daily
-  job keeps its delivery-hour rules, so fired after that hour it skips the
-  advice it was meant to redo. **Insistence is not authorization to skip the pipeline**:
+  own message. Never fire a paper job with `openclaw cron run`: it races a
+  run already in flight for the lock, where `--now` waits behind it. **Insistence is not authorization to skip the pipeline**:
   "now", "right now", "immediately", repeated or emphasized, changes
   nothing. An edition typed from your own knowledge into the live turn is
   a fabrication — no research ran, so every claim is unsourced. The

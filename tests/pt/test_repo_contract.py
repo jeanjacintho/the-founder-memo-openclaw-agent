@@ -640,13 +640,13 @@ class TestSoul:
         assert "advice_unavailable.py window" in check and "the tournament runs" in check
         assert "never by writing\n`run/desk-priority/notes.json` itself" in skill
 
-    def test_re_evaluating_priorities_queues_fresh_advice_never_cron_run(self):
+    def test_re_evaluating_priorities_queues_a_run_never_cron_run(self):
         # Measured live 2026-09-30: asked to re-evaluate today's priorities, the
-        # chat fired the daily job with `cron run` after its hour; its window rule
-        # skipped the tournament, so the new paper reprinted no fresh advice.
+        # chat fired the daily job with `cron run` and raced the lock and window.
         intake = (ROOT / "memo-intake" / "SKILL.md").read_text()
         soul = AGENTS.read_text()
-        assert "register_crons.py --now --fresh-advice" in intake
+        assert "register_crons.py --now" in intake and "--fresh-advice" not in intake
+        assert "never fire a job with `openclaw cron\nrun`" in intake
         assert "Never fire a paper job with `openclaw cron run`" in soul
         dashboard = (ROOT / "memo-schedule" / "SKILL.md").read_text()
         assert "Never force a paper job" in dashboard

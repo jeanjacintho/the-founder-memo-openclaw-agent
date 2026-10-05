@@ -344,7 +344,7 @@ class TestPrintMissInTheOwnersLanguage:
 class TestOutboxDelivery:
     """A scheduled paper starts hours before its delivery hour. Sleeping inside
     the session until then dies (OpenClaw's exec is synchronous with a 30-min
-    ceiling), so the paper is staged in pt/outbox and the no-agent pt-deliver
+    ceiling), so the paper is staged in pt/outbox and the no-agent memo-deliver
     job posts it once its hour has come."""
 
     ZONE = ZoneInfo("America/Sao_Paulo")

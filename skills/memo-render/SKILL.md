@@ -220,10 +220,7 @@ HTML.** Hand-write `edition.json` under the run directory:
 Not built in the chat turn: `memo-intake` queues the
 paper's own prompt as a one-shot with
 `/opt/plow/skills/memo-schedule/scripts/register_crons.py --now`, and
-this skill delivers it from that session like any other paper (no
-`--hold-until`; the advisor card per `memo-tournament/references/desk.md`, dated with `as_of` when older). Asked to
-re-evaluate today's priorities, `memo-intake` queues `--now --fresh-advice`, whose copy runs
-the tournament instead of reusing a checkpoint.
+this skill delivers it from that session like any other run.
 
 ## Render and deliver
 
@@ -278,7 +275,7 @@ the tournament instead of reusing a checkpoint.
    A **scheduled** paper's cron prompt adds `--hold-until HH:MM` (that job's
    delivery hour). Honor it: with the hour still ahead the script does not
    wait — it stages the paper in `pt/outbox/` and prints `held for HH:MM —
-   pt-deliver posts it`, which is success: the no-agent `pt-deliver` job posts,
+   memo-deliver posts it`, which is success: the no-agent `memo-deliver` job posts,
    prints and records it at that clock on the owner's zone. If the hour has
    already passed it posts immediately (never until tomorrow). Never re-run it
    to post sooner. The on-demand copy's prompt carries none.

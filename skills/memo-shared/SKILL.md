@@ -72,6 +72,11 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `{"usd": <float|null>, "sessions": n, "unpriced": m}` (tokens times each model's configured
   price; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
   --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not.
+- `scripts/run_gate.py` — the night waits for the Mac. Bare:
+  `run_gate.py wait --started <ISO-8601> --window <minutes>` probes `~/Plow/wiki/wiki.toml`
+  through Latch every five minutes; `MAC:reachable` (0) start, `MAC:window-closed` (2) the
+  window closed with no answer, `MAC:still-waiting` (3) call again with the same `--started`
+  (one call stays under the 30-minute exec timeout).
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
   the Mac has none, writes
@@ -87,7 +92,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `--filename The-Founder-Times-<date>.pdf` is the name shown in chat (the
   run file stays `edition.pdf` on disk). `--hold-until HH:MM` is a scheduled paper's
   send clock: while it is ahead the paper is staged in `pt/outbox/` for the
-  no-agent `pt-deliver` job (`--flush-outbox`), never slept on in the session;
+  no-agent `memo-deliver` job (`--flush-outbox`), never slept on in the session;
   once passed it posts now (the on-demand copy has none). After
   either POST it prints the run's `edition.pdf` when the printer is configured
   (the text leg too, so a missing PDF is reported as a miss), records
