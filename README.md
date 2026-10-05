@@ -172,7 +172,17 @@ An email turn's final text never reaches the sender: it goes privately to the
 owner (the chat the thread was started from, else their 1:1), and mail is sent
 only with `plow_send_email`. A turn on mail from anyone but the owner has no tools, so
 an email cannot make the assistant send; the owner approves in their chat and
-the send comes from their turn.
+the send comes from their turn. Each outside sender in a thread runs in a session of their own, so
+their mail cannot join a run the owner is in. This image does not enable OpenClaw's native
+`automations` reminders; the paper's own jobs are registered by
+`register_crons.py`.
+
+Recovery pages through unread history to the saved checkpoint; a first-contact
+owner DM scans back to its last answer. An uncertain send blocks later Plow
+mutations in the same run. Thread creation keys use the inbound source and
+normalized payload, so a new tool-call ID does not create another thread for
+that request. A new run can still explicitly send again; ordinary message sends
+have no API idempotency key.
 
 ## Moving a paper from the Hermes edition
 

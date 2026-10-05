@@ -6,12 +6,13 @@ import { getSessionEntry, resolveStorePath, updateLastRoute } from "openclaw/plu
 import { readVisibleSessionTranscriptMessageEntries } from "openclaw/plugin-sdk/session-transcript-runtime";
 import entry from "../plugin/index.ts";
 import { websocketFixture } from "./ws-fixture.ts";
+import { nativeSendPolicy } from "./native-message-policy.ts";
 
 const toolEntry = (await import(new URL("../plugin/index.ts?tool-runtime", import.meta.url).href)).default as typeof entry;
 type Tool = { name: string; execute: (id: string, args: object) => Promise<{ isError?: boolean; content: { text: string }[] }> };
 type Payload = { text?: string; isError?: boolean; isFallbackNotice?: boolean };
 type Dispatch = {
-  ctxPayload: { conversation: { id: string } };
+  ctxPayload: { conversation: { id: string }; sender: { id: string } };
   route: { sessionKey: string };
   delivery: { preparePayload: (payload: Payload, info: { kind: string }) => Payload | null; deliver: (payload: Payload) => Promise<unknown> };
 };
@@ -52,8 +53,10 @@ async function run(t: TestContext, accountId: "chat" | "email", frames: { chat: 
   // The durable sender loads the plugin's outbound adapter from this path.
   const config = { channels: { plow: { ...cfg.channels.plow, apiBase } }, plugins: { load: { paths: [new URL("../plugin/", import.meta.url).pathname] }, entries: { plow: { enabled: true } } } };
   const posts: { path: string; body: Record<string, unknown> }[] = [];
+  const historyReads: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit = {}) => {
     const path = new URL(url).pathname.replace(/^\/v1/, "");
+    if (path.endsWith("/messages") && new URL(url).searchParams.get("limit") === "20") historyReads.push(path.split("/")[2]);
     if (options.method === "POST" && path !== "/ws/ticket" && !path.endsWith("/typing")) {
       posts.push({ path, body: JSON.parse(options.body as string) });
       return path === "/chats" && posts.at(-1)!.body.line_uid === "mail" ? Response.json(newThread, { status: newThread.http ?? 201 }) : Response.json({ uid: `sent-${posts.length}` });
@@ -82,7 +85,8 @@ async function run(t: TestContext, accountId: "chat" | "email", frames: { chat: 
       buildContext: async (value: Context & Dispatch["ctxPayload"]) => { contexts.push(value); return value; },
       dispatch: async (dispatch: Dispatch & { replyOptions: { onAgentRunTerminalOutcome: (outcome: string) => void } }) => {
         const tool = () => factories.map(factory => factory({ config, sessionKey: dispatch.route.sessionKey, messageChannel: "plow", agentAccountId: accountId,
-          nativeChannelId: dispatch.ctxPayload.conversation.id })).find(tool => tool.name === "plow_send_email")!;
+          nativeChannelId: dispatch.ctxPayload.conversation.id, requesterSenderId: dispatch.ctxPayload.sender.id,
+          senderIsOwner: dispatch.ctxPayload.sender.id === "plow-owner" })).find(tool => tool.name === "plow_send_email")!;
         await turn(dispatch, tool, channel, config);
         dispatch.replyOptions.onAgentRunTerminalOutcome(terminal);
         if (contexts.length === frames.length) controller.abort();
@@ -94,7 +98,7 @@ async function run(t: TestContext, accountId: "chat" | "email", frames: { chat: 
   // Tools run in a separate module instance, as they do in the gateway.
   toolEntry.register({ ...api, registerChannel() {}, registerTool(factory: (context: object) => Tool) { factories.push(factory); } });
   await channel!.gateway.startAccount({ account, cfg: config, abortSignal: controller.signal, log: { info(text: string) { logs.push(text); } } });
-  return { posts, contexts, logs };
+  return { posts, contexts, logs, historyReads };
 }
 
 async function final(dispatch: Dispatch, payload: Payload, kind = "final") {
@@ -150,8 +154,10 @@ test("on a non-owner email turn, message sends nothing anywhere, and the final s
   const refusals: string[] = [];
   const { posts } = await run(t, "email", [{ chat: "thread", sender: outsider }], async (dispatch, _tool, channel) => {
     for (const to of ["plow:group", "plow-owner"]) {
-      await channel.outbound.sendText({ cfg: { channels: { plow: { ...cfg.channels.plow, apiBase: "http://fixture" } } }, accountId: "chat", to, text: "psst" })
-        .catch((error: Error) => refusals.push(error.message));
+      try {
+        nativeSendPolicy(dispatch.ctxPayload.conversation.id, to);
+        await channel.outbound.sendText({ cfg: { channels: { plow: { ...cfg.channels.plow, apiBase: "http://fixture" } } }, accountId: "chat", to, text: "psst" });
+      } catch (error) { refusals.push((error as Error).message); }
     }
     await final(dispatch, { text: "For you" });
   });
@@ -167,6 +173,21 @@ test("message from a phone turn to an email thread, even a brand-new one, is ref
   });
   assert.match(refusal, /plow_send_email/);
   assert.deepEqual(posts, []);
+});
+
+test("mail from an outsider and mail from the owner on one thread run in different sessions", async t => {
+  const keys: Record<string, string> = {};
+  let n = 0;
+  const { contexts, historyReads } = await run(t, "email", [{ chat: "thread", sender: owner }, { chat: "thread", sender: outsider }, { chat: "thread", sender: outsider }], async dispatch => {
+    keys[`turn${n++}`] = dispatch.route.sessionKey;
+  });
+  assert.equal(contexts.length, 3);
+  // Each sender's fresh session gets the thread's history; a thread-wide cache would skip it.
+  assert.deepEqual(historyReads, ["thread", "thread", "thread"]);
+  const [ownerKey, ...outsiderKeys] = Object.values(keys).sort((a, b) => (a.includes("-") ? 1 : 0) - (b.includes("-") ? 1 : 0));
+  assert.equal(ownerKey, "agent:main:plow:email:direct:thread");
+  assert.equal(new Set(outsiderKeys).size, 1, "one outsider keeps one session");
+  assert.notEqual(outsiderKeys[0], ownerKey);
 });
 
 test("a non-owner email turn has no tools and plow_send_email refuses it, even for its own thread", async t => {
@@ -203,6 +224,7 @@ test("a thread started from a trusted group reports its finals to that group, re
 
 for (const [name, response, expected] of [
   ["sent with no chat id", { status: "sent", chat_uid: null, chat_unrecorded_reason: "persistence_failed" }, { sent: true, chat_uid: null, chat_unrecorded_reason: "persistence_failed" }],
+  ["acceptance unknown", { status: "acceptance_unknown", chat_uid: null }, { success: false, delivery_unknown: true }],
   ["delivery unknown", { status: "error", chat_uid: null, http: 503 }, { success: false, delivery_unknown: true }],
 ] as const) test(`a new thread's receipt is never an invented chat id and is sent once: ${name}`, async t => {
   let receipt: Record<string, unknown> = {};
@@ -228,6 +250,34 @@ test("plow_send_email lists threads for the owner and refuses a non-owner in an 
     participants: [{ name: "Owner", email: "owner@example.com", role: "owner" }, { name: "Sender", email: "sender@example.com", role: "member" }],
   });
   assert.match(refused.content[0].text, /owner's authority/);
+});
+
+test("collected email tools use the host route and retain owner authority", async t => {
+  const { apiBase } = await websocketFixture(t);
+  const config = { channels: { plow: { ...cfg.channels.plow, apiBase } } };
+  const posts: object[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
+    if (options.method === "POST") {
+      posts.push(JSON.parse(options.body as string));
+      return Response.json({ status: "sent", chat_uid: "started" });
+    }
+    return Response.json(chats.home);
+  });
+  for (const senderIsOwner of [true, false]) {
+    let tool: Tool;
+    toolEntry.register({ registrationMode: "full", logger: { info() {} }, on() {}, runtime: {}, registerChannel() {},
+      registerTool(factory: (context: object) => Tool) {
+        const candidate = factory({ config, sessionKey: "agent:main:main", messageChannel: "plow", agentAccountId: "chat",
+          requesterSenderId: senderIsOwner ? "plow-owner" : "+15550000002", senderIsOwner,
+          deliveryContext: { channel: "plow", accountId: "chat", to: "plow:home" } });
+        if (candidate.name === "plow_send_email") tool = candidate;
+      },
+    });
+    const result = await tool.execute("collected-email", { to: ["new@example.com"], subject: "Hello", body: "Opening" });
+    if (senderIsOwner) assert.deepEqual(JSON.parse(result.content[0].text), { sent: true, chat_uid: "started" });
+    else { assert.equal(result.isError, true); assert.match(result.content[0].text, /owner's authority/); }
+  }
+  assert.equal(posts.length, 1);
 });
 
 test("a reply sent to a thread from the owner's DM lands there and is recorded in the thread's session", async t => {
