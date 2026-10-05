@@ -1221,9 +1221,9 @@ class TestDeployment:
 
     def test_agent_index_reporter_stays_pinned(self):
         text = self.DOCKERFILE.read_text()
-        assert ("agent-index-client/edf196031803e204cdbcd81ce574e1f54fd75f65/standalone/"
+        assert ("agent-index-client/fbfe8b635c1f20ce1f0152497abb419623f53329/standalone/"
                 "agent_index_client.py") in text
-        assert "970caf7534cd7d3b71ffee8f1a576f9da4dc494a508e8ab1998ee2ce6f4a2ac4" in text
+        assert "5be521644ade0f041e83370ac457edc8ad85410e14265f1b1243807772de9a5b" in text
         assert "ARG AGENTSVIEW_VERSION=0.44.0" in text
         assert "037ea7a46d52e06b20363b4aa7cd7f28e32f31d8215803d6e9a0c96bac5818e3" in text
         assert "6f3c76ebe119826a2def1ae226c3573b214d396a3ed7c477ef282b1063345b87" in text

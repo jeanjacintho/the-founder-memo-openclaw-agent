@@ -74,7 +74,7 @@ sys.path[:0] = [os.path.join(_SKILLS, "pt-intake", "scripts"), os.path.join(_SKI
 from record_owner_language import _write_json  # noqa: E402 -- the config's atomic writer
 from pt_paths import config_file, script  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-from cron_backend import MODEL, OPENCLAW, CronBackend  # noqa: E402 -- sibling module
+from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
 CONFIG_FILE = str(config_file())
 # The only job names this spec owns. Pinned as a fullmatch so a name that
@@ -107,11 +107,20 @@ DELIVER_ARGV = ["/opt/plow/pt-venv/bin/python3",
                 "/opt/plow/skills/pt-shared/scripts/post_to_chat.py", "--flush-outbox"]
 WORKSPACE_LOCK = "paper-workspace"
 DEFAULT_LEAD_MINUTES = 0
-# Every acquirer of a lock uses one lifetime: the run itself plus
-# delivery.lead_minutes, since a scheduled run holds the lock through its early
-# start and the held POST. Every paper shares the workspace lock, so a smaller
-# number could call the scheduled run dead and start a competing paper.
-STALE_RUN_MINUTES = 240
+# Every acquirer of a lock uses one lifetime. A run cannot outlive its scheduler
+# budget (cron_backend.PAPER_TIMEOUT_SECONDS), and it takes the lock no earlier
+# than it starts, so a lock older than the budget belongs to a run that is gone:
+# one killed by a model error or by the budget itself, which never reaches its
+# release. The margin covers the run's own wind-down. Every paper shares the
+# workspace lock, so nothing shorter is safe: it could call a live run dead and
+# start a competing paper.
+STALE_RUN_MINUTES = PAPER_TIMEOUT_SECONDS // 60 + 20
+# The closest two papers may start. The first can wait up to two lock rounds before it takes the
+# lock and then be killed at its budget, so its lock is at most budget-minus-that-wait old when the
+# second starts; the second's own two rounds add the wait back. Spacing papers at least the stale
+# limit apart is what lets the second always reclaim an orphan, whatever the first waited.
+# One more than the limit: takeover needs the lock strictly older than it (run_lock.py).
+MIN_PAPER_SPACING_MINUTES = STALE_RUN_MINUTES + 1
 # A scheduled paper that finds the workspace held (an on-demand copy runs its
 # whole ~35-minute paper under the lock) waits two rounds of this before giving
 # the day up: ~40 minutes, inside the hold-until window, each round under
@@ -244,11 +253,10 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
     # fresh-advice copy waiting across midnight could take it), so two papers would archive and
     # write the same scratch. A stuck lock is reclaimed by age (STALE_RUN_MINUTES) as before.
     lock_arg = f"--name {WORKSPACE_LOCK}"
-    pin = "First run "
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
-        f"Run {title} now, in one session. {pin}{lock} acquire "
-        f"{lock_arg} --stale-minutes {STALE_RUN_MINUTES + lead_minutes}{wait}; "
+        f"Run {title} now, in one session. First run {lock} acquire "
+        f"{lock_arg} --stale-minutes {STALE_RUN_MINUTES}{wait}; "
         f"if its output is 'held', "
         f"{held}. Then "
         f"/opt/plow/skills/pt-shared/scripts/prepare_daily_run.py --preserve-priority "
@@ -462,11 +470,15 @@ def focused_paper_hours(topics, delivery_hour):
 
 
 def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
-    """Refuse paper starts whose shared-workspace windows can overlap."""
-    minimum_minutes = max(180, lead_minutes)
+    """Refuse paper starts whose shared-workspace windows can overlap.
+
+    Compared on the jobs' real cron start times: a lead clamped at midnight pulls a late-night
+    paper's start toward its neighbour, so two delivery hours far enough apart can still start close."""
+    minimum_minutes = MIN_PAPER_SPACING_MINUTES
+    starts = {hour: _minutes(hour) - _lead(hour, lead_minutes) for hour in hours}
     for index, first in enumerate(hours):
         for second in hours[index + 1:]:
-            distance = abs(_minutes(first) - _minutes(second))
+            distance = abs(starts[first] - starts[second])
             if min(distance, 24 * 60 - distance) < minimum_minutes:
                 raise SystemExit(
                     f"refusing to register: paper times {first} and {second} are less than "
@@ -627,9 +639,14 @@ def job_drift(job, spec):
     field is silence, not a mismatch. Schedule, zone, prompt and model are
     the fields a spec change actually moves (the delivery hour, the owner's
     zone, the lead, the delivery contract, the model the paper is tuned on).
+    The run budget is the exception: a job registered before it was set reports
+    no timeout at all, which is the scheduler's 60-minute default, so a reported
+    spec with no timeout drifts and the next register moves it.
     """
     if job.get("command") is not None:  # a command job has no prompt or model
         return spec.get("command") is not None and spec["command"] != job["command"]
+    if "timeout" in spec and spec["timeout"] != PAPER_TIMEOUT_SECONDS:
+        return True
     for key in ("schedule", "tz", "prompt", "model"):
         have = spec.get(key)
         want = job.get(key, MODEL) if key == "model" else job.get(key)
@@ -737,10 +754,14 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
             if not current.enabled:
                 print(
                     f"WARNING: {job['name']} is registered but DISABLED -- it will "
-                    "never fire, and this leaves it alone rather than "
+                    "never fire, and this leaves it disabled rather than "
                     f"duplicating it. Enable it: {' '.join(OPENCLAW)} cron enable {current.id}"
                 )
                 paused.append(job["name"])
+                # Still brought up to the spec (budget included), so enabling it later
+                # does not bring back an old job.
+                if job_drift(job, current.spec):
+                    pending.append(("edit", job, current))
                 continue
             if not job_drift(job, current.spec):
                 print(f"already present, skipped: {job['name']}")
