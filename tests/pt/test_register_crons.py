@@ -95,7 +95,7 @@ class TestPaperPrompts:
 
     @pytest.mark.parametrize("prompt", [
         crons.paper_prompt(), crons.paper_prompt("09:30", 60), crons.paper_prompt(focus="18:00"),
-        crons.TOPIC_PROMPT.format(tid="t_1", depth="quick")])
+        crons.topic_prompt("t_1", "quick", scheduled=True)])
     def test_every_paper_says_how_its_skills_load(self, prompt):
         # A model that guessed plow__plow_read_skill got "no skill" and
         # gave up the paper: the prompt names the container path and tool.
@@ -962,7 +962,7 @@ class TestRunPromptsDelegateDelivery:
     @pytest.mark.parametrize("p", [
         crons.paper_prompt(),
         crons.paper_prompt(focus="12:00"),
-        crons.TOPIC_PROMPT,
+        crons.topic_prompt("t_1", "quick", scheduled=False),
     ])
     def test_prompt_delegates_delivery_to_the_edition_skill(self, p):
         assert "pt-edition/SKILL.md step 2" in p
@@ -976,7 +976,7 @@ class TestRunPromptsDelegateDelivery:
     @pytest.mark.parametrize("p", [
         crons.paper_prompt(),
         crons.paper_prompt(focus="12:00"),
-        crons.TOPIC_PROMPT,
+        crons.topic_prompt("t_1", "quick", scheduled=False),
     ])
     def test_pre_delivery_failure_sends_exactly_one_owner_notice(self, p):
         assert p.count("send exactly one short message to the owner") == 1
@@ -1122,8 +1122,23 @@ def test_a_paper_counts_its_starts_and_stops_instead_of_retrying_all_day():
         for gone in ("notify", "--text", "heredoc", "run_attempts.py told", "give-up"):
             assert gone not in prompt, gone
         assert "message(action=send)" not in spent
-    assert "run_attempts.py begin --next-paper 09:30" in scheduled
-    assert "--next-paper" not in on_demand
+    assert "run_attempts.py begin --scheduled" in scheduled
+    assert "--scheduled" not in on_demand
+
+
+def test_a_topic_edition_counts_its_own_starts_under_its_own_key():
+    # Subscriptions and one-offs run without the workspace lock and are retried like the papers;
+    # their count is apart from the papers', so neither spends the other's day.
+    nightly = crons.topic_prompt("t_9f2a", "deep", scheduled=True)
+    one_off = crons.topic_prompt("t_0c11", "quick", scheduled=False)
+    assert "run_attempts.py begin --key t_9f2a --scheduled" in nightly
+    assert "run_attempts.py begin --key t_0c11:" in one_off and "--scheduled" not in one_off
+    for prompt, tid in ((nightly, "t_9f2a"), (one_off, "t_0c11")):
+        assert prompt.index("begin --key") < prompt.index("pt-research on topic")
+        assert f"--clear-attempts {tid}" in prompt
+        assert "'stop-untold'" in prompt and "writing nothing to the owner" in prompt
+    jobs = crons.desired_jobs([topic("t_9f2a")], "07:00", TZ)
+    assert any("begin --key t_9f2a --scheduled" in j["prompt"] for j in jobs)
 
 
 def test_jobs_follow_the_model_boot_exports(monkeypatch):

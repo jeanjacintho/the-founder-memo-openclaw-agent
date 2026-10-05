@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
+import sys
 
 import pytest
 
@@ -57,12 +59,43 @@ def test_the_next_start_tells_the_owner_once_in_the_same_call_and_stays_quiet_af
     assert chat.posts == ["The edition was not delivered after repeated attempts, so I am not trying again now. Ask me again later."]
 
 
-def test_the_notice_says_when_the_next_paper_is_and_speaks_the_owners_language(pt_home, chat):
-    (pt_home).mkdir(parents=True)
+def test_the_notice_speaks_the_owners_language_and_says_the_next_paper_comes_on_its_own(pt_home, chat):
+    pt_home.mkdir(parents=True)
     (pt_home / "config.json").write_text('{"owner": {"language": "Português"}}')
     spend_the_day()
-    assert run("begin", "--next-paper", "07:00") == "stop"
-    assert chat.posts == ["A edição não foi entregue depois de várias tentativas, então não vou tentar de novo agora. O próximo jornal agendado sai amanhã às 07:00."]
+    assert run("begin", "--scheduled") == "stop"
+    assert chat.posts == ["A edição não foi entregue depois de várias tentativas, então não vou tentar de novo agora. O próximo jornal agendado sai amanhã."]
+
+
+def test_a_topic_edition_has_its_own_count_apart_from_the_papers(pt_home, chat):
+    spend_the_day()
+    assert run("begin") == "stop"
+    # The papers' day is spent; a topic's is not, and a spent topic does not touch the papers'.
+    assert [run("begin", "--key", "t_9f2a") for _ in range(attempts.MAX_ATTEMPTS)] == ["proceed"] * attempts.MAX_ATTEMPTS
+    assert run("begin", "--key", "t_9f2a", "--scheduled") == "stop"
+    assert len(chat.posts) == 2, "each spent count tells the owner once"
+    attempts.clear("t_9f2a")
+    assert run("begin", "--key", "t_9f2a") == "proceed"
+    assert run("begin") == "stop", "clearing the topic did not clear the papers"
+
+
+def test_an_attempts_key_cannot_name_a_path(pt_home, chat):
+    with pytest.raises(SystemExit, match="not allowed"):
+        run("begin", "--key", "../escape")
+
+
+def test_simultaneous_starts_count_each_once(pt_home, chat):
+    # Topic jobs hold no workspace lock, so two of one key can start together.
+    import subprocess
+
+    from conftest import ROOT
+
+    script = ROOT / "pt-shared" / "scripts" / "run_attempts.py"
+    env = {**__import__("os").environ, "PT_HOME": str(pt_home)}
+    procs = [subprocess.Popen([sys.executable, str(script), "begin", "--key", "t_race"], env=env,
+                              stdout=subprocess.PIPE, text=True) for _ in range(attempts.MAX_ATTEMPTS)]
+    assert sorted(p.communicate()[0].strip() for p in procs) == ["proceed"] * attempts.MAX_ATTEMPTS
+    assert json.loads(next(pt_home.glob("paper-attempts-*-t_race.json")).read_text())["starts"] == attempts.MAX_ATTEMPTS
 
 
 def test_a_failed_post_leaves_the_owner_untold_so_the_next_start_tries_again(pt_home, chat, capsys):

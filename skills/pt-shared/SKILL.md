@@ -112,11 +112,11 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   lock name. The papers' shared workspace lock is the undated `paper-workspace`. Prints one word
   (`acquired` / `stale-takeover` / `held`) and always exits 0 on acquire.
 - `scripts/run_attempts.py` — counts a day's paper starts so a paper that keeps failing stops
-  re-running. Called bare, after the paper lock is held: `.../run_attempts.py begin [--next-paper HH:MM]`
-  prints `proceed`, `stop` (spent, and the owner has been told: release and stop) or `stop-untold`
+  re-running. Called bare, after the paper lock is held: `.../run_attempts.py begin [--key KEY] [--scheduled]`
+  (a topic edition holds no lock and passes its topic id as KEY, so its count is its own) prints `proceed`, `stop` (spent, and the owner has been told: release and stop) or `stop-untold`
   (spent, the notice could not be posted: release and stop; the next start tries again). It posts the
   notice itself, in the owner's language from the fixed phrases, so the run writes nothing to the
-  owner. `post_to_chat.py --clear-attempts` starts the count over once the edition is posted or
+  owner. `post_to_chat.py --clear-attempts [KEY]` starts the count over once the edition is posted or
   staged. Three undelivered starts spend the owner's day.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.

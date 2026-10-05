@@ -409,6 +409,20 @@ class TestOutboxDelivery:
         assert (home / "outbox").exists() is staged
         assert self._next_attempt(capsys) == "proceed"
 
+    def test_clear_attempts_with_a_key_clears_that_jobs_count_only(self, tmp_path, monkeypatch, capsys):
+        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
+        self._at(monkeypatch, 8, 0)
+        for key in ("paper", "t_9f2a"):
+            for _ in range(post.run_attempts.MAX_ATTEMPTS):
+                post.run_attempts.begin(key)
+        capsys.readouterr()
+        self._hold(monkeypatch, run, extra=["--clear-attempts", "t_9f2a"])
+        capsys.readouterr()
+        post.run_attempts.begin("t_9f2a")
+        assert capsys.readouterr().out.strip() == "proceed"
+        post.run_attempts.begin("paper")
+        assert capsys.readouterr().out.strip() in ("stop", "stop-untold")
+
     def test_without_the_flag_a_delivery_leaves_the_count_alone(self, tmp_path, monkeypatch, capsys):
         home, run, posts, _ = self._setup(tmp_path, monkeypatch)
         self._at(monkeypatch, 8, 0)
