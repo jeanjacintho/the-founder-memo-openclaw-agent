@@ -1,5 +1,6 @@
 import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/core";
 import { createHash } from "node:crypto";
+import { startDeliveryRun, finishDeliveryRun, installDeliveryGuard, threadIdempotencyKey } from "./delivery-guard.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { defineChannelPluginEntry, type ChannelPlugin, type PluginRuntime, type OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { createChannelMessageReplyPipeline, buildOutboundSessionContext, sendDurableMessageBatch, resolveOutboundSendDep } from "openclaw/plugin-sdk/channel-outbound";
@@ -186,20 +187,30 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
   // An email turn completes by delivering its final to the owner, or by choosing silence.
   let deliveredToOwner = false;
   let silent = false;
+  let activeRunId: string | undefined;
+  const finishRun = () => {
+    if (activeRunId !== undefined) finishDeliveryRun(activeRunId);
+    activeRunId = undefined;
+  };
   const dispatched = runtime.channel.inbound.dispatch({
     cfg, channel: "plow", accountId: account.accountId, route, ctxPayload,
     dispatcherOptions: replyPipeline,
     replyOptions: {
       turnAdoptionLifecycle: ingress,
       onModelSelected,
-      onAgentRunStart: runId => log(`run started chat=${chat.uid} message=${message.uid} run=${runId}`),
+      onAgentRunStart: runId => {
+        finishRun();
+        activeRunId = runId;
+        startDeliveryRun(runId, JSON.stringify([account.apiBase, account.lineUid, chat.uid, message.uid]));
+        log(`run started chat=${chat.uid} message=${message.uid} run=${runId}`);
+      },
       // Untrusted non-owners get no tools, except in a listening group, where the channel's group
       // policy leaves every sender exactly plow_record_signal. A non-owner email gets no tools at all: it cannot
       // make the assistant send mail under its name; the owner approves privately and the send comes from their turn.
       ...(!senderIsOwner && (email || (!listening && !chat.trusted)) ? { disableTools: true } : {}),
       sourceReplyDeliveryMode: command && !senderIsOwner && chat.trusted ? "message_tool_only" : "automatic",
       onObservedReplyDelivery: () => { observedReplyDelivery = true; },
-      onAgentRunTerminalOutcome: outcome => { if (outcome === "failed") failure = new Error("Agent turn failed"); },
+      onAgentRunTerminalOutcome: outcome => { finishRun(); if (outcome === "failed") failure = new Error("Agent turn failed"); },
     },
     delivery: {
       durable: email ? false : { to: chat.uid, replyToId: null },
@@ -266,6 +277,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
   let result;
   try { result = await dispatched; }
   finally {
+    finishRun();
     if (listening) {
       groupInbox.forget(chat.uid, message.uid);
       ingress.onSubmitted();
@@ -337,6 +349,7 @@ export default defineChannelPluginEntry({
     });
   },
   registerCapabilities(api) {
+    installDeliveryGuard(api);
     api.registerTool(context => ({
       name: "plow_record_signal", label: "Record a priority signal",
       description: "In a group chat you are listening to, record the newest message as a priority signal for the owner's paper. Pass only its category; the channel takes the sender, the words and the time from the message itself. Only priority is kept.",
@@ -386,7 +399,7 @@ export default defineChannelPluginEntry({
           throw new Error("Starting a group requires an explicit trust choice.");
         }
         const trusted = account.threadTrust === "trusted" || (account.threadTrust === "ask" && args.trusted === true);
-        const idempotencyKey = createHash("sha256").update(JSON.stringify([account.lineUid, _id, members, args.body, trusted])).digest("hex");
+        const idempotencyKey = threadIdempotencyKey(_id, [account.lineUid, members, args.body, trusted]);
         const chat = await requestDelivery<{ uid: string }>(account, "/chats", {
           line_uid: account.lineUid, members,
           body: args.body, trusted, idempotency_key: idempotencyKey,

@@ -6,7 +6,7 @@ import entry from "../plugin/index.ts";
 import { renderConfig } from "../boot/config.ts";
 import { probeIdentity } from "../boot/probe-fixture.ts";
 
-for (const mode of ["full", "discovery", "tool-discovery"]) test(`${mode} exposes Plow tools without a tool-call gate`, async () => {
+for (const mode of ["full", "discovery", "tool-discovery"]) test(`${mode} exposes Plow tools with a run-scoped delivery guard`, async () => {
   const names: string[] = [];
   const hooks: string[] = [];
   entry.register({
@@ -17,7 +17,7 @@ for (const mode of ["full", "discovery", "tool-discovery"]) test(`${mode} expose
   assert.deepEqual(names, ["plow_record_signal", "plow_start_thread", "plow_set_thread_trust", "plow_reply_to", "plow_send_email"]);
   const manifest = JSON.parse(await readFile(new URL("../plugin/openclaw.plugin.json", import.meta.url), "utf8"));
   assert.deepEqual(manifest.contracts.tools, names);
-  assert.ok(!hooks.includes("before_tool_call"));
+  assert.ok(hooks.includes("before_tool_call"));
 });
 
 test("start-thread refuses outside an active main Plow DM without a request", async t => {

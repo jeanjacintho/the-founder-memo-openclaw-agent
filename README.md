@@ -177,6 +177,13 @@ their mail cannot join a run the owner is in. This image does not enable OpenCla
 `automations` reminders; the paper's own jobs are registered by
 `register_crons.py`.
 
+Recovery pages through unread history to the saved checkpoint; a first-contact
+owner DM scans back to its last answer. An uncertain send blocks later Plow
+mutations in the same run. Thread creation keys use the inbound source and
+normalized payload, so a new tool-call ID does not create another thread for
+that request. A new run can still explicitly send again; ordinary message sends
+have no API idempotency key.
+
 ## Moving a paper from the Hermes edition
 
 The owner's wiki lives on their Mac and does not move. The paper's own
