@@ -59,12 +59,13 @@ def _copy_legacy(wiki, toml):
     roots = tomllib.loads(toml).get("roots", {})
     if ROOT in roots or LEGACY_ROOT not in roots:
         return []
+    # A recorded edition can predate a failed index update; enumerate a fresh index.
+    code, out = wiki.run("index", write=True)
+    if code != 0:
+        raise LatchError(f"wiki index: {out.strip()}")
     index = wiki.read("index.md")
     if index is None:
-        code, out = wiki.run("index", write=True)
-        if code != 0:
-            raise LatchError(f"wiki index: {out.strip()}")
-        index = wiki.read("index.md") or ""
+        raise LatchError("wiki index produced no index.md")
     pages = sorted({unquote(rel) for rel in re.findall(rf"\(/({re.escape(LEGACY_ROOT)}/[^)\s]+\.md)\)", index)})
     for rel in pages:
         new = OVERVIEW if rel == LEGACY_OVERVIEW else ROOT + rel[len(LEGACY_ROOT):]
