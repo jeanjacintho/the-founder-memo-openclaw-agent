@@ -292,3 +292,8 @@ def test_future_memo_settings_are_optional_and_validated(memo, tmp_path):
 ])
 def test_bad_future_memo_settings_fail_the_shared_gate(memo, reason, tmp_path):
     assert reason in run_gate({**VALID, "memo": memo}, tmp_path)[0]
+
+
+def test_null_memo_without_a_legacy_delivery_hour_still_needs_setup(tmp_path):
+    config = {k: v for k, v in VALID.items() if k != "delivery"}
+    assert 'delivery.hour' in run_gate({**config, "memo": None}, tmp_path)[0]

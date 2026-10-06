@@ -143,7 +143,7 @@ def gate(config):
     # 2. delivery.hour is a real "HH:MM". See _DELIVERY_HOUR_RE for why any
     #    minute is accepted, not just :00.
     hour = _index(_index(config, "delivery"), "hour")
-    if ("memo" not in config or "delivery" in config) and not (isinstance(hour, str) and _DELIVERY_HOUR_RE.fullmatch(hour)):
+    if (_index(config, "memo") is None or "delivery" in config) and not (isinstance(hour, str) and _DELIVERY_HOUR_RE.fullmatch(hour)):
         failures.append('delivery.hour is not "HH:MM"')
 
     # 3. printer.configured is a boolean, unambiguously.

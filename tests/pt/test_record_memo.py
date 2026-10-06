@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
+from threading import Event
 
 import pytest
 
@@ -27,6 +29,7 @@ CARD = {"recommendations": [rec(1), rec(2), rec(3)], "questions": ["Q1 — Is th
 @pytest.fixture
 def memo_file(tmp_path, monkeypatch):
     monkeypatch.setenv("PLOW_HOME_CHANNEL", "cht_1")
+    monkeypatch.setenv("PT_HOME", str(tmp_path / "state"))
 
     def write(**memo):
         path = tmp_path / "edition.json"
@@ -69,7 +72,7 @@ def test_a_retry_does_not_append_twice_but_still_validates(mac, memo_file):
 def test_a_night_without_a_card_records_its_reason(mac, memo_file):
     record.record(Wiki(mac.call_tool), memo_file(could_not_source=["No round finished."]), "cht_1", NOW)
     text = page(mac)
-    assert "Could not source: No round finished." in text and "priority:" not in text
+    assert "Couldn't source: No round finished." in text and "priority:" not in text
     assert mac.wiki("validate", "--writer", "founder-memo")["exit_code"] == 0
 
 
@@ -84,3 +87,79 @@ def test_cli_names_a_failure(mac, memo_file, capsys):
     mac.asleep = True
     with pytest.raises(SystemExit, match="error: memo not recorded"):
         record.main([str(memo_file(priority=CARD)), "--now", NOW.isoformat()], call_tool=mac.call_tool)
+
+
+def test_older_recovery_does_not_replace_a_newer_delivery_in_the_same_second(mac, memo_file):
+    w = Wiki(mac.call_tool)
+    newer = memo_file(could_not_source=["The newer delivery"])
+    record.record(w, newer, "cht_1", NOW + timedelta(microseconds=2))
+    before = page(mac)
+    older = memo_file(could_not_source=["The earlier delivery"])
+    assert "newer delivered memo" in record.record(w, older, "cht_1", NOW + timedelta(microseconds=1))
+    assert page(mac) == before
+    assert split_page(before)[0]["updated"] == (NOW + timedelta(microseconds=2)).isoformat()
+
+
+def test_later_delivery_replaces_the_same_dates_card(mac, memo_file):
+    w = Wiki(mac.call_tool)
+    record.record(w, memo_file(priority=CARD), "cht_1", NOW)
+    record.record(w, memo_file(could_not_source=["Later delivery"]), "cht_1", NOW + timedelta(seconds=1))
+    assert "Later delivery" in page(mac) and "priority:" not in page(mac)
+    assert split_page(page(mac))[0]["created"] == NOW.isoformat()
+
+
+def test_archive_labels_follow_the_owners_language(mac, memo_file):
+    record.record(Wiki(mac.call_tool), memo_file(priority=CARD, language="Português"), "cht_1", NOW)
+    text = page(mac)
+    assert "PRIMEIRO PASSO:" in text and "PERGUNTAS PARA VOCÊ" in text
+    assert "Conselho de:" in text and "FIRST STEP:" not in text
+    assert "FIRST STEP:" not in text and "## Questions" not in text
+
+
+def test_overlapping_deliveries_preserve_the_later_memo(memo_file, monkeypatch):
+    read_started, release_read, second_started = Event(), Event(), Event()
+
+    class DelayedWiki:
+        text = None
+
+        def read(self, rel):
+            snapshot = self.text
+            if not read_started.is_set():
+                read_started.set()
+                assert release_read.wait(5)
+            return snapshot
+
+        def write(self, rel, text):
+            self.text = text
+
+        def check(self):
+            pass
+
+    monkeypatch.setattr(record, "ensure", lambda *_: None)
+    older = memo_file(could_not_source=["Earlier delivery"])
+    saved = older.with_name("earlier.json")
+    older.rename(saved)
+    newer = memo_file(could_not_source=["Later delivery"])
+    w = DelayedWiki()
+
+    def second():
+        second_started.set()
+        return record.record(w, newer, "cht_1", NOW + timedelta(seconds=1))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(record.record, w, saved, "cht_1", NOW)
+        assert read_started.wait(5)
+        later = pool.submit(second)
+        assert second_started.wait(5)
+        # Give the later call the opportunity to finish if the read/write is
+        # unprotected; that would let the delayed older call overwrite it.
+        from concurrent.futures import TimeoutError
+        try:
+            later.result(timeout=0.1)
+        except TimeoutError:
+            pass
+        finally:
+            release_read.set()
+        first.result(timeout=5)
+        later.result(timeout=5)
+    assert split_page(w.text)[0]["description"] == "Later delivery"

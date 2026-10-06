@@ -27,6 +27,7 @@ check that failed after the write landed. Prints `RECORDED <page>` or
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import re
@@ -38,7 +39,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "memo-shared" / "scripts"))
 from latch_mcp import LatchError  # noqa: E402
 from owner_chat import home_channel  # noqa: E402
-from owner_time import owner_now  # noqa: E402
+from owner_time import owner_now
+from owner_phrases import phrase
+from pt_paths import pt_home  # noqa: E402
 from wiki import MEMOS, PAPER_LINK, Wiki, connect, join_page, split_page  # noqa: E402
 from wiki_setup import ensure  # noqa: E402
 
@@ -90,19 +93,20 @@ def archived_card(priority):
 
 
 def body_lines(memo):
+    language = memo["language"]
     if "priority" not in memo:
-        return [f"- Could not source: {_md(reason)}" for reason in memo["could_not_source"]] + [""]
+        return [f"- {_md(phrase('page.could_not_source', language))} {_md(reason)}" for reason in memo["could_not_source"]] + [""]
     lines = []
     for rank, item in enumerate(memo["priority"]["recommendations"], 1):
         advisor = item["advisor"]
         lines += [f"## {rank}. {_md(item['headline'])}", "", _md(item["body"], block=True), "",
-                  f"FIRST STEP: {_md(item['first_step'])}", ""]
-        lines += [f"- Evidence: {_md(f['claim'])} ({_md(f['source'])})" for f in item["evidence"]]
-        lines += [f'- Advisor: "{_md(advisor["quote"])}" — {_md(advisor["name"])} '
-                  f'({_url(advisor["url"]) or "unlinked source"})', ""]
+                  f"{_md(phrase('page.first_step', language))}: {_md(item['first_step'])}", ""]
+        lines += [f"- {_md(f['claim'])} ({_md(f['source'])})" for f in item["evidence"]]
+        lines += [f'- {_md(phrase("page.advice_from", language))}: "{_md(advisor["quote"])}" — {_md(advisor["name"])} '
+                  f'({_url(advisor["url"]) or _md(advisor["name"])})', ""]
     questions = memo["priority"].get("questions") or []
     if questions:
-        lines += ["## Questions", ""] + [f"- {_md(q)}" for q in questions] + [""]
+        lines += [f"## {_md(phrase('page.questions', language))}", ""] + [f"- {_md(q)}" for q in questions] + [""]
     return lines
 
 
@@ -112,25 +116,38 @@ def record(wiki, memo_json, chat, now):
     rel = f"{MEMOS}/{memo['date']}.md"
     mark = MARK.format(hashlib.sha256(raw).hexdigest()[:12])
     ensure(wiki, chat)
-    existing = wiki.read(rel)
-    already = existing is not None and mark in existing
-    if not already:
-        card = archived_card(memo["priority"]) if "priority" in memo else None
-        urls = [_url(item["advisor"]["url"]) for item in (card or {}).get("recommendations", [])]
-        meta = {
-            "type": "Memo", "title": f"The Founder Memo, {memo['date']}",
-            "description": card["recommendations"][0]["headline"] if card
-            else " ".join(memo["could_not_source"][0].split()),
-            "category": "projects", "tags": ["memo"], "paper": PAPER_LINK, "date": memo["date"],
-            "sources": [{"resource": u} for u in dict.fromkeys(urls) if u] or [{"resource": f"plow-chat:{chat}"}],
-            "created": (split_page(existing)[0].get("created") if existing else None) or now.isoformat(timespec="seconds"),
-            "updated": now.isoformat(timespec="seconds"),
-            **({"priority": card} if card else {}),
-        }
-        body = [f"# The Founder Memo, {memo['date']}", mark, ""] + body_lines(memo)
-        # A second run the same night replaces the page: the memo is one per date.
-        wiki.write(rel, join_page(meta, "\n".join(body)))
+    lock_path = pt_home() / "record-memo.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "a") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        existing = wiki.read(rel)
+        already = existing is not None and mark in existing
+        newer = False
+        if existing:
+            previous = split_page(existing)[0].get("updated")
+            try:
+                newer = bool(previous) and datetime.fromisoformat(previous) > now
+            except (ValueError, TypeError):
+                pass  # An owner-edited timestamp does not block a delivered memo.
+        if not already and not newer:
+            card = archived_card(memo["priority"]) if "priority" in memo else None
+            urls = [_url(item["advisor"]["url"]) for item in (card or {}).get("recommendations", [])]
+            meta = {
+                "type": "Memo", "title": f"The Founder Memo, {memo['date']}",
+                "description": card["recommendations"][0]["headline"] if card
+                else " ".join(memo["could_not_source"][0].split()),
+                "category": "projects", "tags": ["memo"], "paper": PAPER_LINK, "date": memo["date"],
+                "sources": [{"resource": u} for u in dict.fromkeys(urls) if u] or [{"resource": f"plow-chat:{chat}"}],
+                "created": (split_page(existing)[0].get("created") if existing else None) or now.isoformat(),
+                "updated": now.isoformat(),
+                **({"priority": card} if card else {}),
+            }
+            body = [f"# The Founder Memo, {memo['date']}", mark, ""] + body_lines(memo)
+            # A second run the same night replaces the page: the memo is one per date.
+            wiki.write(rel, join_page(meta, "\n".join(body)))
     wiki.check()
+    if newer:
+        return f"SKIPPED: {rel} has a newer delivered memo"
     return f"SKIPPED: {rel} already has this memo" if already else f"RECORDED {rel}"
 
 
