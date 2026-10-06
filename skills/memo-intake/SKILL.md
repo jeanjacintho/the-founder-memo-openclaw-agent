@@ -45,8 +45,8 @@ change to narrate.
 ## "Run it now" / "re-evaluate my priorities" — not a topic
 
 It names no claim to look up; it asks for tonight's run now instead of at
-`memo.start`. Every run evaluates the priorities afresh; there is no copy of
-an older memo to reprint.
+`memo.start`. Every run evaluates the priorities afresh; to print the last memo
+again instead, see "Print it again" below.
 
 Queue it with `register_crons.py --now`, which `memo-render` documents
 under **On demand**; the paper arrives as its own message. If the output
@@ -58,6 +58,16 @@ and no second one was queued: say in one ⏳ line that the memo already in
 progress is on its way. With neither line, say it could not be queued. Never
 research or render it in this turn, and never fire a job with `openclaw cron
 run`.
+
+## "Print it again" / "print what you have" — no new run
+
+It reprints the last memo posted, as it was: no research, no render, no model
+work. Run bare
+`/opt/plow/skills/memo-print/scripts/print_edition.py /var/lib/plow/pt/last-edition/edition.pdf /var/lib/plow/pt/config.json`.
+Its last line says what happened: `page printed on <printer>`, a `skipped:`
+(no printer configured) or an `error:`. Tell the owner in one line. With no
+`last-edition/edition.pdf`, no memo has been posted yet: say so and offer to
+run one now. It is never a fresh evaluation.
 
 ## Corrections for the advisor desk
 
