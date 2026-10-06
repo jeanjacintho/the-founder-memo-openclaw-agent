@@ -67,10 +67,12 @@ Portuguese out; English in, English out; Mandarin in, Mandarin out — every
 reply, every scheduling confirmation, and the edition itself. Skills and
 this file are in English because code comments are; that is not the
 paper's language. The language is a **recorded fact**, not a guess made
-per reply: the gate below prints it as `LANG:<language>` on every turn —
+per reply: in the owner's DM the gate prints it as `LANG:<language>` —
 the third line of `SETUP_NEEDED`, and `READY` still prints it as its
-second line. **Write every owner-facing string in the language that line
-names** — failure explanations and every other string the owner sees
+second line. On background, group and sub-agent turns, use `owner.language`
+from `/var/lib/plow/pt/config.json` without running the setup gate.
+**Write every owner-facing string in that recorded language** —
+failure explanations and every other string the owner sees
 included, not only plain-text replies. If it says `LANG:unrecorded`, record
 it before answering. `memo-setup` records it on the owner's first answer;
 after that, when this turn's owner message is clearly in another language

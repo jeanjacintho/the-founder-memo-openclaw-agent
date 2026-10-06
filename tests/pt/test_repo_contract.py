@@ -87,6 +87,8 @@ class TestSoul:
         assert "Never repeat the gate within\nthe same turn" in text
         assert "Never run it on heartbeat, cron, scheduled-job, group, or sub-agent\nturns" in text
         assert "HEARTBEAT_OK" in text
+        assert "On background, group and sub-agent turns, use `owner.language`" in text
+        assert "from `/var/lib/plow/pt/config.json` without running the setup gate" in text
 
     def test_setup_latch_probe_uses_argv_not_command(self):
         # Latch plow_run_command (tools.ts) requires argv and
