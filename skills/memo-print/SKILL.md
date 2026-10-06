@@ -57,9 +57,9 @@ non-zero or running past 10 minutes — ends the same way:
 - `post_to_chat.py` posts the one line itself ("page not printed — <reason>;
   next scheduled run retries"); do not repeat it,
 - an event install (its `printer.url` is the print server) also gets one line
-  when the server takes the page, from `post_to_chat.py` itself: "🧾 Your daily
-  report is printed (#K7Q2). Pick it up from the Plow team at the printer.", with
-  the slip's own code; do not repeat it either,
+  when the server takes the page, from `post_to_chat.py` itself, in the owner's
+  language (`print.ready`): "🧾 Your daily report is printed (#K7Q2). Pick it up
+  from the Plow team at the printer.", with the slip's own code; do not repeat it,
 - do not retry in a loop, do not queue the page, do not re-run research to
   "fix" it. The next scheduled run recomposes and re-delivers on its own.
 

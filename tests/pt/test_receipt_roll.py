@@ -111,7 +111,7 @@ def test_the_slip_and_the_memo_message_carry_the_same_receipt_code(tmp_path, mon
         assert ('<p class="r-owner">Daniel</p>' in page) is (owner[0] == "Daniel") and "4477</p>" not in page.split("<blockquote>")[0]
     # The live delivery (post, persisted ticket, print finalizer): at an event, a print the server
     # took posts the "go get it" line with the slip's code; a failed print posts why, as before;
-    # a roll at home (no print server) says nothing new.
+    # a roll at home (no print server) says nothing new. The line follows the owner's language.
     config = tmp_path / "config.json"
     event_printer = {"configured": True, "paper": "72mm", "url": "https://print.example/print", "key": "k"}
     monkeypatch.setattr(post, "CONFIG_DEFAULT", str(config))
@@ -120,9 +120,12 @@ def test_the_slip_and_the_memo_message_carry_the_same_receipt_code(tmp_path, mon
     monkeypatch.setattr(post, "run_record_memo", lambda *a: "RECORDED")
     printed = f"🧾 Your daily report is printed ({code}). Pick it up from the Plow team at the printer."
     home_roll = {"configured": True, "paper": "72mm", "name": "Star_TSP100"}
-    for n, (printer, failure, said) in enumerate(((event_printer, None, printed), (home_roll, None, None),
-                                                  (event_printer, "page not printed — off", "page not printed — off"))):
-        config.write_text(json.dumps({"printer": printer}))
+    printed_pt = f"🧾 Seu relatório diário foi impresso ({code}). Retire com a equipe da Plow na impressora."
+    for n, (printer, language, failure, said) in enumerate((
+            (event_printer, "English", None, printed), (event_printer, "Português", None, printed_pt),
+            (home_roll, "English", None, None),
+            (event_printer, "English", "page not printed — off", "page not printed — off"))):
+        config.write_text(json.dumps({"printer": printer, "owner": {"language": language}}))
         run = tmp_path / f"run{n}"
         run.mkdir()
         (run / "edition.pdf").write_bytes(b"%PDF")
@@ -133,7 +136,7 @@ def test_the_slip_and_the_memo_message_carry_the_same_receipt_code(tmp_path, mon
         monkeypatch.setattr(post, "post_json", lambda *a: posts.append(a[-1]["body"]))
         monkeypatch.setattr(sys, "argv", ["post_to_chat.py", "--pdf", str(run / "edition.pdf")])
         post.main()
-        assert posts == ["", *([said] if said else [])], (printer, failure)
+        assert posts == ["", *([said] if said else [])], (printer, language, failure)
 
 
 def test_no_owners_chat_yet_prints_the_slip_without_a_code(tmp_path, monkeypatch):

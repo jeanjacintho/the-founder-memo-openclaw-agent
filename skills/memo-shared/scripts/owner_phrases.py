@@ -46,6 +46,7 @@ SOURCE = {
     "print.retry": "; next scheduled run retries",
     "print.timeout": PRINT_TIMEOUT_NOTE,
     "print.no_pdf": "no PDF to print at {path}",
+    "print.ready": "🧾 Your daily report is printed ({code}). Pick it up from the Plow team at the printer.",
     "edition.failed": "The edition was not delivered because a required run step failed.",
     "attempts.cooldown": "The edition has not arrived. I am pausing retries until at least {time}; delivery is not confirmed.",
     "attempts.spent_scheduled": ("The edition was not delivered after repeated attempts, so I am not "
@@ -69,6 +70,7 @@ PORTUGUESE = {
     "print.retry": "; a próxima edição agendada tenta de novo",
     "print.timeout": "resultado desconhecido: ainda em execução após {seconds}s",
     "print.no_pdf": "nenhum PDF para imprimir em {path}",
+    "print.ready": "🧾 Seu relatório diário foi impresso ({code}). Retire com a equipe da Plow na impressora.",
     "edition.failed": "A edição não foi entregue porque uma etapa necessária da execução falhou.",
     "attempts.cooldown": "A edição ainda não chegou. Vou pausar as tentativas até pelo menos {time}; a entrega não está confirmada.",
     "attempts.spent_scheduled": ("A edição não foi entregue depois de várias tentativas, então não vou "
@@ -120,7 +122,7 @@ def table(language=None):
     language = current_language() if language is None else language
     stored = _stored()
     if stored and language and stored.get("language") == language and not problems(
-            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown", "edition.failed")):
+            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown", "edition.failed", "print.ready")):
         # Old packs keep their existing translations; status() still requires
         # a complete replacement before using the newly introduced labels.
         return stored["phrases"]
@@ -128,7 +130,8 @@ def table(language=None):
 
 
 def phrase(key, language=None, **fields):
-    text = table(language)[key]
+    # An older pack may lack a newer key it is still accepted without: English, never a KeyError.
+    text = table(language).get(key) or SOURCE[key]
     return text.format(**fields) if fields else text
 
 

@@ -348,10 +348,9 @@ def event_receipt():
 
 
 def printed_line(uid):
-    """The attendee's "go get it" once the event printer took the memo (the CEO's words, Oct 6).
-    The code is the one the slip prints, so the slip and the phone match. Event installs write
-    English."""
-    return f"🧾 Your daily report is printed ({receipt_code(uid)}). Pick it up from the Plow team at the printer."
+    """The attendee's "go get it" once the event printer took the memo (the CEO's words, Oct 6),
+    in their language. The code is the one the slip prints, so the slip and the phone match."""
+    return phrase("print.ready", owner_language(CONFIG_DEFAULT), code=receipt_code(uid))
 
 
 def deliver(base, uid, token, *, pdf, filename=None, on_posted=None):
