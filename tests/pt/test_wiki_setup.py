@@ -134,13 +134,23 @@ def times_install(mac):
 
 
 class TestTimesUpgrade:
-    @pytest.mark.parametrize("missing_index", [False, True])
-    def test_upgrade_preserves_owner_notes_links_and_readable_history(self, mac, missing_index):
+    @pytest.mark.parametrize("index_state", ["current", "missing", "stale"])
+    def test_upgrade_preserves_owner_notes_links_and_readable_history(self, mac, index_state):
         from datetime import date
         history = load_module("history", "memo-tournament/scripts/history.py")
         before = times_install(mac)
-        if missing_index:
+        if index_state == "missing":
             (wiki_dir(mac) / "index.md").unlink()
+        expected_history = [{"date": "2026-10-04", "desk": {"headline": "Close the pilot"}}]
+        if index_state == "stale":
+            edition = wiki_dir(mac) / ws.LEGACY_ROOT / "editions/2026-10-03.md"
+            previous = edition.with_name("2026-10-04.md").read_text()
+            edition.write_text(previous.replace("2026-10-04", "2026-10-03").replace("Close the pilot", "Review the outcome"))
+            assert "2026-10-03" not in (wiki_dir(mac) / "index.md").read_text()
+            expected_history.insert(0, {"date": "2026-10-03", "desk": {"headline": "Review the outcome"}})
+            # Reindexing refreshes the old overview's generated table, keeping authored notes.
+            before.pop(wiki_dir(mac) / ws.LEGACY_OVERVIEW)
+            before[edition] = edition.read_bytes()
         w = Wiki(mac.call_tool)
         ws.ensure(w, "cht_1", desk=True)
         for rel in (QA, RESOURCES):
@@ -153,9 +163,11 @@ class TestTimesUpgrade:
         assert "tags:\n- memo" in overview and "## Memos\n" in overview
         assert "## My notes\nKeep the pilot outcomes visible." in overview
         assert (wiki_dir(mac) / ROOT / "Café notes.md").exists()
-        assert history.recent(w, date(2026, 10, 5)) == [
-            {"date": "2026-10-04", "desk": {"headline": "Close the pilot"}}]
+        assert history.recent(w, date(2026, 10, 5)) == expected_history
         assert {p: p.read_bytes() for p in before} == before
+        legacy_overview = (wiki_dir(mac) / ws.LEGACY_OVERVIEW).read_text()
+        assert "# The Founder Times\n" in legacy_overview
+        assert "## My notes\nKeep the pilot outcomes visible." in legacy_overview
         assert f'[roots."{ws.LEGACY_ROOT}"]' in (wiki_dir(mac) / "wiki.toml").read_text()
         assert mac.wiki("validate", "--writer", "founder-memo")["exit_code"] == 0
         ready = files(mac)
@@ -185,7 +197,6 @@ class TestTimesUpgrade:
 
     def test_index_failure_does_not_declare_a_blank_new_root(self, mac, monkeypatch):
         times_install(mac)
-        (wiki_dir(mac) / "index.md").unlink()
         w = Wiki(mac.call_tool)
         monkeypatch.setattr(w, "run", lambda *args, **kwargs: (1, "index failed"))
         with pytest.raises(ws.LatchError, match="wiki index: index failed"):
