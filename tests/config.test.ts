@@ -215,7 +215,6 @@ test("native messaging retains local workspace and memory file tools", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools, {
     profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
       "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
-      "plow_google", "plow_slack", "plow_connect",
       "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
       "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
     ], deny: ["ask_user", "secrets"],
@@ -223,12 +222,14 @@ test("native messaging retains local workspace and memory file tools", () => {
   });
 });
 
-test("Google and Slack go through the Plow API only when there is no Latch", () => {
+test("Google and Slack go through the Plow API only when the owner has no Latch", () => {
   const connectors = ["plow_google", "plow_slack", "plow_connect"];
-  const without = renderConfig(identity, "http://api:8000").tools.alsoAllow;
-  const withLatch = renderConfig({ ...identity, mcp_url: "http://api:8000/v1/relay/devices/d/mcp" }, "http://api:8000").tools.alsoAllow;
-  assert.ok(connectors.every(name => without.includes(name)));
-  assert.ok(connectors.every(name => !withLatch.includes(name)));
+  const relay = { mcp_url: "http://api:8000/v1/relay/devices/d/mcp" };
+  const allowed = (extra: object) => renderConfig({ ...identity, ...relay, ...extra }, "http://api:8000").tools.alsoAllow;
+  // Every agent gets an mcp_url; only latch_paired says whether a Mac is behind it.
+  assert.ok(connectors.every(name => allowed({ latch_paired: false }).includes(name)));
+  assert.ok(connectors.every(name => !allowed({ latch_paired: true }).includes(name)));
+  assert.ok(connectors.every(name => !allowed({}).includes(name)), "an API without latch_paired keeps the Mac path");
 });
 
 test("exec resolves python3 to the newspaper venv", () => {
