@@ -18,6 +18,7 @@ Exit 0 either way so a missing config is not mistaken for a crashed check.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -59,9 +60,14 @@ def draft_line(config_path):
     try:
         draft = json.loads(draft_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return "DRAFT:none"
+        draft = {}
     if not isinstance(draft, dict):
-        return "DRAFT:none"
+        draft = {}
+    if os.environ.get("MEMO_EVENT"):
+        # An event install's hour, printer and Mac come from the event, before any
+        # answer: its first turn is the connect question, never the hour.
+        import record_setup  # noqa: PLC0415 -- only an event install needs it
+        record_setup.apply_event(draft)
     fields = []
     hour = draft.get("start")
     if isinstance(hour, str) and hour.strip():
@@ -72,6 +78,8 @@ def draft_line(config_path):
     mac = draft.get("mac")
     if isinstance(mac, dict) and isinstance(mac.get("awake"), bool):
         fields.append("awake")
+    if draft.get("connected") is True:
+        fields.append("connected")
     return "DRAFT:" + (",".join(fields) if fields else "none")
 
 

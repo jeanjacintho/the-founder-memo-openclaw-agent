@@ -11,7 +11,7 @@ the Mac will be awake to read, then hands over to the first read.
 `/var/lib/plow/pt/config.json` and `/var/lib/plow/pt/.setup-draft.json` are
 the **only** record of how far it got — not the Plow Chat thread. Older
 messages about a printer after a wiped session are leftover; if the draft is
-missing, start at the hour. Do **not** ask their timezone — Latch location at
+missing, start at the hour (an event install never does: see An event install). Do **not** ask their timezone — Latch location at
 the end supplies `owner.timezone`. Never re-ask something the draft or config
 already holds.
 
@@ -113,6 +113,9 @@ machine, and mail, calendar and Slack come only through the owner's Plow
 connections. `record_setup.py` fills the start hour (the event's), the printer (the
 event's shared printer line, 72 mm) and the Mac fields itself, so the first
 `NEXT_QUESTION` is `connect`: never ask about an hour, a printer, a Mac or a city.
+The gate's `DRAFT:` line already reads `start,printer,awake` on the very first
+turn, whatever the owner wrote: the question is **connect**, never the hour, until
+it reads `connected`; then it is **close**.
 
 **connect** — call `plow_connect` once for `google` and once for `slack`, and send
 the owner one message, in their language: one line on what connecting gives their
