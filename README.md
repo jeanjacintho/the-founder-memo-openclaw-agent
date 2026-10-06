@@ -100,7 +100,7 @@ could not source, and a print that cannot reach the printer is reported in
 chat in your language.
 
 The printer is whatever CUPS on the Mac calls it (`lpstat -p`); setup asks
-once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
+once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 
 ## How it runs
 
@@ -152,6 +152,25 @@ Luna answers if Plow cannot serve Sol. `AGENT_PROVIDER` (`plow`,
 environment instead and outrank the marker; OpenAI then takes
 `OPENAI_API_KEY` or the sign-in, and OpenRouter `OPENROUTER_API_KEY`. After
 changing them, restart and run `plow-llm sync` to move the scheduled jobs.
+
+The nightly tournament can run its writers and its critics on two models from
+different providers. Set both, each with its USD price per million tokens
+(`input,output`), in `plow-credentials`:
+
+```sh
+MEMO_MODEL_WRITER=plow/<provider>/<model>
+MEMO_MODEL_WRITER_PRICE=<input>,<output>
+MEMO_MODEL_CRITIC=plow/<another provider>/<model>
+MEMO_MODEL_CRITIC_PRICE=<input>,<output>
+```
+
+The prices register the role models for OpenClaw's usage accounting. The run-cost
+reader and dollar ceiling land in later steps of issue #59; this PR does not
+enforce a spending limit. The current tournament still directly spawns leaf
+workers; phase coordinators and depth-2 execution also land later.
+Boot refuses one without the other, a missing or
+malformed price, and a critic from the writer's provider. With neither set,
+every child runs on the chat's model.
 
 The sign-in is a real credential for your account, kept in the state volume
 where the agent's own tools can read it. Use it on an install only you

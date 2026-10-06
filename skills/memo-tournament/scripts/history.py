@@ -4,7 +4,7 @@
 usage: history.py recent [--topic <topic_id>]
 
 Prints JSON, oldest first, reading the edition pages record_edition.py writes
-(projects/thefoundertimes/editions/<date>.md). Bare, it is the advisor's desk's
+(projects/founder-memo/editions/<date>.md). Bare, it is the advisor's desk's
 own history: [{"date", "desk"}], the `priority` card each of the 7 days
 before today carries. With `--topic`, it is one news section's:
 [{"date", "headline", "printed": [{"claim", "url"}]}], what record_edition.py

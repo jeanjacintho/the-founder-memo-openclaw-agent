@@ -885,14 +885,14 @@ class TestSkills:
             "rewrite every reference to the owner by name or role into direct",
             "question in the owner's language -- the literal value read during Orient",
             "is a defect, not a style choice",
-            "`RUN_PAGE=~/Plow/wiki/projects/thefoundertimes/runs/<run-datetime>/state.md`",
+            "`RUN_PAGE=~/Plow/wiki/projects/founder-memo/runs/<run-datetime>/state.md`",
             "sanitized `reads`",
             "reopens decisive public read receipts",
             "never contain raw private queries, selectors, URLs, or excerpts",
             "item (a re-open handle, not content)",
             "only after the renderer succeeds and `tournament.json` is atomically published",
             "keep its `sources` a non-empty list",
-            '`["wiki", "validate", "--writer", "thefoundertimes"]`',
+            '`["wiki", "validate", "--writer", "founder-memo"]`',
         ):
             assert clause in text
         desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()

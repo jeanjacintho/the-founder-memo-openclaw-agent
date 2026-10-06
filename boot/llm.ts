@@ -53,3 +53,38 @@ export function llmRoute(env: NodeJS.ProcessEnv = process.env, marker = readLlmM
   if (!model) return { route: PLOW_ROUTE, problem: `${chosen} needs AGENT_MODEL, staying on Plow` };
   return { route: { provider: chosen, primary: `${chosen}/${model}`, fallbacks: [PLOW_MODEL, PLOW_LUNA] } };
 }
+
+// The memo tournament's writer and critic, passed per child at spawn time.
+// Both or neither: without them every child runs on the chat's own model. Each
+// is a Plow model carrying its USD-per-million-token price, so OpenClaw records
+// a costUsd for every child and the nightly dollar ceiling can bind; a critic
+// from the writer's own provider would share the writer's blind spots.
+export type RoleModel = { ref: string; id: string; cost: { input: number; output: number } };
+export type MemoRoles = { writer: RoleModel; critic: RoleModel };
+
+function roleModel(env: NodeJS.ProcessEnv, role: "WRITER" | "CRITIC"): RoleModel {
+  const ref = env[`MEMO_MODEL_${role}`]!.trim();
+  const match = /^plow\/([^/]+\/.+)$/.exec(ref);
+  if (!match) throw new Error(`MEMO_MODEL_${role} must be a plow/<provider>/<model> id, got ${JSON.stringify(ref)}`);
+  const price = (env[`MEMO_MODEL_${role}_PRICE`] ?? "").split(",").map(part => part.trim());
+  const [input, output] = price.map(Number);
+  if (price.length !== 2 || price.some(part => part === "") || ![input, output].every(n => Number.isFinite(n) && n >= 0)) {
+    throw new Error(`MEMO_MODEL_${role}_PRICE must be "<input>,<output>" USD per million tokens`);
+  }
+  return { ref, id: match[1], cost: { input, output } };
+}
+
+export function memoRoles(env: NodeJS.ProcessEnv = process.env): MemoRoles | undefined {
+  const writerSet = Boolean(env.MEMO_MODEL_WRITER?.trim()), criticSet = Boolean(env.MEMO_MODEL_CRITIC?.trim());
+  if (!writerSet && !criticSet) return undefined;
+  if (!writerSet || !criticSet) throw new Error("set both MEMO_MODEL_WRITER and MEMO_MODEL_CRITIC, or neither");
+  const writer = roleModel(env, "WRITER"), critic = roleModel(env, "CRITIC");
+  if (writer.id.split("/")[0] === critic.id.split("/")[0]) throw new Error("critic must be a different provider than writer");
+  return { writer, critic };
+}
+
+/** The `{{writer_model}}` / `{{critic_model}}` the prompt names, when the roles are set. */
+export function roleModels(env: NodeJS.ProcessEnv = process.env): { writer: string; critic: string } | undefined {
+  const roles = memoRoles(env);
+  return roles && { writer: roles.writer.ref, critic: roles.critic.ref };
+}

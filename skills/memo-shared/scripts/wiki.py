@@ -1,10 +1,9 @@
-"""wiki.py -- The Founder Times' pages in the owner's wiki, over Latch.
+"""wiki.py -- The Founder Memo's pages in the owner's wiki, over Latch.
 
 The wiki is plow-wiki: an Obsidian vault at ~/Plow/wiki in OKF v0.2, kept by
-the `wiki` plugin Latch bundles. The paper owns one root,
-projects/thefoundertimes (writer `thefoundertimes`), and shares one page,
-entities/owner/goals.md. Installs from before the rename kept their pages
-under projects/theplowtimes; wiki_setup.py copies them over once. Pages move with plow_read_file and
+the `wiki` plugin Latch bundles. The memo owns one root,
+projects/founder-memo (writer `founder-memo`), and shares one page,
+entities/owner/goals.md. Pages move with plow_read_file and
 plow_write_file (no approval inside ~/Plow); the CLI runs through
 plow_run_command, under whatever approval mode the Mac is in.
 """
@@ -16,18 +15,16 @@ from latch_mcp import LatchError, finish_command
 from latch_mcp import connect as latch_connect
 
 WIKI = "~/Plow/wiki"
-WRITER = "thefoundertimes"
+WRITER = "founder-memo"
 ROOT = f"projects/{WRITER}"
-LEGACY_WRITER = "theplowtimes"
-LEGACY_ROOT = f"projects/{LEGACY_WRITER}"
-LEGACY_OVERVIEW = f"{LEGACY_ROOT}/{LEGACY_WRITER}.md"
 OVERVIEW = f"{ROOT}/{WRITER}.md"
+# The day's printed edition until memo-render records memos/<date>.md instead.
 EDITIONS = f"{ROOT}/editions"
 QA = f"{ROOT}/qa.md"
 RESOURCES = f"{ROOT}/resources.md"
 GOALS = "entities/owner/goals.md"
 SCHEMA = f"_meta/schemas/{ROOT}.md"
-PAPER_LINK = f"[The Founder Times](/{OVERVIEW})"
+PAPER_LINK = f"[The Founder Memo](/{OVERVIEW})"
 
 
 def split_page(text):
@@ -67,7 +64,7 @@ class Wiki:
     def run(self, *args, write=False):
         """`wiki <args>` through Latch's wiki plugin: (exit_code, output)."""
         params = {"argv": ["wiki", *args], "wait_ms": 60000,
-                  "goal": f"Keep The Founder Times' pages in your wiki (wiki {args[0]})"}
+                  "goal": f"Keep The Founder Memo's pages in your wiki (wiki {args[0]})"}
         if write:
             params["write_paths"] = [WIKI]
         result = finish_command(
