@@ -14,6 +14,10 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 
 - `scripts/pt_config_gate.py` — the single definition of a valid `pt/config.json`;
   prints failing invariant names, empty stdout is pass
+- `scripts/run_gate.py wait --started <ISO-8601> --window <minutes>` — probes the Mac;
+  exits 0 (`MAC:reachable`), 2 (`MAC:window-closed`), or 3 (`MAC:still-waiting`).
+  Retry exit 3 with the same start time; each CLI call waits at most 25 minutes.
+  This helper is for the upcoming nightly engine; current cron behavior is unchanged.
 - `scripts/setup_needed.py` — live-chat first-run gate: prints `SETUP_NEEDED`
   then `DRAFT:` and `LANG:`, or `READY` then `LANG:` (from `pt/config.json`;
   missing file is needed)
