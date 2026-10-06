@@ -13,8 +13,10 @@ edition.json is one of two shapes, both with
 `"date": "YYYY-MM-DD"`, `"language": "<owner.language>"` and
 `"run": {"usd": <float or null>, "minutes": <int>}`:
 
-  * the night's three priorities: `"priority": {"recommendations": [3 items],
-    "questions": [...]}`, the culler's card. It prints only beside
+  * the night's ranked card: `"priority": {"recommendations": [3 items],
+    "questions": [...]}`, the culler's card. The page prints only its #1
+    recommendation -- the one thing to do -- with the questions; the receipt
+    prints the #1 alone. It prints only beside
     `--tournament`, the accepted checkpoint it came from: dated the memo's
     date, at least three completed generations, its gated stage, and its
     champions and card exactly the ones printed.
@@ -275,17 +277,11 @@ def render(memo, template_text=None):
     language = memo["language"]
     if status(language) != "ready":
         raise CardError("owner phrases need translation before rendering the memo")
-    if "priority" in memo:
-        priority = memo["priority"]
-        body = "\n".join(priority_html(rank, item, language)
-                         for rank, item in enumerate(priority["recommendations"], 1))
-        if priority.get("questions"):
-            items = "".join(f"<li>{_esc(q)}</li>" for q in priority["questions"])
-            body += f'\n<section class="questions"><h3>{_esc(phrase("page.questions", language))}</h3><ul>{items}</ul></section>'
-    else:
-        items = "".join(f"<li>{_esc(r)}</li>" for r in memo["could_not_source"])
-        body = (f'<section class="unavailable"><h3>{_esc(phrase("page.could_not_source", language))}</h3>'
-                f"<ul>{items}</ul></section>")
+    body = one_thing_html(memo, language)
+    questions = memo.get("priority", {}).get("questions")
+    if questions:  # the owner's answers are what make tomorrow's advice better informed
+        items = "".join(f"<li>{_esc(q)}</li>" for q in questions)
+        body += f'\n<section class="questions"><h3>{_esc(phrase("page.questions", language))}</h3><ul>{items}</ul></section>'
     text = template_text if template_text is not None else TEMPLATE.read_text(encoding="utf-8")
     for slot, value in {
         "{{LANG}}": _esc(language), "{{MASTHEAD}}": _esc(MASTHEAD),
@@ -295,6 +291,45 @@ def render(memo, template_text=None):
     }.items():
         text = text.replace(slot, value)
     return text
+
+
+def one_thing_html(memo, language):
+    """The card the memo prints: the culler's #1 recommendation (it still ranks
+    three; the owner asked for the one thing), or why the night has none."""
+    if "priority" in memo:
+        return priority_html(1, memo["priority"]["recommendations"][0], language)
+    items = "".join(f"<li>{_esc(r)}</li>" for r in memo["could_not_source"])
+    return (f'<section class="unavailable"><h3>{_esc(phrase("page.could_not_source", language))}</h3>'
+            f"<ul>{items}</ul></section>")
+
+
+# A 72 mm thermal roll (printer.paper "72mm"; Star TSP100). The Letter page shrunk
+# to 72 mm prints ~2.5 pt type, so the roll gets its own page with the same card.
+# One tall page; the driver's variable-length mode cuts the paper after the ink.
+RECEIPT_CSS = """
+@page { size: 72mm 2000mm; margin: 2mm 3mm 6mm; }
+body { margin: 0; color: #000; font: 11px/1.35 Georgia, "Times New Roman", "Liberation Serif", serif; }
+.r-masthead { margin: 0; font: 700 10px/1.2 Arial, sans-serif; letter-spacing: 1px; text-align: center; text-transform: uppercase; }
+.r-date { margin: 1px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #000; font: 9px Arial, sans-serif; text-align: center; }
+.rank { display: none; }
+h2 { margin: 0 0 5px; font-size: 16px; line-height: 1.15; }
+h3 { margin: 0 0 4px; font-size: 12px; }
+p { margin: 0 0 5px; }
+.evidence { margin: 0 0 5px; padding-left: 14px; font-size: 9px; }
+.first-step { font-weight: 700; }
+.src { font-style: italic; }
+a { color: #000; text-decoration: none; }
+blockquote { margin: 6px 0 0; padding-top: 4px; border-top: 1px solid #000; font-style: italic; }
+"""
+
+
+def receipt_html(memo):
+    """The roll's page: the same card as the Letter page, at 72 mm."""
+    language = memo["language"]
+    return (f'<!doctype html><html lang="{_esc(language)}"><head><meta charset="utf-8">'
+            f"<style>{RECEIPT_CSS}</style></head><body>"
+            f'<p class="r-masthead">{_esc(MASTHEAD)}</p><p class="r-date">{_esc(memo["date"])}</p>'
+            f"{one_thing_html(memo, language)}</body></html>")
 
 
 def write_pdf(html_text, path):

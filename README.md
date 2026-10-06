@@ -2,7 +2,7 @@
 
 Your nightly advisor, printed. While you sleep it reads your mail, messages,
 meetings, calendar and the web on your Mac, argues the options out in the voice
-of advisors you trust, and puts **the three priorities that matter most** in
+of advisors you trust, and puts **the one priority that matters most** in
 the printer tray — the same PDF in chat.
 
 An [OpenClaw](https://github.com/openclaw/openclaw) agent on
@@ -30,8 +30,9 @@ Every night, from the start hour, it runs a tournament on your Mac through
    different provider), a culler keeps the three best. At least three
    generations, then more while the window and the ceiling allow.
 4. **Freshness** — re-reads the names the winners rest on.
-5. **Publish** — prints the memo: three priorities, each with its evidence, its
-   **first step** and a sourced line from the advisor it applies; the questions
+5. **Publish** — prints the memo: the culler's #1 priority with its evidence,
+   its **first step** and a sourced line from the advisor it applies (a 72 mm
+   receipt printer, `printer.paper: "72mm"`, gets that card alone); the questions
    whose answers would change the advice; and one line with what tonight's
    research cost and how long it took ("cost unavailable" when a model has no
    price — never $0.00).

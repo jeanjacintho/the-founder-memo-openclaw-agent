@@ -74,7 +74,7 @@ Portuguese:
 
 English:
 
-> 📰 Hi — I'm The Founder Memo: every night I read your mail, messages and calendar, and in the morning your top 3 priorities are printed. What time should I start? If you don't say, I'll start at 1:00.
+> 📰 Hi — I'm The Founder Memo: every night I read your mail, messages and calendar, and in the morning the one priority that matters most is printed. What time should I start? If you don't say, I'll start at 1:00.
 
 **Changing one setting later** is not this skill: a different start hour
 (`memo.start`, the owner's own clock — never ask the zone again), **turning a
