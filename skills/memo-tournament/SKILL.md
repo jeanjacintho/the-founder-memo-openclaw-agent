@@ -472,6 +472,43 @@ then gate and publish its candidate (§ Candidate).
    `write_paths` `["~/Plow/wiki"]`: the night's diff and its revert point.
 4. Release the lock.
 
+## Event
+
+An event install (the image sets `MEMO_EVENT`) prints its first memo while its owner is still in
+the room: one short read in this session, then the card. No phases, no children, no generations,
+no Freshness. The card is a night's card (memo-render's shape and every rule the renderer checks);
+only where it comes from differs.
+
+1. Start, steps 1, 3, 5 and 6 (no attempts count, no Mac to wait for).
+2. Read, in this session and in at most twelve tool calls:
+   - `~/Plow/wiki/entities/owner/goals.md` through `plow__plow_read_file`;
+   - Google through `plow_google`: `["accounts"]`, then for each connected account the last 14 days
+     of mail the owner sent or answered (subjects and snippets, at most 25 threads) and the next
+     7 days of calendar; `["--help"]` names the exact argv;
+   - Slack through `plow_slack`: `["status"]`, then, if connected, the owner's last 7 days of
+     direct messages and mentions.
+   With nothing connected and nothing in `goals.md`, the memo is a `could_not_source` one saying
+   that the read needs their Google or Slack connected.
+3. Pick the three things that matter most for their company this week, ranked. Each recommendation:
+   `headline`; `body` (at most 1024 characters); `evidence`, one to three `{claim, source, url}`
+   facts from what you read (`source` names the thread, meeting or channel; `url` only when you
+   have a real one); `first_step`, something they can do today; and `advisor`: one quote copied
+   character for character from a `## Sourced words` line of a file in
+   `/opt/plow/skills/memo-setup/assets/advisors/`, with that line's URL and the file's `advisor:`
+   value as `name`. Three different quotes. `questions`: up to three that would change the ranking.
+4. Write `/var/lib/plow/pt/run/memo/edition.json` in memo-render's shape, `run.usd` from
+   `/opt/plow/skills/memo-shared/scripts/run_cost.py total --started <RUN_STARTED>` and `run.minutes`
+   the minutes so far.
+5. memo-render § Render and deliver, rendering **without** `--tournament` (an event card has no
+   checkpoint; the renderer accepts that only on an event install):
+
+       /opt/plow/skills/memo-render/scripts/render_memo.py /var/lib/plow/pt/run/memo/edition.json --pdf /var/lib/plow/pt/run/memo/edition.pdf
+
+   On `error: memo refused — …` fix the named fields and render again. Then post it with
+   `post_to_chat.py` exactly as memo-render says: it sends the memo to the owner and the receipt to
+   the event's printer.
+6. Release the lock. Queue nothing.
+
 ## Bootstrap
 
 The `memo-bootstrap` job runs once, a minute after setup: the first read of the company, so the

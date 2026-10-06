@@ -52,7 +52,12 @@ def test_finalize_runs_an_event_installs_first_memo_now_instead_of_the_bootstrap
     config = json.loads((tmp_path / "config.json").read_text())
     assert config["owner"]["timezone"] == "America/Los_Angeles"
     assert config["printer"] == {"configured": True, "name": None, "line": LINE, "paper": "72mm"}
+    # The event's short read (memo-tournament § Event), not the 240-minute tournament: the
+    # receipt prints while its owner is still in the room.
     assert [j["name"] for j in backend.created] == ["memo-now"]
+    job = backend.created[0]
+    assert "§ Event" in job["prompt"] and "The window is 30 minutes" in job["prompt"]
+    assert job["timeout"] < 240 * 60
 
 
 @pytest.mark.parametrize("printer, ok", [

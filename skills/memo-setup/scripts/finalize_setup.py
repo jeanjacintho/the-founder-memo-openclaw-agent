@@ -130,7 +130,7 @@ def main(argv=None, backend=None):
         backend = _crons.CronBackend()
     try:
         if draft.get("event"):
-            _crons.queue_now(backend, WINDOW_MINUTES, args.owner_tz)
+            _crons.queue_now(backend, _crons.EVENT_WINDOW_MINUTES, args.owner_tz, prompt=_crons.event_prompt())
         else:
             _crons.queue_bootstrap(backend, args.owner_tz, WINDOW_MINUTES, home=config_path.parent)
     except SystemExit as exc:

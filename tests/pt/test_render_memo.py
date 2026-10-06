@@ -180,6 +180,22 @@ def test_cli_refuses_a_card_without_its_checkpoint_and_leaves_no_pdf(tmp_path, m
     assert not pdf.exists()
 
 
+def test_an_event_install_prints_its_card_without_a_tournament(tmp_path, monkeypatch, capsys):
+    # memo-tournament § Event: one short read, no checkpoint. Only the event image's
+    # MEMO_EVENT lets a card through without one; every other install still refuses.
+    monkeypatch.setitem(sys.modules, "weasyprint", types.SimpleNamespace(HTML=FakeHTML))
+    monkeypatch.setenv("MEMO_EVENT", "EV-PLOW")
+    (tmp_path / "edition.json").write_text(json.dumps(memo()))
+    pdf = tmp_path / "edition.pdf"
+    assert render.main([str(tmp_path / "edition.json"), "--pdf", str(pdf)]) == 0
+    assert "The Founder Memo" in pdf.read_text() and capsys.readouterr().out.startswith("RENDERED")
+    bad = memo()
+    bad["priority"]["recommendations"][0]["advisor"]["quote"] = "Words nobody said."
+    (tmp_path / "edition.json").write_text(json.dumps(bad))
+    assert render.main([str(tmp_path / "edition.json"), "--pdf", str(pdf)]) == 1
+    assert "not in the named advisor file" in capsys.readouterr().err, "every card rule still holds"
+
+
 def test_overflow_is_refused_and_removes_the_stale_pdf(tmp_path, monkeypatch, capsys):
     class Overflow(FakeHTML):
         pages = [object(), object()]
