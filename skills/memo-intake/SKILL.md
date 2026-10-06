@@ -71,6 +71,24 @@ Its last line says what happened: `page printed on <printer>`, a `skipped:`
 `last-edition/edition.pdf`, no memo has been posted yet: say so and offer to
 run one now. It is never a fresh evaluation.
 
+## "Print a draft" / "print the incomplete run" — development only
+
+Only an explicit request for a draft uses this path. "Print it again" keeps
+using the last delivered memo above; never silently substitute a draft.
+First ensure owner phrases are ready, translating the complete template if
+needed, as `memo-render` documents. Then run:
+
+    /opt/plow/skills/memo-print/scripts/print_draft.py /var/lib/plow/pt/run/memo/edition.json /var/lib/plow/pt/config.json
+
+This prints a separate DRAFT diagnostic PDF with the available JSON and its
+validation failures, including failed reads. It accepts incomplete or old
+content without declaring it current, sourced or accepted. It does not
+research, repair the content, run the tournament, deliver a final memo,
+update the wiki, reset attempts, or replace the last delivered edition.
+A missing/unreadable JSON file is an actionable failure, not content to invent.
+Relay the script's actual outcome in one line in the owner's language;
+a shared printer's queue acceptance is not confirmation of physical printing.
+
 ## Corrections for the advisor desk
 
 Only when `priority.configured` is true. When the owner corrects the desk, answers a

@@ -42,7 +42,7 @@ from printer_config import read_printer as _printer
 RECEIPT_MEDIA = "X72MMY2000MM"
 
 PATH_RE = re.compile(
-    r"(/Users/[^\s'\"]+/Plow/pt/edition-[0-9-]+\.pdf(?:\.b64)?)"
+    r"(/Users/[^\s'\"]+/Plow/pt/edition-[0-9-]+(?:-draft)?\.pdf(?:\.b64)?)"
 )
 
 

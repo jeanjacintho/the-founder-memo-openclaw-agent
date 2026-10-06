@@ -180,3 +180,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   memo on or off; `--now` queues an enabled memo on demand. Changes are validated
   and saved before reconciliation (`saved:` confirms that write); only confirm
   scheduling after the command succeeds.
+
+- `print_draft.py <edition.json> <config.json>` (under `memo-print/scripts`):
+  print an explicitly requested development DRAFT from incomplete/old JSON,
+  with diagnostic failures, to the configured Letter or 72 mm printer. No
+  research, final delivery, wiki write, attempt reset or last-edition update.
