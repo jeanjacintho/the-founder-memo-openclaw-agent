@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import pathlib
 import re
 import sys
@@ -359,7 +360,10 @@ def main(argv=None):
         problems = memo_problems(memo)
         if not problems and isinstance(memo, dict) and "priority" in memo:
             if not a.tournament:
-                problems = ["a priority card prints only with --tournament, its accepted checkpoint"]
+                # An event install's card comes from one short read, not a tournament
+                # (memo-tournament § Event): the image says so, never the card.
+                if not os.environ.get("MEMO_EVENT"):
+                    problems = ["a priority card prints only with --tournament, its accepted checkpoint"]
             else:
                 tournament = json.loads(pathlib.Path(a.tournament).read_text(encoding="utf-8"))
                 problems = checkpoint_problems(memo, tournament)
