@@ -64,7 +64,9 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
-  the Mac has none, writes
+  the Mac has none, copies an existing `projects/thefoundertimes` root's indexed
+  pages to `projects/founder-memo` once (links rewritten, old pages and root
+  declaration kept, already-copied pages never overwritten), writes
   the memo's schema and page when absent, declares
   `projects/founder-memo` in `wiki.toml` (appending; no other root is touched), and
   with `--desk` the goals page and the desk's Q&A, carrying an older install's notes
