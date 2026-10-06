@@ -99,6 +99,12 @@ SKILL_LOADING = (
 )
 
 
+def _is_legacy_paper_job(name):
+    return name in ("pt-daily-edition", "pt-daily-edition-now", "pt-deliver") or (
+        re.fullmatch(r"pt-daily-edition-(?:[2-9]|[1-9]\d+)", name) is not None
+    )
+
+
 def run_timeout_seconds(window_minutes):
     return (window_minutes + PUBLISH_MARGIN_MINUTES) * 60
 
@@ -161,6 +167,7 @@ def load_memo(config_path=CONFIG_FILE):
         memo = {"start": f"{minutes // 60:02d}:{minutes % 60:02d}",
                 "window_minutes": DEFAULT_WINDOW_MINUTES, "max_usd": 100}
         config["memo"] = memo
+        config.pop("delivery", None)
         try:
             failures = _gate.gate(config)
         except _gate.GateError as exc:
@@ -269,6 +276,8 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
     # pass [] so argparse never reads the test runner's argv.
     parser.add_argument("--now", action="store_true",
                         help="after registering, queue tonight's run as a one-shot a minute out")
+    parser.add_argument("--start", help="set the owner's research start (HH:MM)")
+    parser.add_argument("--enabled", choices=("on", "off"), help="enable or disable nightly memos")
     args = parser.parse_args(argv if argv is not None else [])
 
     if backend is None:
@@ -278,13 +287,28 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
 
     owner_tz = load_owner_zone(config_path)
     start, window = load_memo(config_path)
+    if args.start is not None or args.enabled is not None:
+        path, config = _config(config_path)
+        if args.start is not None:
+            config["memo"]["start"] = args.start
+        if args.enabled is not None:
+            config["priority"] = {**(config.get("priority") or {}), "configured": args.enabled == "on"}
+        try:
+            failures = _gate.gate(config)
+        except _gate.GateError as exc:
+            raise SystemExit(f"refusing to change memo: {exc}") from exc
+        if failures:
+            raise SystemExit(f"refusing to change memo: {failures}")
+        _write_json(path, config)
+        start, window = load_memo(config_path)
+        print(f"saved: memo.start={start} priority.configured={(config.get('priority') or {}).get('configured', False)}")
     listing = backend.list()
     for job in listing:
-        if (job.name in ("pt-daily-edition", "pt-daily-edition-now", "pt-deliver") or re.fullmatch(r"pt-daily-edition-(?:[2-9]|[1-9]\d+)", job.name)) and job.running:
+        if _is_legacy_paper_job(job.name) and job.running:
             raise SystemExit(f"refusing to retire running legacy job {job.name}; retry after it finishes")
     registered = registered_jobs(listing)
     _, config = _config(config_path)
-    enabled = (config.get("priority") or {}).get("configured", True)
+    enabled = (config.get("priority") or {}).get("configured", False)
     desired = desired_jobs(start, window, owner_tz) if enabled else [deliver_job()]
     paused = []
 
@@ -318,7 +342,7 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
 
     # Exact legacy paper jobs only; unrelated pt-* automations belong to their owners.
     for job in listing:
-        if job.name in ("pt-daily-edition", "pt-daily-edition-now", "pt-deliver") or re.fullmatch(r"pt-daily-edition-(?:[2-9]|[1-9]\d+)", job.name):
+        if _is_legacy_paper_job(job.name):
             _check(backend.remove(job.id), f"could not retire legacy job {job.name}")
             print(f"retired legacy job: {job.name}")
 

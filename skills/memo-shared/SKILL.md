@@ -63,8 +63,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
   (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
 - `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
-  `entity_page.py merge --kind people|orgs --slug <lowercase-kebab-slug> --title <title> --dossier <file|->`,
-  the dossier `{"description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
+  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier -`,
+  the dossier `{"entity", "kind": "people|orgs", "slug": "lowercase-kebab-slug", "description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
   It replaces `## Now`, merges `## Timeline` on (date, item) newest first, capped at 20, keeps
   every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
   `wiki validate --writer shared`. Exit 1 names the problem on stderr; nothing is half-merged.
@@ -167,3 +167,9 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 - `references/config.example.json` — the config contract `pt_config_gate.py`
   enforces (including the optional `delivery.lead_minutes`, default 0, and
   optional `mail.configured`, default off)
+
+- `/opt/plow/skills/memo-schedule/scripts/register_crons.py` — reconcile the memo jobs.
+  `--start HH:MM` changes the research start; `--enabled on|off` turns the nightly
+  memo on or off; `--now` queues an enabled memo on demand. Changes are validated
+  and saved before reconciliation (`saved:` confirms that write); only confirm
+  scheduling after the command succeeds.

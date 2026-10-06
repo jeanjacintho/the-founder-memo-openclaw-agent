@@ -95,8 +95,14 @@ failure this whole skill exists to surface.
 Setup records `memo.start`, a four-hour window and $100 ceiling. Existing
 `delivery.*` configs migrate once, preserving owner, printer, signals and
 priority preferences; the start is the old delivery hour minus its lead,
-clamped at midnight. `priority.configured=false` registers no nightly memo.
+clamped at midnight. `priority.configured=false` or absent priority registers no nightly memo; migration removes obsolete `delivery` settings.
 Only after every replacement is registered, reconciled and enabled are the
 exact legacy `pt-daily-edition`, numbered editions, `pt-daily-edition-now` and
 `pt-deliver` jobs retired by id. Other `pt-*` jobs are untouched. A failed or
 disabled replacement leaves legacy jobs in place.
+
+## Owner changes
+
+Use `register_crons.py --start HH:MM` or `register_crons.py --enabled on|off`.
+These commands validate and save preferences before reconciling jobs; do not
+confirm a changed schedule if reconciliation fails. No direct config edit is needed.

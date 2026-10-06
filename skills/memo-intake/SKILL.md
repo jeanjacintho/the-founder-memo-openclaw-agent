@@ -1,6 +1,6 @@
 ---
 name: memo-intake
-description: Route one owner chat turn once setup is READY — a status question, a start-hour change, "run it now", a signal source switched on or off, or a correction for the advisor desk. Answered from the files and the scripts; never research inside the turn.
+description: Route one owner chat turn once setup is READY — a status question, a start-hour change, "run it now", enabling or disabling the nightly memo, a signal source switched on or off, or a correction for the advisor desk. Answered from the files and the scripts; never research inside the turn.
 ---
 
 # memo-intake — one chat turn, routed
@@ -26,12 +26,17 @@ change to narrate.
   `01:00`) and `memo.window_minutes` (default 240) and answer in the owner's
   own clock: the memo starts then and prints when its run finishes. A missing
   memo in this session's history is not evidence it never landed.
-- **"start it at 2am instead"** — set `memo.start` in `pt/config.json` to the
-  owner's own "HH:MM", validate with `pt_config_gate.py`, paste its output,
-  then re-run `/opt/plow/skills/memo-schedule/scripts/register_crons.py` so
-  `memo-nightly` moves **now** — never a hand-registered cron (see
-  `memo-schedule`). Confirm in one line, in the owner's own terms; never
-  mention the container's zone.
+- **"start it at 2am instead"** — run
+  `/opt/plow/skills/memo-schedule/scripts/register_crons.py --start 02:00`
+  with the requested owner's "HH:MM". The command validates and saves it,
+  then reconciles the schedule. Confirm only on success; if registration
+  fails after a `saved:` line, say the preference was saved but the schedule
+  still needs repair. Without that line, report the refusal and do not claim a change.
+- **"turn the memo on/off"** — run
+  `/opt/plow/skills/memo-schedule/scripts/register_crons.py --enabled on`
+  or the same command with `--enabled off`. This changes the nightly memo
+  without changing its hour, printer or signals. Confirm only on success;
+  report a reconciliation failure as above. Do not directly edit config.
 - **"listen to my groups / mail / iMessage" / "stop listening to …"** —
   `memo-setup`'s "Turning a signal source on or off": probe first for mail
   and iMessage, then `set_signal_source.py <source> <on|off>`. Confirm in
