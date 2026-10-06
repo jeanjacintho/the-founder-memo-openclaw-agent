@@ -10,6 +10,7 @@ plow_run_command, under whatever approval mode the Mac is in.
 from __future__ import annotations
 
 import yaml
+import json
 
 from latch_mcp import LatchError, finish_command
 from latch_mcp import connect as latch_connect
@@ -72,13 +73,42 @@ class Wiki:
         )
         return int(result["exit_code"]), str(result.get("output") or "")
 
-    def remove(self, rel):
+    def compare_and_swap(self, rel, expected, replacement):
+        """Check and replace on the Mac; False means its owner changed the page."""
+        script = '''import json, os, sys, tempfile
+from pathlib import Path
+rel, expected, replacement = json.loads(sys.argv[1])
+path = Path.home() / "Plow/wiki" / rel
+def current():
+    try: return path.read_bytes()
+    except FileNotFoundError: return None
+expected = expected.encode("utf-8") if expected is not None else None
+if current() != expected: sys.exit(3)
+if replacement is None:
+    path.unlink()
+else:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".memo-")
+    try:
+        with os.fdopen(fd, "wb") as out: out.write(replacement.encode("utf-8"))
+        os.chmod(tmp, path.stat().st_mode & 0o777 if expected is not None else 0o644)
+        if current() != expected: sys.exit(3)
+        if expected is None:
+            try: os.link(tmp, path)
+            except FileExistsError: sys.exit(3)
+        else: os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp): os.unlink(tmp)
+'''
         result = finish_command(self._call, self._call("plow_run_command", {
-            "argv": ["sh", "-c", 'rm -- "$HOME/Plow/wiki/$1"', "sh", rel], "write_paths": [WIKI],
-            "wait_ms": 60000, "goal": "Remove a rejected new entity page",
-        }), "remove rejected page")
-        if int(result["exit_code"]) != 0:
-            raise LatchError(f"remove rejected page: {result.get('output', '')}")
+            "argv": ["python3", "-c", script, json.dumps([rel, expected, replacement])],
+            "write_paths": [WIKI], "wait_ms": 60000,
+            "goal": "Update the entity page only if its owner has not changed it",
+        }), "conditional wiki update")
+        code = int(result["exit_code"])
+        if code not in (0, 3):
+            raise LatchError(f"conditional wiki update: {result.get('output', '')}")
+        return code == 0
 
     def _validate(self, writer, rel=None):
         """`wiki validate --writer <writer>`'s problem lines; exit 2 (unknown writer) raises."""

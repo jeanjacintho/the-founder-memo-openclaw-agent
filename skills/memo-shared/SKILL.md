@@ -72,7 +72,9 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   It replaces `## Now`, merges its marked `## Timeline` entries on (date, item) newest first,
   capped at 20, keeps unmarked owner entries (which win on matching keys), keeps
   every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
-  `wiki validate --writer shared`. Exit 1 names the problem on stderr; nothing is half-merged.
+  `wiki validate --writer shared`. Writes check the expected bytes on the Mac and retry
+  conflicting merges up to three times. Failed validation restores/removes only an unchanged
+  memo-written page; a subsequent owner save is preserved. Exit 1 names the problem on stderr.
 - `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints
   `{"usd": <float|null>, "sessions": n, "unpriced": m}` (every transcript call priced with its model's configured rates; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
   --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not

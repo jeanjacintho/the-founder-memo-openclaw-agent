@@ -144,6 +144,65 @@ def test_bare_cli_uses_owner_day(mac, merge_cli, monkeypatch):
     assert meta["created"] == meta["updated"] == "2026-10-02"
 
 
+def test_owner_save_after_read_is_merged_instead_of_overwritten(mac, merge_cli, monkeypatch):
+    assert merge_cli() == 0
+    path = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    original_call = mac.call_tool
+    saved = False
+
+    def tool(name, args):
+        nonlocal saved
+        result = original_call(name, args)
+        if name == "plow_read_file" and not saved:
+            path.write_text(path.read_text() + "\n## My notes\nSaved while the memo was reading.\n")
+            saved = True
+        return result
+
+    monkeypatch.setattr(mac, "call_tool", tool)
+    assert merge_cli({**D, "now": "Updated by memo."}) == 0
+    assert "Saved while the memo was reading." in path.read_text()
+    assert "Updated by memo." in path.read_text()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_failed_validation_never_rolls_back_over_owner_save(mac, merge_cli, monkeypatch, capsys, existing):
+    if existing:
+        assert merge_cli() == 0
+    path = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    original_call = mac.call_tool
+    owner_page = ep.merge(None, D, "people", "Jane", "2026-10-01") + "\n## My notes\nOwner save.\n"
+
+    def tool(name, args):
+        result = original_call(name, args)
+        if name == "plow_run_command" and args["argv"][:2] == ["wiki", "validate"]:
+            assert result["exit_code"] == 1
+            path.write_text(owner_page)
+        return result
+
+    monkeypatch.setattr(mac, "call_tool", tool)
+    assert merge_cli({**D, "sources": [{"resource": ""}]}) == 1
+    assert "wiki validate" in capsys.readouterr().err
+    assert path.read_text() == owner_page
+
+
+def test_repeated_owner_saves_fail_without_overwriting_notes(mac, merge_cli, monkeypatch, capsys):
+    assert merge_cli() == 0
+    path = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    original_call = mac.call_tool
+
+    def tool(name, args):
+        result = original_call(name, args)
+        if name == "plow_read_file":
+            path.write_text(path.read_text() + "\nAnother owner save.\n")
+        return result
+
+    monkeypatch.setattr(mac, "call_tool", tool)
+    assert merge_cli({**D, "now": "Must not be committed."}) == 1
+    assert "page changed during merge" in capsys.readouterr().err
+    assert path.read_text().count("Another owner save.") == 3
+    assert "Must not be committed." not in path.read_text()
+
+
 @pytest.mark.parametrize("reject_second", [False, True])
 def test_overlapping_updates_preserve_successful_page(mac, tmp_path, reject_second):
     mac.wiki("init", "~/Plow/wiki")

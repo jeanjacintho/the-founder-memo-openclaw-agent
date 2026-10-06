@@ -52,8 +52,9 @@ class FakeMac:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(args["content"], encoding="utf-8")
             return {"status": "completed", "path": str(path)}
-        if name == "plow_run_command" and args["argv"][:2] == ["sh", "-c"]:
-            done = subprocess.run(args["argv"], capture_output=True, text=True,
+        if name == "plow_run_command" and args["argv"][:2] in (["sh", "-c"], ["python3", "-c"]):
+            argv = [sys.executable, *args["argv"][1:]] if args["argv"][0] == "python3" else args["argv"]
+            done = subprocess.run(argv, capture_output=True, text=True,
                                   env={**os.environ, "HOME": str(self.home)})
             return {"exit_code": done.returncode, "output": done.stdout + done.stderr}
         if name == "plow_run_command" and args["argv"][0] == "wiki":

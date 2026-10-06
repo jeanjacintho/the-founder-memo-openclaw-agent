@@ -8,7 +8,8 @@ replaced, `## Timeline` is merged on (date, item), newest first, capped at 20,
 and every other section -- the owner's own -- is kept as written, as is any
 timeline line the owner wrote by hand. The page is then validated with the
 wiki's own CLI, and a problem fails the run loudly: exit 1, the problem on
-stderr, never a half-merged page left standing as if it were fine.
+stderr. Writes check the expected bytes on the Mac; validation rollback never
+restores over an owner save detected since the memo's write.
 
 Dossier: {"description": str, "now": str,
           "timeline": [{"date": "YYYY-MM-DD", "fact": str, "item": str}],
@@ -122,19 +123,21 @@ def main(argv=None, call_tool=None):
             dossier = json.load(f)
         w = Wiki(call_tool or latch_connect().call_tool)
         with guarded(pt_home() / "entity-locks" / a.kind / a.slug):
-            original = w.read(rel)
-            page = merge(original, dossier, a.kind, a.title, a.today or owner_today().isoformat())
-            try:
-                w.write(rel, page)
-                problems = w._validate("shared", rel)
-                if problems:
-                    raise LatchError("wiki validate: " + "; ".join(problems))
-            except (OSError, ValueError, KeyError, TypeError, LatchError):
-                if original is None:
-                    w.remove(rel)
-                else:
-                    w.write(rel, original)
-                raise
+            for _ in range(3):
+                original = w.read(rel)
+                page = merge(original, dossier, a.kind, a.title, a.today or owner_today().isoformat())
+                if not w.compare_and_swap(rel, original, page):
+                    continue
+                try:
+                    problems = w._validate("shared", rel)
+                    if problems:
+                        raise LatchError("wiki validate: " + "; ".join(problems))
+                except (OSError, ValueError, KeyError, TypeError, LatchError):
+                    w.compare_and_swap(rel, page, original)
+                    raise
+                break
+            else:
+                raise LatchError("page changed during merge; retry after the owner finishes editing")
     except (OSError, ValueError, KeyError, TypeError, LatchError) as exc:
         print(f"entity_page: {rel}: {exc}", file=sys.stderr)
         return 1
