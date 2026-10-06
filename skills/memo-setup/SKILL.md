@@ -70,7 +70,7 @@ chat.
 **Opener — send this, then stop and wait.** Copy it. Match the owner's language.
 Portuguese:
 
-> 📰 Oi! Eu sou o The Founder Memo: toda noite eu leio seu e-mail, mensagens e agenda e de manhã você tem as 3 prioridades impressas. A que horas eu começo? Se não disser nada, começo à 1h.
+> 📰 Oi! Eu sou o The Founder Memo: toda noite eu leio seu e-mail, mensagens e agenda e de manhã a prioridade que mais importa sai impressa. A que horas eu começo? Se não disser nada, começo à 1h.
 
 English:
 
