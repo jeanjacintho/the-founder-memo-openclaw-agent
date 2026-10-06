@@ -160,7 +160,7 @@ for (const owner of [false, true]) test(`a frame arriving while a synthesized ch
   const originalWrite = fs.writeFile;
   let injected = false;
   const writer = t.mock.method(fs, "writeFile", async (...args: Parameters<typeof fs.writeFile>) => {
-    if (!injected && String(args[0]).endsWith("/group.tmp") && JSON.parse(String(args[1])).uid === (owner ? `first:${baseline.uid}` : baseline.uid)) {
+    if (!injected && String(args[0]).endsWith("/group.tmp") && JSON.parse(String(args[1])).uid === `first:${baseline.uid}`) {
       injected = true;
       for (const socket of server.clients) {
         socket.send(JSON.stringify({ event_type: "message_received", event_id: "event", chat_id: chat.uid, data: { message } }));
@@ -287,7 +287,7 @@ for (const scenario of ["waited", "pending", "buffered", "buffered-before-read",
     });
     assert.equal(await checkpointUid(`${root}/plow-checkpoints/home`), scenario === "interrupted" && !boot ? "first:first" : twoMessages ? "newer" : "first");
   }
-  assert.deepEqual(turns, scenario === "interrupted" ? [{ uid: "first", firstContact: true }, { uid: "first", firstContact: true }] : twoMessages ? [{ uid: "first", firstContact: true }, { uid: "newer", firstContact: false }] : ["waited", "pending", "buffered", "fresh"].includes(scenario) ? [{ uid: "first", firstContact: true }] : []);
+  assert.deepEqual(turns, scenario === "interrupted" ? [{ uid: "first", firstContact: true }, { uid: "first", firstContact: true }] : twoMessages ? [{ uid: "first", firstContact: true }, { uid: "newer", firstContact: false }] : ["waited", "pending", "buffered", "fresh"].includes(scenario) ? [{ uid: "first", firstContact: true }] : scenario === "group" ? [{ uid: "first", firstContact: false }] : []);
 });
 
 test("first-contact recovery includes its message and newer arrivals, excluding older history", async t => {
@@ -384,7 +384,7 @@ for (const count of [1, 2]) for (const arrival of ["listing", "baseline"] as con
   const { root, server, apiBase, abortAfter } = await websocketFixture(t);
   const controller = abortAfter();
   const chat = { uid: "group", status: "active", participants: [{ type: "agent", relationship: "self", line: { uid: "line" } }] };
-  const messages = ["old", "first", "second"].slice(0, count + 1).map(uid => ({ uid, direction: "inbound", sender: { type: "member" } }));
+  const messages = ["old", "first", "second"].slice(0, count + 1).map(uid => ({ uid, direction: uid === "old" ? "outbound" : "inbound", sender: { type: "member" } }));
   t.mock.method(globalThis, "fetch", async (url: string) => {
     if (arrival === "listing" ? url.endsWith("/chats") : url.includes("limit=1")) {
       for (const socket of server.clients) {
@@ -989,10 +989,12 @@ test("chat and email listeners filter new conversations before sharing checkpoin
   assert.equal(await checkpointUid(root, "mail"), "source-mail");
 });
 
-test("a new email conversation remains recoverable when its first metadata lookup fails", async t => {
+for (const kind of ["email", "phone-group", "non-owner-DM"] as const) test(`a new ${kind} conversation remains recoverable when its first metadata lookup fails`, async t => {
   const { server, apiBase, abortAfter } = await websocketFixture(t);
   const chat = { ...acceptedChat("mail"), participants: [
-    { type: "agent", relationship: "self", line: { uid: "mail-line" } },
+    { type: "agent", relationship: "self", line: { uid: kind === "email" ? "mail-line" : "line" } },
+    { type: "member", uid: "guest", role: "member" },
+    ...(kind === "phone-group" ? [{ type: "member", uid: "other", role: "member" }] : []),
   ] };
   const messages = ["first", "later"].map(inbound);
   let boot = 0;
@@ -1008,7 +1010,7 @@ test("a new email conversation remains recoverable when its first metadata looku
   const turns: string[] = [];
   for (; boot < 2; boot++) {
     const controller = abortAfter();
-    await listen({ apiBase, accountId: "email", lineUid: "line", emailLineUid: "mail-line" }, controller.signal,
+    await listen({ apiBase, accountId: kind === "email" ? "email" : "chat", lineUid: "line", emailLineUid: "mail-line" }, controller.signal,
       text => { if (text.startsWith("transport stopped") || text.startsWith("acked chat=mail message=later")) controller.abort(); },
       async (_chat, message) => { turns.push(message.uid); return "completed"; });
   }

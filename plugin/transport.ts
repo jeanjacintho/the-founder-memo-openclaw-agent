@@ -315,7 +315,7 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
       const chats = listing.data.filter(chat => validChatId(chat.uid) && accepts(account, chat));
       discovered.clear();
       for (const chat of chats) discovered.set(chat.uid, chat);
-      const owner = findOwnerChat(account, chats);
+      findOwnerChat(account, chats);
       {
         for (const chat of chats) {
           if (checkpoints.has(chat.uid)) continue;
@@ -325,7 +325,7 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
             if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
             const page = await request<Page<Message>>(account, `/chats/${chat.uid}/messages?limit=1`);
             const newest = page.data[0];
-            checkpoint = (account.accountId === "email" || chat.uid === owner?.uid) && newest?.direction === "inbound" && newest.sender.type === "member"
+            checkpoint = newest?.direction === "inbound" && newest.sender.type === "member"
               ? `first:${await earliestUnansweredMessage(account, chat.uid, newest)}` : newest?.uid ?? "";
             const buffered = bufferedChats.get(chat.uid);
             const first = buffered?.values().next().value;
