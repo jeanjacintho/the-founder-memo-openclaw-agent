@@ -8,6 +8,12 @@ An [OpenClaw](https://github.com/openclaw/openclaw) agent on
 chatbot. It is one person's paper: the sections you asked for, at the hour you
 named, in the language you write.
 
+The nightly Founder Memo rollout is staged: this branch adds the Mac reachability
+gate and validates optional `memo.start` (`HH:MM`, default `01:00`) and
+`memo.window_minutes` (positive integer, default 240). These settings do not
+replace the current `delivery.hour` schedule yet; publication and engine integration
+are separate follow-up PRs.
+
 ## What it is
 
 The product is a **compact Letter paper**. It can open with **stage-appropriate advice from Patrick Salyer, Paul Graham and Ben Horowitz**
@@ -100,7 +106,7 @@ could not source, and a print that cannot reach the printer is reported in
 chat in your language.
 
 The printer is whatever CUPS on the Mac calls it (`lpstat -p`); setup asks
-once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
+once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 
 ## How it runs
 
@@ -152,6 +158,27 @@ Luna answers if Plow cannot serve Sol. `AGENT_PROVIDER` (`plow`,
 environment instead and outrank the marker; OpenAI then takes
 `OPENAI_API_KEY` or the sign-in, and OpenRouter `OPENROUTER_API_KEY`. After
 changing them, restart and run `plow-llm sync` to move the scheduled jobs.
+
+The nightly tournament can run its writers and its critics on two models from
+different providers. Set both, each with its USD price per million tokens
+(`input,output,cacheRead,cacheWrite`), in `plow-credentials`:
+
+```sh
+MEMO_MODEL_WRITER=plow/<provider>/<model>
+MEMO_MODEL_WRITER_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
+MEMO_MODEL_CRITIC=plow/<another provider>/<model>
+MEMO_MODEL_CRITIC_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
+```
+
+The prices register the role models for OpenClaw's usage accounting. The
+`run_cost.py` helper prices each transcript usage call in its minute window and checks
+whether another generation fits; tournament integration lands in later steps of
+issue #59, so the nightly workflow does not yet enforce a spending limit.
+The current tournament still directly spawns leaf
+workers; phase coordinators and depth-2 execution also land later.
+Boot refuses one without the other, a missing or
+malformed price, and a critic from the writer's provider. With neither set,
+every child runs on the chat's model.
 
 The sign-in is a real credential for your account, kept in the state volume
 where the agent's own tools can read it. Use it on an install only you

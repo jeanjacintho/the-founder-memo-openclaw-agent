@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""wiki_setup.py -- make the owner's wiki ready for The Founder Times.
+"""wiki_setup.py -- make the owner's wiki ready for The Founder Memo.
 
 usage: wiki_setup.py [--desk]
 
@@ -8,15 +8,13 @@ caller runs it: memo-setup when the advisor's desk is turned on, the desk before
 each daily pass (--desk), and record_edition.py before it writes.
 
   - no ~/Plow/wiki          -> `wiki init ~/Plow/wiki` through Latch's plugin
-  - an install from before the rename, with projects/theplowtimes declared
-    and projects/thefoundertimes not yet: every page the wiki's index lists under
-    the old root is copied to the new one once, its links rewritten. The old
-    folder and its wiki.toml entry stay as they were; nothing reads them after.
+  - an existing projects/thefoundertimes root -> copy its indexed pages to
+    projects/founder-memo once, rewriting links and leaving the old root intact
   - the paper's schema and page, when absent, from memo-shared/assets/wiki/
-  - with --desk: entities/owner/goals.md and projects/thefoundertimes/qa.md, when
+  - with --desk: entities/owner/goals.md and projects/founder-memo/qa.md, when
     absent. An install from before the wiki carries the body of
     ~/Plow/prioritization.md over once (the old file stays; it is the owner's).
-  - projects/thefoundertimes declared in wiki.toml, when its parsed roots lack it
+  - projects/founder-memo declared in wiki.toml, when its parsed roots lack it
     (whatever spelling declares them), appended last so a run that failed
     halfway runs again; no other line of the file is touched.
 
@@ -31,14 +29,16 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from urllib.parse import unquote
 
 from owner_chat import home_channel
 from latch_mcp import LatchError
-from wiki import (GOALS, LEGACY_OVERVIEW, LEGACY_ROOT, OVERVIEW, QA, RESOURCES, ROOT, SCHEMA,
-                  WIKI, WRITER, connect, join_page, split_page)
+from wiki import GOALS, OVERVIEW, QA, RESOURCES, ROOT, SCHEMA, WIKI, WRITER, connect, join_page, split_page
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets" / "wiki"
 LEGACY_NOTES = "~/Plow/prioritization.md"
+LEGACY_ROOT = "projects/thefoundertimes"
+LEGACY_OVERVIEW = f"{LEGACY_ROOT}/thefoundertimes.md"
 
 
 def _seed(wiki, rel, asset, chat, old=lambda: None):
@@ -54,31 +54,40 @@ def _seed(wiki, rel, asset, chat, old=lambda: None):
     return [rel]
 
 
-def _move_legacy(wiki, toml):
-    """Copy the pre-rename root's pages over once, before the new root is declared.
-
-    Declaring the new root is the last step of ensure(), so a move that stopped
-    halfway runs again; a page already at its new path is kept, never recopied.
-    """
+def _copy_legacy(wiki, toml):
+    """Declare the new root only after copying; retries keep already-copied pages."""
     roots = tomllib.loads(toml).get("roots", {})
     if ROOT in roots or LEGACY_ROOT not in roots:
         return []
-    # Every recorded edition re-indexes (Wiki.check), so the index is current;
-    # indexing again would rewrite the old pages' tables, and they stay as-is.
+    code, out = wiki.run("validate", "--writer", roots[LEGACY_ROOT]["writer"])
+    if code != 0:
+        raise LatchError(f"legacy wiki validate: {out.strip()}")
+    # A recorded edition can predate a failed index update; enumerate a fresh index.
+    code, out = wiki.run("index", write=True)
+    if code != 0:
+        raise LatchError(f"wiki index: {out.strip()}")
     index = wiki.read("index.md")
     if index is None:
-        code, out = wiki.run("index", write=True)
-        if code != 0:
-            raise LatchError(f"wiki index: {out.strip()}")
-        index = wiki.read("index.md") or ""
-    listed = re.findall(rf"\(/({re.escape(LEGACY_ROOT)}/[^)\s]+\.md)\)", index)
-    pages = sorted(set(listed))
+        raise LatchError("wiki index produced no index.md")
+    pages = sorted({unquote(rel) for rel in re.findall(rf"\(/({re.escape(LEGACY_ROOT)}/[^)\s]+\.md)\)", index)})
     for rel in pages:
         new = OVERVIEW if rel == LEGACY_OVERVIEW else ROOT + rel[len(LEGACY_ROOT):]
         if wiki.read(new) is None:
             text = wiki.read(rel)
-            wiki.write(new, text.replace(LEGACY_OVERVIEW, OVERVIEW).replace(LEGACY_ROOT, ROOT))
-    return [f"moved {len(pages)} pages from {LEGACY_ROOT}"] if pages else []
+            if text is None:
+                raise LatchError(f"legacy wiki page missing: {rel}")
+            text = text.replace(LEGACY_OVERVIEW, OVERVIEW).replace(LEGACY_ROOT, ROOT)
+            text = text.replace("[The Founder Times](", "[The Founder Memo](")
+            if rel == LEGACY_OVERVIEW:
+                meta, body = split_page(text)
+                canonical, _ = split_page((ASSETS / "overview.md").read_text(encoding="utf-8"))
+                meta.update({key: canonical[key] for key in ("title", "description", "tags")})
+                body = body.replace("# The Founder Times\n", "# The Founder Memo\n", 1)
+                if not re.search(r"^## Memos\s*$", body, re.M):
+                    body += "\n## Memos\n"
+                text = join_page(meta, body)
+            wiki.write(new, text)
+    return [f"copied {len(pages)} pages from {LEGACY_ROOT}"] if pages else []
 
 
 def ensure(wiki, chat, desk=False):
@@ -90,7 +99,7 @@ def ensure(wiki, chat, desk=False):
             raise LatchError(f"wiki init: {out.strip()}")
         did.append(WIKI)
     else:
-        did += _move_legacy(wiki, toml)
+        did += _copy_legacy(wiki, toml)
     did += _seed(wiki, SCHEMA, "schema.md", chat)
     did += _seed(wiki, OVERVIEW, "overview.md", chat)
     if desk:

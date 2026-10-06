@@ -4,7 +4,7 @@
 usage: record_edition.py <run/<id>/edition.json>
 
 Run once the chat leg is out (memo-render), never before: the wiki records what
-the owner received. The day's page is projects/thefoundertimes/editions/<date>.md;
+the owner received. The day's page is projects/founder-memo/editions/<date>.md;
 each edition that day appends one `## HH:MM edition` block, stamped in the
 owner's own zone (`owner_time.owner_now()`), never the container's: the
 advisor's card, then every section the owner chose (anything with a

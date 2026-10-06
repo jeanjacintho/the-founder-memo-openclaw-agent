@@ -9,10 +9,10 @@ A paper run with no accepted checkpoint for today, or an on-demand copy asked fo
 is the only writer. It owns `/var/lib/plow/pt/advisor.md`,
 `run/desk-priority/tournament.json`, and these Mac wiki pages:
 
-- `~/Plow/wiki/projects/thefoundertimes/qa.md`: ranked `## Open` and `## Answered` entries,
+- `~/Plow/wiki/projects/founder-memo/qa.md`: ranked `## Open` and `## Answered` entries,
   each identified as `Q<n>`, at most 20 total. Answered entries are the sourced fact/FAQ base.
-- `~/Plow/wiki/projects/thefoundertimes/resources.md`: documented read capabilities and sources.
-- `~/Plow/wiki/projects/thefoundertimes/runs/<run-datetime>/state.md`: one private, auditable
+- `~/Plow/wiki/projects/founder-memo/resources.md`: documented read capabilities and sources.
+- `~/Plow/wiki/projects/founder-memo/runs/<run-datetime>/state.md`: one private, auditable
   snapshot of this run's research and tournament progress.
 
 Read both wiki pages again immediately before writing and fold owner edits into the new whole.
@@ -85,15 +85,15 @@ tournament ran in the current cron session.
 Load this skill once during Orient. Preserve any canonical
 `/var/lib/plow/pt/run/desk-priority/tournament.json` checkpoint. Name the run from its
 actual Orient invocation time as `YYYY-MM-DDTHHMM` and create
-`projects/thefoundertimes/runs/<run-datetime>/state.md`. Copy the required OKF front matter shape from
+`projects/founder-memo/runs/<run-datetime>/state.md`. Copy the required OKF front matter shape from
 `qa.md`, with a run-specific title and description; keep its `sources` a non-empty list of
 `- resource: <item>`, one per item the run's receipts rest on (start with `qa.md`'s own). The page is private research state, never printed.
 Keep its exact path in root context as
-`RUN_PAGE=~/Plow/wiki/projects/thefoundertimes/runs/<run-datetime>/state.md`; every compaction handoff preserves
+`RUN_PAGE=~/Plow/wiki/projects/founder-memo/runs/<run-datetime>/state.md`; every compaction handoff preserves
 that value until delivery.
 Rewrite that one page whole after Orient and after every Challenge, Criticize, and Cull;
 do not create per-generation files or an append-only event log. After each rewrite, run argv
-`["wiki", "validate", "--writer", "thefoundertimes"]` through `plow__plow_run_command`; exit 1 prints
+`["wiki", "validate", "--writer", "founder-memo"]` through `plow__plow_run_command`; exit 1 prints
 `path: problem` lines — fix each page it names and validate again. It holds the stage and generation,
 champions, contenders, priority cases, sanitized reads, unknowns, critic verdicts, fact-rank moves,
 and the last complete checkpoint summary. If context is compacted, resume from this page and the
@@ -156,17 +156,19 @@ call `sessions_yield` and keep yielding until every child in the set has returne
 Let `I` be the number of inherited champions at the start of this generation. Execute this loop in
 order; the stage sections below define each payload, but never reorder or merge these gates:
 
-1. Spawn one set of exactly three writer children.
+1. Spawn one set of exactly three writer children with `model` set to the writer model
+   named in AGENTS.md.
 2. Rewrite `RUN_PAGE` with all three Challenge results and set its `Stage` to Challenge complete.
    Do not spawn another child until that wiki write returns success.
 3. Spawn one set whose critic child count is `I + 3`: one child for each inherited
    champion and one for each challenger, so there is one independent critic per recommendation.
    With three inherited champions, this is six independent critic children in one spawn set.
+   Set every critic's `model` to the critic model named in AGENTS.md.
 4. Rewrite `RUN_PAGE` with every critic result and set its `Stage` to Criticize complete. Do not
    call the culler until that wiki write returns success.
 5. Every generation reaches Cull unless fewer than three fully criticized targets remain. With
    fewer than three, the generation is invalid and the prior checkpoint stands. Otherwise make
-   a spawn set of one child for Cull.
+   a spawn set of one child for Cull with `model` set to the writer model named in AGENTS.md.
 6. Rewrite `RUN_PAGE` with Cull and set its `Stage` to Cull complete before taking another action.
    Recovery from `Cull complete` proceeds to the next required action.
 7. Generations one and two advance from their wiki Cull checkpoint: immediately start the next
@@ -330,7 +332,7 @@ Apply the final proposed Q&A and resource changes once, only after the renderer 
 Re-read each whole page and fold owner edits into it
 immediately before writing. If either write fails, retry only that wiki write from the accepted
 run-state proposal; never re-run Cull or apply another rank move.
-After both writes, run argv `["wiki", "validate", "--writer", "thefoundertimes"]` through
+After both writes, run argv `["wiki", "validate", "--writer", "founder-memo"]` through
 `plow__plow_run_command`; exit 1 prints `path: problem` lines — fix each page it names and validate again.
 
 ## Accepted checkpoint consistency

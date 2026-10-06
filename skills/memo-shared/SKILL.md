@@ -14,6 +14,10 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 
 - `scripts/pt_config_gate.py` — the single definition of a valid `pt/config.json`;
   prints failing invariant names, empty stdout is pass
+- `scripts/run_gate.py wait --started <ISO-8601> --window <minutes>` — probes the Mac;
+  exits 0 (`MAC:reachable`), 2 (`MAC:window-closed`), or 3 (`MAC:still-waiting`).
+  Retry exit 3 with the same start time; each CLI call waits at most 25 minutes.
+  This helper is for the upcoming nightly engine; current cron behavior is unchanged.
 - `scripts/setup_needed.py` — live-chat first-run gate: prints `SETUP_NEEDED`
   then `DRAFT:` and `LANG:`, or `READY` then `LANG:` (from `pt/config.json`;
   missing file is needed)
@@ -59,16 +63,31 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   print-miss line and the priority card's "Advice from" line). A library, not a flow
   script: nothing invokes it, the memo-* scripts import it.
 - `scripts/wiki.py` — the paper's pages in the owner's wiki (`~/Plow/wiki`, plow-wiki):
-  the root `projects/thefoundertimes` (writer `thefoundertimes`), the shared
+  the root `projects/founder-memo` (writer `founder-memo`), the shared
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
-  (`thefoundertimes`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
+  (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
+- `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
+  `entity_page.py merge --kind people|orgs --slug <lowercase-kebab-slug> --title <title> --dossier <file|->`,
+  the dossier `{"description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
+  It replaces `## Now`, merges its marked `## Timeline` entries on (date, item) newest first,
+  capped at 20, keeps unmarked owner entries (which win on matching keys), keeps
+  every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
+  `wiki validate --writer shared`. Writes check the expected bytes on the Mac and retry
+  conflicting merges up to three times. Failed validation restores/removes only an unchanged
+  memo-written page; a subsequent owner save is preserved. Exit 1 names the problem on stderr.
+- `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints
+  `{"usd": <float|null>, "sessions": n, "unpriced": m}` (every transcript call priced with its model's configured rates; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
+  --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not
+  or spend is unknown. Any call with unknown usage or missing input/output/cache prices makes the total unknown.
+  The SQLite reads are local and read-only; the shipped Agent Index client decodes compressed
+  events and their timestamps. Resumed sessions retain every call in the minute window.
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
-  the Mac has none, copies an install's pages from the pre-rename root
-  `projects/theplowtimes` to `projects/thefoundertimes` once (links rewritten; the old
-  folder and its `wiki.toml` entry are left as they were and never read again), writes
-  the paper's schema and page when absent, declares
-  `projects/thefoundertimes` in `wiki.toml` (appending; no other root is touched), and
+  the Mac has none, copies an existing `projects/thefoundertimes` root's indexed
+  pages to `projects/founder-memo` once (links rewritten, old pages and root
+  declaration kept, already-copied pages never overwritten), writes
+  the memo's schema and page when absent, declares
+  `projects/founder-memo` in `wiki.toml` (appending; no other root is touched), and
   with `--desk` the goals page and the desk's Q&A, carrying an older install's notes
   file over once. Prints `WIKI:ready` or `WIKI:set up …`;
   `error: wiki not ready — …` exits non-zero. **This bullet is the contract.**

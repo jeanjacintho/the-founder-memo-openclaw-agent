@@ -1,33 +1,31 @@
-"""wiki.py -- The Founder Times' pages in the owner's wiki, over Latch.
+"""wiki.py -- The Founder Memo's pages in the owner's wiki, over Latch.
 
 The wiki is plow-wiki: an Obsidian vault at ~/Plow/wiki in OKF v0.2, kept by
-the `wiki` plugin Latch bundles. The paper owns one root,
-projects/thefoundertimes (writer `thefoundertimes`), and shares one page,
-entities/owner/goals.md. Installs from before the rename kept their pages
-under projects/theplowtimes; wiki_setup.py copies them over once. Pages move with plow_read_file and
+the `wiki` plugin Latch bundles. The memo owns one root,
+projects/founder-memo (writer `founder-memo`), and shares one page,
+entities/owner/goals.md. Pages move with plow_read_file and
 plow_write_file (no approval inside ~/Plow); the CLI runs through
 plow_run_command, under whatever approval mode the Mac is in.
 """
 from __future__ import annotations
 
 import yaml
+import json
 
 from latch_mcp import LatchError, finish_command
 from latch_mcp import connect as latch_connect
 
 WIKI = "~/Plow/wiki"
-WRITER = "thefoundertimes"
+WRITER = "founder-memo"
 ROOT = f"projects/{WRITER}"
-LEGACY_WRITER = "theplowtimes"
-LEGACY_ROOT = f"projects/{LEGACY_WRITER}"
-LEGACY_OVERVIEW = f"{LEGACY_ROOT}/{LEGACY_WRITER}.md"
 OVERVIEW = f"{ROOT}/{WRITER}.md"
+# The day's printed edition until memo-render records memos/<date>.md instead.
 EDITIONS = f"{ROOT}/editions"
 QA = f"{ROOT}/qa.md"
 RESOURCES = f"{ROOT}/resources.md"
 GOALS = "entities/owner/goals.md"
 SCHEMA = f"_meta/schemas/{ROOT}.md"
-PAPER_LINK = f"[The Founder Times](/{OVERVIEW})"
+PAPER_LINK = f"[The Founder Memo](/{OVERVIEW})"
 
 
 def split_page(text):
@@ -67,7 +65,7 @@ class Wiki:
     def run(self, *args, write=False):
         """`wiki <args>` through Latch's wiki plugin: (exit_code, output)."""
         params = {"argv": ["wiki", *args], "wait_ms": 60000,
-                  "goal": f"Keep The Founder Times' pages in your wiki (wiki {args[0]})"}
+                  "goal": f"Keep The Founder Memo's pages in your wiki (wiki {args[0]})"}
         if write:
             params["write_paths"] = [WIKI]
         result = finish_command(
@@ -75,12 +73,49 @@ class Wiki:
         )
         return int(result["exit_code"]), str(result.get("output") or "")
 
-    def _validate(self, writer):
+    def compare_and_swap(self, rel, expected, replacement):
+        """Check and replace on the Mac; False means its owner changed the page."""
+        script = '''import json, os, sys, tempfile
+from pathlib import Path
+rel, expected, replacement = json.loads(sys.argv[1])
+path = Path.home() / "Plow/wiki" / rel
+def current():
+    try: return path.read_bytes()
+    except FileNotFoundError: return None
+expected = expected.encode("utf-8") if expected is not None else None
+if current() != expected: sys.exit(3)
+if replacement is None:
+    path.unlink()
+else:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".memo-")
+    try:
+        with os.fdopen(fd, "wb") as out: out.write(replacement.encode("utf-8"))
+        os.chmod(tmp, path.stat().st_mode & 0o777 if expected is not None else 0o644)
+        if current() != expected: sys.exit(3)
+        if expected is None:
+            try: os.link(tmp, path)
+            except FileExistsError: sys.exit(3)
+        else: os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp): os.unlink(tmp)
+'''
+        result = finish_command(self._call, self._call("plow_run_command", {
+            "argv": ["python3", "-c", script, json.dumps([rel, expected, replacement])],
+            "write_paths": [WIKI], "wait_ms": 60000,
+            "goal": "Update the entity page only if its owner has not changed it",
+        }), "conditional wiki update")
+        code = int(result["exit_code"])
+        if code not in (0, 3):
+            raise LatchError(f"conditional wiki update: {result.get('output', '')}")
+        return code == 0
+
+    def _validate(self, writer, rel=None):
         """`wiki validate --writer <writer>`'s problem lines; exit 2 (unknown writer) raises."""
         code, out = self.run("validate", "--writer", writer)
         if code not in (0, 1):
             raise LatchError(f"wiki validate --writer {writer}: {out.strip()}")
-        return out.splitlines() if code else []
+        return [line for line in out.splitlines() if rel is None or line.startswith(rel + ":")] if code else []
 
     def check(self):
         """`wiki validate` of this paper's root and its one shared page, then
