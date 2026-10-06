@@ -39,7 +39,7 @@ JSON off argv, so there is no `{`/`}`/inner-quote escaping to get wrong.
 Prints two lines on success:
 
     DRAFT:<comma-joined fields already recorded, or "none">
-    NEXT_QUESTION=<hour|printer|awake|close>
+    NEXT_QUESTION=<hour|printer|awake|connect|close>
 
 memo-setup's SKILL.md reads NEXT_QUESTION to decide what to ask -- never by
 re-deriving "what's next" from the draft's shape itself, and never from
@@ -86,6 +86,7 @@ def apply_event(draft):
     draft["event"] = code
     draft["printer"] = {"configured": True, "line": event["printer_line"], "paper": event["paper"]}
     draft["mac"] = {"awake": False}
+    draft.setdefault("start", event["start"])  # the first memo runs now; later nights at the event's hour
 
 
 def _coerce(raw_value):
@@ -140,6 +141,10 @@ def next_question(draft):
     mac = draft.get("mac")
     if not (isinstance(mac, dict) and isinstance(mac.get("awake"), bool)):
         return "awake"
+    # An event install reads mail, calendar and Slack only through the owner's Plow
+    # connections: setup sends the connect links and waits for their "done".
+    if draft.get("event") and draft.get("connected") is not True:
+        return "connect"
     return "close"
 
 

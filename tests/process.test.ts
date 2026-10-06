@@ -15,7 +15,7 @@ for (const ending of ["gateway", "bridge", "signal", "startup-failure", "restart
   t.mock.method(childProcess, "spawn", (_command: string, args: string[], opts: SpawnOptions) => {
     const child = Object.assign(new EventEmitter(), { signals: [] as string[], kill(signal: string) { this.signals.push(signal); queueMicrotask(() => this.emit("close", null, signal)); } });
     children.push(child); options.push(opts);
-    if (args[0].endsWith("mcp-bridge.js")) queueMicrotask(() => ending === "startup-failure" && children.length === 1 ? (child.emit("error", new Error("spawn failed")), child.emit("close", -2, null)) : child.emit("message", "ready"));
+    if (args[0].endsWith("mcp-bridge.js") || args[0].endsWith("local-latch.js")) queueMicrotask(() => ending === "startup-failure" && children.length === 1 ? (child.emit("error", new Error("spawn failed")), child.emit("close", -2, null)) : child.emit("message", "ready"));
     return child;
   });
   syncBuiltinESMExports();
@@ -55,4 +55,19 @@ for (const ending of ["gateway", "bridge", "signal", "startup-failure", "restart
   }
   assert.equal(process.listenerCount("SIGTERM"), listeners);
   assert.equal(process.exitCode, previousCode);
+});
+
+test("an event install starts the local wiki stand-in where the owner's bridge would run", async t => {
+  const scripts: string[] = [];
+  t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+    scripts.push(args[0]);
+    const child = Object.assign(new EventEmitter(), { kill() { queueMicrotask(() => child.emit("close", null, "SIGTERM")); } });
+    if (args[0].endsWith("local-latch.js")) queueMicrotask(() => child.emit("message", "ready"));
+    return child;
+  });
+  syncBuiltinESMExports();
+  process.env.MEMO_EVENT = "EV-PLOW";
+  t.after(() => { delete process.env.MEMO_EVENT; process.emit("SIGTERM"); t.mock.restoreAll(); syncBuiltinESMExports(); });
+  await startGateway(true, "http://127.0.0.1:18790/mcp");
+  assert.deepEqual(scripts, ["/opt/plow/boot/local-latch.js", "/app/openclaw.mjs"]);
 });

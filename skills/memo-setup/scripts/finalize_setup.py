@@ -78,7 +78,7 @@ def main(argv=None, backend=None):
     argv = sys.argv if argv is None else argv
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("config_path")
-    parser.add_argument("--owner-tz", required=True, help="IANA zone from step 1")
+    parser.add_argument("--owner-tz", help="IANA zone from step 1; an event install uses its event's zone")
     args = parser.parse_args(argv[1:])
 
     config_path = Path(args.config_path)
@@ -99,6 +99,11 @@ def main(argv=None, backend=None):
         )
         return 1
 
+    if not args.owner_tz and draft.get("event"):
+        args.owner_tz = json.loads(_record.EVENTS.read_text(encoding="utf-8"))[draft["event"]]["timezone"]
+    if not args.owner_tz:
+        print("error: --owner-tz is required", file=sys.stderr)
+        return 1
     try:
         ZoneInfo(args.owner_tz)
     except (ZoneInfoNotFoundError, ValueError):
