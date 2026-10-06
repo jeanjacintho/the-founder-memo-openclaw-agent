@@ -9,7 +9,7 @@ import pytest
 
 from conftest import load_module
 
-switch = load_module("set_signal_source", "pt-shared/scripts/set_signal_source.py")
+switch = load_module("set_signal_source", "memo-shared/scripts/set_signal_source.py")
 
 READY = {
     "owner": {"timezone": "America/Sao_Paulo", "language": "Portuguese"},

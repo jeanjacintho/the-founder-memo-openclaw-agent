@@ -7,7 +7,7 @@ import pytest
 
 from conftest import load_module
 
-gate_mod = load_module("pt_config_gate", "pt-shared/scripts/pt_config_gate.py")
+gate_mod = load_module("pt_config_gate", "memo-shared/scripts/pt_config_gate.py")
 
 
 def run_gate(config, tmp_path):
@@ -259,7 +259,7 @@ class TestExample:
         import pathlib
         from conftest import ROOT
 
-        example = (ROOT / "pt-shared/references/config.example.json").read_text()
+        example = (ROOT / "memo-shared/references/config.example.json").read_text()
         filled = (
             example.replace("[OWNER_TZ]", "America/Los_Angeles")
             .replace("[DELIVERY_HOUR]", "07:00")
@@ -273,7 +273,22 @@ class TestExample:
         from conftest import ROOT
 
         example = json.loads(
-            (ROOT / "pt-shared/references/config.example.json").read_text()
+            (ROOT / "memo-shared/references/config.example.json").read_text()
         )
         out, _ = run_gate(example, tmp_path)
         assert "placeholder" in out
+
+
+@pytest.mark.parametrize("memo", [{}, {"start": "01:00", "window_minutes": 240}])
+def test_future_memo_settings_are_optional_and_validated(memo, tmp_path):
+    assert run_gate({**VALID, "memo": memo}, tmp_path)[0] == ""
+
+
+@pytest.mark.parametrize("memo, reason", [
+    ("night", "memo is not an object"),
+    ({"start": "25:00"}, "memo.start"),
+    ({"window_minutes": True}, "memo.window_minutes"),
+    ({"window_minutes": 0}, "memo.window_minutes"),
+])
+def test_bad_future_memo_settings_fail_the_shared_gate(memo, reason, tmp_path):
+    assert reason in run_gate({**VALID, "memo": memo}, tmp_path)[0]

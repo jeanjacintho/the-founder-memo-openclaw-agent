@@ -5,7 +5,7 @@ import json
 
 from conftest import load_module
 
-needed = load_module("setup_needed", "pt-shared/scripts/setup_needed.py")
+needed = load_module("setup_needed", "memo-shared/scripts/setup_needed.py")
 
 VALID = {
     "owner": {"timezone": "America/Sao_Paulo"},

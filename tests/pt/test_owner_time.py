@@ -8,7 +8,7 @@ import pytest
 
 from conftest import load_module
 
-owner_time = load_module("owner_time", "pt-shared/scripts/owner_time.py")
+owner_time = load_module("owner_time", "memo-shared/scripts/owner_time.py")
 
 
 class TestOwnerNow:

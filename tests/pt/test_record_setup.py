@@ -1,4 +1,4 @@
-"""record_setup.py — the only way pt-setup writes .setup-draft.json."""
+"""record_setup.py — the only way memo-setup writes .setup-draft.json."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ import pytest
 
 from conftest import load_module
 
-record = load_module("record_setup", "pt-shared/scripts/record_setup.py")
+record = load_module("record_setup", "memo-shared/scripts/record_setup.py")
 
 
 def draft_of(tmp_path):
@@ -190,7 +190,7 @@ class TestCLI:
 
 
 class TestDoneClearsTheDraft:
-    """The close step tells pt-setup to delete .setup-draft.json. It used to
+    """The close step tells memo-setup to delete .setup-draft.json. It used to
     say so with no command attached, and a live run reached for
     `python3 -c "import os; os.remove(...)"` -- tripping the dangerous-command
     gate and handing the owner an /approve prompt instead of their newspaper.

@@ -17,7 +17,7 @@ primary() {
 # registered again under the one boot will choose. Before setup there are none.
 reregister() {
   [ -f /var/lib/plow/pt/config.json ] || return 0
-  PT_MODEL="$(primary)" /opt/plow/skills/pt-dashboard/scripts/register_crons.py \
+  PT_MODEL="$(primary)" /opt/plow/skills/memo-schedule/scripts/register_crons.py \
     || echo "plow-llm: the paper's jobs keep their old model until they are registered again" >&2
 }
 

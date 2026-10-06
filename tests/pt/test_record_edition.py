@@ -10,7 +10,7 @@ import pytest
 from conftest import load_module
 from wiki import EDITIONS, OVERVIEW, Wiki, split_page
 
-rec = load_module("record_edition", "pt-edition/scripts/record_edition.py")
+rec = load_module("record_edition", "memo-render/scripts/record_edition.py")
 SP = timezone(timedelta(hours=-3))
 MORNING = datetime(2026, 9, 19, 6, 4, tzinfo=SP)
 AFTERNOON = datetime(2026, 9, 19, 14, 0, tzinfo=SP)
@@ -312,7 +312,7 @@ class TestSectionMemoryIsRecordedWhereverTheEditionFileSits:
     """Measured live 2026-09-24: the edition file sat at run/edition.json, not
     run/<id>/edition.json, so the recorder looked for notes beside `pt/` and
     recorded `printed: []` for every news section -- the next paper then had no
-    history to stay off. Notes live where pt-research writes them."""
+    history to stay off. Notes live where memo-research writes them."""
 
     @pytest.mark.parametrize("edition_at", ["run/edition.json", "run/daily-2026-09-24/edition.json"])
     def test_printed_claims_are_recorded(self, mac, tmp_path, monkeypatch, edition_at):

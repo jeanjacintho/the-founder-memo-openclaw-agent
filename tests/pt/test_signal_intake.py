@@ -9,7 +9,7 @@ import pytest
 
 from conftest import load_module
 
-intake = load_module("signal_intake", "pt-shared/scripts/signal_intake.py")
+intake = load_module("signal_intake", "memo-shared/scripts/signal_intake.py")
 
 BASE = {"source": "group_chat", "from_name": "Maya", "chat_or_thread_id": "cht_1",
         "text": "Precisamos fechar a Acme até sexta", "received_at": "2026-09-24T12:03:01Z",

@@ -9,7 +9,7 @@ import pytest
 
 from conftest import load_module
 
-lock = load_module("run_lock", "pt-shared/scripts/run_lock.py")
+lock = load_module("run_lock", "memo-shared/scripts/run_lock.py")
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ def test_simultaneous_fires_elect_exactly_one_paper(pt_home):
 
     from conftest import ROOT
 
-    script = ROOT / "pt-shared" / "scripts" / "run_lock.py"
+    script = ROOT / "memo-shared" / "scripts" / "run_lock.py"
     argv = [sys.executable, str(script), "acquire", "--name", "paper-workspace-2026-09-24",
             "--stale-minutes", "240"]
     for round_ in range(10):

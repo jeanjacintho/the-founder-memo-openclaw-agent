@@ -8,10 +8,16 @@ An [OpenClaw](https://github.com/openclaw/openclaw) agent on
 chatbot. It is one person's paper: the sections you asked for, at the hour you
 named, in the language you write.
 
+The nightly Founder Memo rollout is staged: this branch adds the Mac reachability
+gate and validates optional `memo.start` (`HH:MM`, default `01:00`) and
+`memo.window_minutes` (positive integer, default 240). These settings do not
+replace the current `delivery.hour` schedule yet; publication and engine integration
+are separate follow-up PRs.
+
 ## What it is
 
-The product is a **compact Letter paper**. It can open with **what Patrick
-Salyer would tell you** after watching your last day, learned from your Mac,
+The product is a **compact Letter paper**. It can open with **stage-appropriate advice from Patrick Salyer, Paul Graham and Ben Horowitz**
+after watching your last day, learned from your Mac,
 then weather, one calendar rail, and up to three stories you told it to cover.
 The longest story leads; the other two sit side by side. A dense edition may
 continue onto a second sheet. It goes to a printer on your Mac when one is
@@ -100,7 +106,7 @@ could not source, and a print that cannot reach the printer is reported in
 chat in your language.
 
 The printer is whatever CUPS on the Mac calls it (`lpstat -p`); setup asks
-once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
+once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 
 ## How it runs
 
@@ -109,13 +115,17 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
   its answer; groups are only listened to for priority signals and never
   get replies or setup questions.
 - **Schedule.** Every paper is an OpenClaw scheduler job
-  (`openclaw cron`), registered by `pt-dashboard/scripts/register_crons.py`
+  (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
   from your topics: an isolated turn on the chat's own model, in **your**
   timezone (`--tz`), with no automatic delivery — the paper posts itself as a
   PDF. Jobs live in the state volume and survive restarts and
   `docker compose up --build`; on a fresh volume, setup (or any schedule
-  change in chat) registers them again.
-- **Scripts.** The `pt-*` skills' Python scripts run on Python 3.13 with
+  change in chat) registers them again. They also keep the prompt they were
+  registered with: after updating the image of an existing install, register
+  again so they pick up its changes (the model-switch command does it too):
+  `docker compose exec agent bash -l -c /opt/plow/skills/memo-schedule/scripts/register_crons.py`
+  (on a VM, the same in an SSH session).
+- **Scripts.** The `memo-*` skills' Python scripts run on Python 3.13 with
   WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The paper's state is
   `/var/lib/plow/pt` (config, topics, run scratch).
 
@@ -150,6 +160,27 @@ environment instead and outrank the marker; OpenAI then takes
 `OPENAI_API_KEY` or the sign-in, and OpenRouter `OPENROUTER_API_KEY`. After
 changing them, restart and run `plow-llm sync` to move the scheduled jobs.
 
+The nightly tournament can run its writers and its critics on two models from
+different providers. Set both, each with its USD price per million tokens
+(`input,output,cacheRead,cacheWrite`), in `plow-credentials`:
+
+```sh
+MEMO_MODEL_WRITER=plow/<provider>/<model>
+MEMO_MODEL_WRITER_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
+MEMO_MODEL_CRITIC=plow/<another provider>/<model>
+MEMO_MODEL_CRITIC_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
+```
+
+The prices register the role models for OpenClaw's usage accounting. The
+`run_cost.py` helper prices each transcript usage call in its minute window and checks
+whether another generation fits; tournament integration lands in later steps of
+issue #59, so the nightly workflow does not yet enforce a spending limit.
+The current tournament still directly spawns leaf
+workers; phase coordinators and depth-2 execution also land later.
+Boot refuses one without the other, a missing or
+malformed price, and a critic from the writer's provider. With neither set,
+every child runs on the chat's model.
+
 The sign-in is a real credential for your account, kept in the state volume
 where the agent's own tools can read it. Use it on an install only you
 talk to.
@@ -167,7 +198,7 @@ docker compose cp agent:/var/lib/hermes/pt ./hermes-pt
 # From this checkout, with this agent running:
 docker compose cp ./hermes-pt agent:/tmp/hermes-pt
 docker compose exec -u root agent chown -R node:node /tmp/hermes-pt
-docker compose exec agent /opt/plow/skills/pt-setup/scripts/import_state.py \
+docker compose exec agent /opt/plow/skills/memo-setup/scripts/import_state.py \
   --from /tmp/hermes-pt --previous-tz America/Sao_Paulo
 ```
 
@@ -191,7 +222,7 @@ and the old scheduler's jobs stay behind.
 
 - `boot/`, `plugin/`, `prompt/` — the OpenClaw base: identity, gateway config,
   Plow channel (with the setup-gate hook) and the agent prompt.
-- `skills/pt-*` — setup, intake, research, priority, edition, print, dashboard
+- `skills/memo-*` — setup, intake, research, tournament, render, print, schedule
   and the shared scripts behind them. `skills/owners-mac`,
   `skills/google-workspace` come from the base.
 - `tests/*.test.ts` — boot and plugin tests (`node --test`); `tests/pt/` —

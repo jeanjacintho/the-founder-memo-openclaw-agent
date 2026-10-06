@@ -11,7 +11,7 @@ import pytest
 
 from conftest import load_module
 
-topics = load_module("topics", "pt-intake/scripts/topics.py")
+topics = load_module("topics", "memo-intake/scripts/topics.py")
 ONE_OFF = ["--kind", "one_off", "--scheduled-for", "2099-01-01T07:03:00-03:00"]
 
 

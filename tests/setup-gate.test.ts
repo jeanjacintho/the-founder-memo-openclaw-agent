@@ -21,7 +21,7 @@ test("only the gate's own two shapes are passed on", () => {
 test("the gate runs with the venv first on PATH and a failure injects nothing", async () => {
   let seen: { file: string; args: string[]; path?: string } | undefined;
   assert.equal(await runGate(async (file, args, env) => { seen = { file, args, path: env.PATH }; return "READY\nLANG:English\n"; }), "READY\nLANG:English");
-  assert.equal(seen!.file, "/opt/plow/skills/pt-shared/scripts/setup_needed.py");
+  assert.equal(seen!.file, "/opt/plow/skills/memo-shared/scripts/setup_needed.py");
   assert.deepEqual(seen!.args, ["/var/lib/plow/pt/config.json"]);
   assert.ok(seen!.path!.startsWith("/opt/plow/pt-venv/bin:"));
   assert.equal(await runGate(async () => { throw new Error("ENOENT"); }), undefined);

@@ -15,7 +15,7 @@ import sys
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2] / "skills"
-sys.path.insert(0, str(ROOT / "pt-shared" / "scripts"))
+sys.path.insert(0, str(ROOT / "memo-shared" / "scripts"))
 
 from latch_mcp import LatchError
 
@@ -52,6 +52,11 @@ class FakeMac:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(args["content"], encoding="utf-8")
             return {"status": "completed", "path": str(path)}
+        if name == "plow_run_command" and args["argv"][:2] in (["sh", "-c"], ["python3", "-c"]):
+            argv = [sys.executable, *args["argv"][1:]] if args["argv"][0] == "python3" else args["argv"]
+            done = subprocess.run(argv, capture_output=True, text=True,
+                                  env={**os.environ, "HOME": str(self.home)})
+            return {"exit_code": done.returncode, "output": done.stdout + done.stderr}
         if name == "plow_run_command" and args["argv"][0] == "wiki":
             argv = [str(self.mac_path(a)) if a.startswith("~/") else a for a in args["argv"]]
             env = {**os.environ, "HOME": str(self.home),
@@ -68,3 +73,30 @@ class FakeMac:
 @pytest.fixture
 def mac(tmp_path):
     return FakeMac(tmp_path / "home")
+
+
+class FakeClock:
+    """Owner time that moves only when a script sleeps: now(), advance(seconds), on_advance(fn)."""
+
+    def __init__(self):
+        from datetime import datetime, timezone
+        self.start = datetime(2026, 10, 2, 1, 0, tzinfo=timezone.utc)
+        self.elapsed = 0
+        self._hooks = []
+
+    def now(self):
+        from datetime import timedelta
+        return self.start + timedelta(seconds=self.elapsed)
+
+    def advance(self, seconds):
+        self.elapsed += seconds
+        for fn in self._hooks:
+            fn(self.elapsed)
+
+    def on_advance(self, fn):
+        self._hooks.append(fn)
+
+
+@pytest.fixture
+def clock():
+    return FakeClock()
