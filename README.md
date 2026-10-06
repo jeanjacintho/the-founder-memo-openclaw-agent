@@ -212,8 +212,6 @@ talk to.
 - If the model provider is unreachable at the start hour, OpenClaw records the
   run as skipped and tries again only the next night. Ask for it in chat ("run
   it now") once the provider answers.
-- The cost line prices each sub-agent's latest run; a coordinator resumed
-  several times is under-counted.
 - A memo delivered while the Mac is unreachable is not recorded in the wiki,
   and the next night has no "yesterday" to check its first steps against.
 
