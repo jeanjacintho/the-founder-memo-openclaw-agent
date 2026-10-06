@@ -26,8 +26,9 @@ The page never passes through a tool argument.
 
 `printer.paper` `"72mm"` marks a thermal roll (a Star TSP100). A Letter page
 shrunk to 72 mm prints unreadable type, so the script renders `receipt.pdf`
-beside `edition.pdf` instead: the memo's #1 priority, or the night's reasons
-when there is no card, at 72 mm, sent with `-o media=X72MMY2000MM` (the
+beside `edition.pdf` instead: the same three ranked priorities, questions and
+cost line, or the night's reasons when there is no card, at 72 mm, sent with
+`-o media=X72MMY2000MM` (the
 driver's variable length cuts after the ink). No `paper` key is the Letter
 page, unchanged.
 

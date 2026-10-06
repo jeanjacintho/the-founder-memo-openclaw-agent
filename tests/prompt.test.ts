@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { renderConfig } from "../boot/config.ts";
 import { probeIdentity } from "../boot/probe-fixture.ts";
 import { renderPrompt } from "../boot/prompt.ts";
-import { llmRoute, roleModels } from "../boot/llm.ts";
+import { roleModels } from "../boot/llm.ts";
 
 const prompt = await readFile(new URL("../prompt/AGENTS.md", import.meta.url), "utf8");
 const maxChars = renderConfig(probeIdentity, "http://api").agents.defaults.bootstrapMaxChars;
@@ -27,12 +27,12 @@ test("the tournament dispatch contract uses the configured writer and critic rou
   assert.match(loop, /one culler child \(`model`: the writer\s+model\)/);
 });
 
-test("unset role models render the selected boot route for both roles", () => {
-  const route = llmRoute({ AGENT_PROVIDER: "openai", AGENT_MODEL: "chat-fixture" }, "").route;
-  const roles = roleModels({}) ?? { writer: route.primary, critic: route.primary };
-  const rendered = prompt.replaceAll("{{writer_model}}", roles.writer).replaceAll("{{critic_model}}", roles.critic);
-  assert.match(rendered, /writer model is `openai\/chat-fixture`/);
-  assert.match(rendered, /critic\s+model is `openai\/chat-fixture`/);
+test("memo boot requires configured roles before writing a prompt or starting the gateway", async () => {
+  assert.throws(() => roleModels({}), /the memo requires/);
+  const boot = await readFile(new URL("../boot/main.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(boot, /roleModels\(\) \?\?/);
+  assert.ok(boot.indexOf("const roles = roleModels()") < boot.indexOf('await writeFile("/var/lib/plow/workspace/AGENTS.md"'));
+  assert.ok(boot.indexOf("const roles = roleModels()") < boot.indexOf("await startGateway("));
 });
 
 test("no Mac still renders the default thread trust instruction", async () => {

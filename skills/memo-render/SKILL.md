@@ -5,8 +5,8 @@ description: The night's Publish step — write edition.json from the accepted c
 
 # memo-render — the checkpoint becomes the printed memo
 
-The memo is the product: the culler's #1 priority (it ranks three; the page
-prints the first), the questions that would change it, and one line saying
+The memo is the product: the culler's three ranked priorities, the questions
+that would change them, and one line saying
 what tonight's research cost. Nothing in it is a
 guess, and the layout is code.
 

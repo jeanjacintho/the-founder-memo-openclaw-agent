@@ -1,4 +1,4 @@
-"""printer.paper "72mm": the roll prints the memo's one thing at 72 mm, not a shrunk Letter page."""
+"""printer.paper "72mm": the roll prints the memo's three priorities at 72 mm, not a shrunk Letter page."""
 from __future__ import annotations
 
 import json
@@ -11,11 +11,12 @@ sys.path.insert(0, str(ROOT / "memo-shared" / "scripts"))
 pe = load_module("print_edition", "memo-print/scripts/print_edition.py")
 
 
-def test_the_receipt_is_the_first_recommendation_at_72mm():
+def test_the_receipt_has_all_three_priorities_questions_and_cost_at_72mm():
     page = render.receipt_html(memo())
-    assert page.count('class="priority"') == 1 and "Priority 1:" in page and "Priority 2:" not in page
+    assert page.count('class="priority"') == 3
+    assert page.index("Priority 1:") < page.index("Priority 2:") < page.index("Priority 3:")
     assert "size: 72mm" in page and "The Founder Memo" in page and "2026-10-02" in page
-    assert "Q1 — Is Acme" not in page
+    assert "Q1 — Is Acme" in page and "$87.40" in page and "3h 56m" in page
 
 
 def test_a_night_with_no_checkpoint_prints_its_reason_on_the_roll():

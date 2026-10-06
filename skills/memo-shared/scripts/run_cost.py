@@ -101,7 +101,8 @@ def summary(rows, table):
 
 
 def can_start(spent, longest_generation_usd, max_usd):
-    return spent is not None and Decimal(str(spent)) + Decimal(str(longest_generation_usd)) <= Decimal(str(max_usd))
+    return (spent is not None and Decimal(str(spent)) < Decimal(str(max_usd))
+            and Decimal(str(spent)) + Decimal(str(longest_generation_usd)) <= Decimal(str(max_usd)))
 
 
 def _usd(value):

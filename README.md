@@ -2,7 +2,7 @@
 
 Your nightly advisor, printed. While you sleep it reads your mail, messages,
 meetings, calendar and the web on your Mac, argues the options out in the voice
-of advisors you trust, and puts **the one priority that matters most** in
+of advisors you trust, and puts **your top three priorities** in
 the printer tray — the same PDF in chat.
 
 An [OpenClaw](https://github.com/openclaw/openclaw) agent on
@@ -27,12 +27,12 @@ Every night, from the start hour, it runs a tournament on your Mac through
    on whether last night's first steps happened.
 3. **Generations** — writers propose, two critics per proposal prosecute it
    (one on the facts, one on the strategy, on a different model from a
-   different provider), a culler keeps the three best. At least three
-   generations, then more while the window and the ceiling allow.
+   different provider), a culler keeps the three best. A valid memo needs three
+   completed generations; the budget can stop the run before it gets there.
 4. **Freshness** — re-reads the names the winners rest on.
-5. **Publish** — prints the memo: the culler's #1 priority with its evidence,
-   its **first step** and a sourced line from the advisor it applies (a 72 mm
-   receipt printer, `printer.paper: "72mm"`, gets that card alone); the questions
+5. **Publish** — prints the memo: three ranked priorities, each with its
+   evidence, **first step** and a different sourced advisor line (a 72 mm
+   receipt printer, `printer.paper: "72mm"`, gets the same content); the questions
    whose answers would change the advice; and one line with what tonight's
    research cost and how long it took ("cost unavailable" when a model has no
    price — never $0.00).
@@ -165,7 +165,7 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 |---|---|---|
 | `memo.start` | `01:00` | when the night starts, your clock |
 | `memo.window_minutes` | `240` | how long it researches; the memo prints when Publish finishes |
-| `memo.max_usd` | `100` | the night's dollar ceiling, checked before each generation after the third |
+| `memo.max_usd` | `100` | the night's dollar ceiling, checked before every generation |
 | `printer.configured`, `printer.name` | from setup's probe | the CUPS queue it prints to |
 | `signals.group_chat`, `.email`, `.imessage` | `false` | what it may listen to for priorities |
 
@@ -200,24 +200,34 @@ environment instead and outrank the marker; OpenAI then takes
 `OPENAI_API_KEY` or the sign-in, and OpenRouter `OPENROUTER_API_KEY`. After
 changing them, restart and run `plow-llm sync` to move the scheduled jobs.
 
-The nightly tournament can run its writers and its critics on two models from
-different providers. Set both, each with its USD price per million tokens
-(`input,output`), in `plow-credentials`:
+The nightly tournament requires priced writer and critic models from different
+providers. Set both before starting the agent, each with its USD price per
+million tokens (`input,output,cacheRead,cacheWrite`), in `plow-credentials`:
 
 ```sh
 MEMO_MODEL_WRITER=plow/<provider>/<model>
-MEMO_MODEL_WRITER_PRICE=<input>,<output>
+MEMO_MODEL_WRITER_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
 MEMO_MODEL_CRITIC=plow/<another provider>/<model>
-MEMO_MODEL_CRITIC_PRICE=<input>,<output>
+MEMO_MODEL_CRITIC_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
 ```
 
-The prices register the role models for OpenClaw's usage accounting. The
-nightly conductor checks `run_cost.py` before another generation, using
-`memo.max_usd` (default $100); an unknown cost stays unknown. Phase coordinators
+Use the install's actual provider prices; zero is valid only for a token class
+that is free. The prices register the role models for OpenClaw's usage
+accounting. `run_cost.py` prices every transcript usage call in the run
+window, including resumed sessions and cached tokens. An unreadable store
+fails; an unpriced call makes the whole total unknown, never a partial sum.
+The conductor uses `memo.max_usd` (default $100) to decide whether another
+generation fits, including the first three. Unknown spend stops research;
+the minimum generation count never overrides the budget. This is an admission
+estimate, not a provider billing cap: an in-flight call can cost more than the
+previous generation. A strict billing ceiling also needs a provider-enforced
+spending limit. Phase coordinators
 can spawn up to ten leaf workers at depth two.
-Boot refuses one without the other, a missing or
-malformed price, and a critic from the writer's provider. With neither set,
-every child runs on the chat's model.
+Boot refuses missing roles, one without the other, a missing or malformed
+price, and a critic from the writer's provider. It never substitutes the
+chat's model for both roles. The conductor still uses the selected chat route;
+if that route is unpriced, the total remains unknown and further generations
+are refused.
 
 The sign-in is a real credential for your account, kept in the state volume
 where the agent's own tools can read it. Use it on an install only you
