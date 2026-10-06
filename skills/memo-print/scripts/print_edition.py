@@ -35,6 +35,7 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent.parent / "memo-shared" / "scripts"))
 from latch_mcp import LatchError, connect, finish_command
+from printer_config import read_printer as _printer
 
 # tsp143.ppd's tallest 72 mm page. Without it CUPS shrinks the receipt onto
 # the default 72x200 mm page; the driver's variable length cuts after the ink.
@@ -43,15 +44,6 @@ RECEIPT_MEDIA = "X72MMY2000MM"
 PATH_RE = re.compile(
     r"(/Users/[^\s'\"]+/Plow/pt/edition-[0-9-]+\.pdf(?:\.b64)?)"
 )
-
-
-def _printer(config_path):
-    try:
-        cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return {}
-    printer = cfg.get("printer") if isinstance(cfg, dict) else None
-    return printer if isinstance(printer, dict) else {}
 
 
 def printer_name(config_path):
@@ -119,7 +111,13 @@ def write_receipt(pdf_path):
         sys.exit(f"error: no edition.json for the receipt page: {exc}")
     receipt = run_dir / "receipt.pdf"
     import owner_chat  # noqa: PLC0415 -- the name is asked of Plow only for a roll
-    render_memo.write_pdf(render_memo.receipt_html(memo, owner_chat.owner_name()), receipt)
+    try:  # the same code the attendee's printed line carries (post_to_chat.printed_line)
+        code = owner_chat.receipt_code(owner_chat.home_channel())
+    except (SystemExit, Exception):  # noqa: BLE001 -- no owner's chat yet: the slip prints without one
+        code = None
+    name, digits = owner_chat.receipt_owner()
+    stub = " · ".join(part for part in (code, digits) if part) or None
+    render_memo.write_pdf(render_memo.receipt_html(memo, name, stub), receipt)
     return str(receipt)
 
 

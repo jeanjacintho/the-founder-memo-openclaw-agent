@@ -21,8 +21,9 @@ from datetime import datetime
 from pathlib import Path
 
 from bearer_http import post_json, post_json_read, put_bytes, require
-from owner_chat import home_channel
+from owner_chat import home_channel, receipt_code
 from owner_phrases import phrase
+from printer_config import read_printer
 import run_attempts
 from owner_time import owner_now
 from pt_paths import config_file, pt_home
@@ -155,12 +156,14 @@ def recover_delivery(ticket, *, notify_print_failure=False, wait=True):
                 line = print_page(str(folder / print_path) if print_path == "edition.pdf" else print_path) if print_path else None
                 if line:
                     print(line)
-                    if notify_print_failure:
-                        try:
-                            base, uid, token = resolve_chat()
-                            post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", {"body": line})
-                        except Exception as exc:
-                            print(f"print-failure notice not posted: {exc}", file=sys.stderr)
+                # Why it did not print, or at an event, that it did and where to get it.
+                if notify_print_failure and (line or (print_path and event_receipt())):
+                    try:
+                        base, uid, token = resolve_chat()
+                        post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat",
+                                  {"body": line or printed_line(uid)})
+                    except (Exception, SystemExit) as exc:
+                        print(f"print notice not posted: {exc}", file=sys.stderr)
                 # Printing can have an unknown outcome; never auto-print twice.
                 succeeded = True
             else:
@@ -336,6 +339,21 @@ def main():
             on_posted=run_attempts.clear if args.clear_attempts else None)
 
 
+def event_receipt():
+    """An event install's printer (only those have a printer.url, the event's print server):
+    a printed memo owes the attendee a line. Read from config, not the environment, so a
+    recovery run says it too."""
+    printer = read_printer(CONFIG_DEFAULT)
+    return printer.get("configured") is True and bool(printer.get("url"))
+
+
+def printed_line(uid):
+    """The attendee's "go get it" once the event printer took the memo (the CEO's words, Oct 6).
+    The code is the one the slip prints, so the slip and the phone match. Event installs write
+    English."""
+    return f"🧾 Your daily report is printed ({receipt_code(uid)}). Pick it up from the Plow team at the printer."
+
+
 def deliver(base, uid, token, *, pdf, filename=None, on_posted=None):
     """POST the PDF, then print and record; a confirmed POST is never retried."""
     attachment_uid = declare_and_upload(base, uid, token, pdf, filename=filename)
@@ -384,11 +402,11 @@ def deliver(base, uid, token, *, pdf, filename=None, on_posted=None):
         return
 
     line = print_page(pdf)
-    if line:
+    if line or event_receipt():
         try:  # the edition already posted: exit 0 must keep meaning that
-            post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", {"body": line})
+            post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", {"body": line or printed_line(uid)})
         except SystemExit as exc:
-            print(f"print-failure notice not posted: {exc}", file=sys.stderr)
+            print(f"print notice not posted: {exc}", file=sys.stderr)
     recorded = _best_effort(run_record_memo, (edition_json, delivered_at), "memo not recorded")
     print(recorded)
     recoveries = []

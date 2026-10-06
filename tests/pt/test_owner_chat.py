@@ -87,23 +87,30 @@ class TestHomeChannel:
 class TestOwnerName:
     """The printed receipt's name line: the owner's Plow display name, or nothing."""
 
-    @pytest.mark.parametrize("raw, expected", [
-        ("  Ana   Lima ", "Ana Lima"), ("+1 (555) 010-2030", None),
-        ("ana@example.com", None), ("", None), (None, None),
+    # Synthetic numbers only (555-01xx); this repo is public.
+    @pytest.mark.parametrize("name, handle, expected", [
+        ("  Ana   Lima ", "+15550104477", ("Ana Lima", None)),        # a full name: no digits
+        ("Daniel", "+1 (555) 010-4477", ("Daniel", "4477")),         # one name: + the phone's last 4
+        ("Daniel", "daniel.d@example.com", ("Daniel", None)),
+        ("+15550104477", "+15550104477", (None, "4477")),            # Plow fell back to the number
+        (None, "ana@example.com", ("ana", None)),                    # an address alone: before the @
+        ("ana@example.com", None, ("ana", None)),
+        ("", None, (None, None)), (None, "+12", (None, None)),       # nothing usable
     ])
-    def test_the_owners_display_name_never_a_guests_number_or_address(self, monkeypatch, raw, expected):
+    def test_the_owners_name_and_digits_never_a_guests(self, monkeypatch, name, handle, expected):
         monkeypatch.setenv("PLOW_API_BASE", "https://plow.test")
         monkeypatch.setenv("PLOW_AGENT_TOKEN", "tok")
-        doc = identity(chat("cht_dm", SELF, {**GUEST, "display_name": "Guest"}, {**OWNER, "display_name": raw}))
+        guest = {**GUEST, "display_name": "Guest Person", "provider_key": "+15550100001"}
+        doc = identity(chat("cht_dm", SELF, guest, {**OWNER, "display_name": name, "provider_key": handle}))
         monkeypatch.setattr(owner_chat, "fetch_identity", lambda base, token: doc)
-        assert owner_chat.owner_name() == expected
+        assert owner_chat.receipt_owner() == expected
 
     def test_plow_unreachable_or_no_token_prints_nothing_instead_of_failing(self, monkeypatch):
         monkeypatch.delenv("PLOW_AGENT_TOKEN", raising=False)
-        assert owner_chat.owner_name() is None
+        assert owner_chat.receipt_owner() == (None, None)
         monkeypatch.setenv("PLOW_API_BASE", "https://plow.test")
         monkeypatch.setenv("PLOW_AGENT_TOKEN", "tok")
         def unreachable(base, token):
             raise SystemExit("error: /v1/agents/me returned HTTP 503")
         monkeypatch.setattr(owner_chat, "fetch_identity", unreachable)
-        assert owner_chat.owner_name() is None
+        assert owner_chat.receipt_owner() == (None, None)

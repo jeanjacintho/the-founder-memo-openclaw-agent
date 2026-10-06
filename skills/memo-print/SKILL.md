@@ -27,11 +27,14 @@ The page never passes through a tool argument.
 `printer.paper` `"72mm"` marks a thermal roll (a Star TSP100). A Letter page
 shrunk to 72 mm prints unreadable type, so the script renders `receipt.pdf`
 beside `edition.pdf` instead: a short fixed front page at 72 mm. Under the
-masthead is the owner's Plow display name (left off when Plow has none, or only
-a number or address), then the three ranked headlines and their first steps, the
-questions, the first advisor line and the cost line, each capped in lines (the
+masthead is the owner's name on its own row: their full name, else the one name
+Plow has, else their address before the @. Under it are the three ranked
+headlines with their why and first steps, the questions, the first advisor line and the cost line, each capped in lines (the
 bodies and evidence stay on the Letter page and in the chat), or the night's
-reasons when there is no card. It is sent with
+reasons when there is no card. At the bottom, a stub with their receipt code
+(`#K7Q2`, from their DM's uid), and when there is no full name, the last 4
+digits of their phone beside it (`#K7Q2 · 4477`); never the whole number or
+address. It is sent with
 `-o media=X72MMY2000MM` (the
 driver's variable length cuts after the ink). No `paper` key is the Letter
 page, unchanged.
@@ -53,6 +56,10 @@ non-zero or running past 10 minutes — ends the same way:
   implies the whole delivery failed,
 - `post_to_chat.py` posts the one line itself ("page not printed — <reason>;
   next scheduled run retries"); do not repeat it,
+- an event install (its `printer.url` is the print server) also gets one line
+  when the server takes the page, from `post_to_chat.py` itself: "🧾 Your daily
+  report is printed (#K7Q2). Pick it up from the Plow team at the printer.", with
+  the slip's own code; do not repeat it either,
 - do not retry in a loop, do not queue the page, do not re-run research to
   "fix" it. The next scheduled run recomposes and re-delivers on its own.
 
