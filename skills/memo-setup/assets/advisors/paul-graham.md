@@ -50,7 +50,7 @@ Graham's essays are written from Y Combinator's seat: the first years of softwar
 ### Do not focus on
 - Hiring ahead of growth, or work that does not move the number.
 ### Benchmarks
-- 5–7% a week is a good rate early on; 1% suggests the founders haven't figured out what they're doing.
+- During Y Combinator, 5–7% a week is a good rate; 1% suggests the founders haven't figured out what they're doing.
 ### Exit criteria
 - Default alive, or a funded path to it.
 

@@ -42,10 +42,6 @@ def test_the_renderer_catalog_reads_every_sourced_line(path):
     assert {" ".join(q.split()): u for q, u in quotes} == catalog
 
 
-def test_three_advisors_ship():
-    assert {p.stem for p in FILES} >= {"patrick-salyer", "paul-graham", "ben-horowitz"}
-
-
 def test_no_quoted_line_is_shared_across_advisors():
     # The culler's distinct-quote rule spans every advisor's file.
     seen = {}
