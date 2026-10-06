@@ -120,7 +120,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
     const result = await outboundDeliveryState.run(deliveryState, () => runtime.channel.inbound.dispatch({
       cfg, channel: "plow", accountId: account.accountId, route, ctxPayload,
       replyOptions: {
-        turnAdoptionLifecycle: { ...ingress, onSettled: finishGroup },
+        turnAdoptionLifecycle: { ...ingress, onAbandoned: () => { ingress.onAbandoned(); finishGroup(); } },
         ...(!senderIsOwner && (account.accountId === "email" || (!listening && !chat.trusted)) ? { disableTools: true } : {}),
         sourceReplyDeliveryMode: command && !senderIsOwner && chat.trusted ? "message_tool_only" : "automatic",
         onObservedReplyDelivery: () => { observedReplyDelivery = true; },

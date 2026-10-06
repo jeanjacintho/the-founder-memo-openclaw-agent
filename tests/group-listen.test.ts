@@ -8,7 +8,7 @@ import { websocketFixture, checkpointUid } from "./ws-fixture.ts";
 
 type Payload = { text: string; isError?: boolean; isFallbackNotice?: boolean };
 type Dispatch = {
-  replyOptions: { turnAdoptionLifecycle: { onAdopted: () => Promise<void> }; onAgentRunTerminalOutcome: (outcome: string) => void };
+  replyOptions: { turnAdoptionLifecycle: { onAdopted: () => Promise<void>; onSettled?: () => void }; onAgentRunTerminalOutcome: (outcome: string) => void };
   delivery: { preparePayload?: (payload: Payload) => unknown; deliver: (payload: Payload) => Promise<unknown> };
 };
 
@@ -132,6 +132,8 @@ test("a deferred group retains its source until the signal tool runs, before the
         const uid = source;
         const record = async () => {
           await dispatch.replyOptions.turnAdoptionLifecycle.onAdopted();
+          dispatch.replyOptions.turnAdoptionLifecycle.onSettled?.();
+          await new Promise<void>(resolve => setImmediate(resolve));
           const result = await all.tool(groupContext("group", member.provider_key)).execute("call", { category: "priority" });
           assert.equal((result.details as { recorded: boolean }).recorded, true);
           recorded.push(uid);
