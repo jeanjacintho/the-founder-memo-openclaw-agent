@@ -74,3 +74,34 @@ test("research MCP tools survive server filtering, safe-name materialization and
   assert.ok(!surfaced.tools.some(tool => ["exec", "wait"].includes(tool.name)));
   runtime.cleanup();
 });
+
+test("a flow script finishes in one exec call even when background execution is requested", async () => {
+  const config = renderConfig(identity, "http://api:8000");
+  const factory = await openclawModule("agent-tools-D0MSdC6_");
+  const tools = factory.createOpenClawCodingTools({
+    config, workspaceDir: "/tmp", agentId: "main", sessionKey: "agent:main:cron:cost-test",
+    modelProvider: "plow", modelId: "openai/gpt-6-sol",
+    exec: { host: "gateway", security: "full", ask: "off" },
+  });
+  assert.ok(!tools.some(tool => tool.name === "process"));
+  assert.ok(tools.some(tool => tool.name === "sessions_spawn"));
+  const exec = tools.find(tool => tool.name === "exec");
+  assert.ok(exec);
+  const result = await exec.execute("cost-test", { command: "sleep 0.1", background: true, yieldMs: 10 });
+  assert.equal(result.details.status, "completed");
+  assert.equal(result.details.exitCode, 0);
+  assert.ok(!result.details.sessionId, "no process handle remains for model polling");
+});
+
+test("the pinned spawn resolver applies a bounded default and the shorter leaf timeout", async () => {
+  const resolver = await openclawModule("subagent-spawn-ownership-");
+  const cfg = renderConfig(identity, "http://api:8000");
+  assert.equal(resolver.n({ cfg }), 3600);
+  assert.equal(resolver.n({ cfg, runTimeoutSeconds: 900 }), 900);
+});
+
+test("one-off image cache traces omit conversation payloads by default", () => {
+  for (const flag of ["MESSAGES", "PROMPT", "SYSTEM"]) {
+    assert.equal(process.env[`OPENCLAW_CACHE_TRACE_${flag}`], "0");
+  }
+});

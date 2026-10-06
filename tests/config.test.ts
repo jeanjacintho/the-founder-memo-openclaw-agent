@@ -169,13 +169,13 @@ test("the Plow MCP filter exposes only the Latch tools used by the memo research
     "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
     "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
   ]);
-  assert.ok(config.tools.alsoAllow.includes("process"), "OpenClaw 2026.9.6 no longer infers process from exec");
+  assert.ok(config.tools.deny.includes("process"), "flow scripts await completion instead of model polling");
   assert.ok(!config.tools.alsoAllow.includes("group:plugins"), "do not grant every plugin tool");
 });
 
 test("the tournament allows depth-two phase coordinators and ten leaf children without chat turns preferring delegation", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").agents.defaults.subagents, {
-    maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest",
+    maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest", runTimeoutSeconds: 3600,
   });
 });
 
@@ -213,18 +213,18 @@ test("role models are refused at boot unless both are priced Plow models on diff
 });
 
 test("phone turns cannot block on ask_user or read secrets", () => {
-  assert.deepEqual(renderConfig(identity, "http://api:8000").tools.deny, ["ask_user", "secrets"]);
+  assert.deepEqual(renderConfig(identity, "http://api:8000").tools.deny, ["ask_user", "secrets", "process"]);
 });
 
 test("native messaging retains local workspace and memory file tools", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools, {
     message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } },
     profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
-      "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+      "read", "write", "edit", "exec", "plow_start_thread", "plow_record_signal",
       "plow_set_thread_trust", "plow_reply_to", "plow_send_email", "plow_google", "plow_slack", "plow_connect",
       "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
       "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
-    ], deny: ["ask_user", "secrets"],
+    ], deny: ["ask_user", "secrets", "process"],
     exec: { pathPrepend: ["/opt/plow/pt-venv/bin"] },
   });
 });

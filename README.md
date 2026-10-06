@@ -291,6 +291,12 @@ have no API idempotency key.
 
 ## Development
 
+For the remaining cache and token-volume investigation in #75, see
+[the measurement and closure procedure](COST-INVESTIGATION.md). Local flow scripts
+await `exec` completion without `process` polling. Research coordinators have a
+one-hour default timeout; the tournament gives leaf children fifteen minutes and
+retries an incomplete phase only once from its checkpoint.
+
 Tests need no Plow credentials and no network beyond fetching pinned tools.
 
 ```sh

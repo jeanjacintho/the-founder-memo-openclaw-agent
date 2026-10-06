@@ -127,8 +127,11 @@ explicit request about the owner's mail, calendar or Slack ("show me my latest
 email") is answered first, through the google-workspace skill or `plow_slack`,
 even under `SETUP_NEEDED`; setup carries on in a later turn.
 
-**Every flow script is one bare line.** Each one is executable and carries
-its own shebang, so the absolute path alone runs it, with space-separated
+**Every flow script is one bare line.** Run it once with `exec` and await
+its exit. Local `process` is disabled, so never emulate a wait with repeated
+commands or sleep loops. Research children use `sessions_spawn` and
+`sessions_yield` instead. Each script is executable and carries its own shebang,
+so the absolute path alone runs it, with space-separated
 `key=value` arguments (quoted only if a value itself has a space; a
 dotted or underscored *value* is never a reason to wrap anything). Do not
 prefix an interpreter — not even `python3`; do not wrap the line in a

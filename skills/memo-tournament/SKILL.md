@@ -66,15 +66,19 @@ The run's own session is a thin **conductor**. It holds the lock, `RUN_PAGE`, th
 language, `RUN_STARTED`, the window, the phase list, and one line per finished phase, nothing
 else. Phases, in order: **Orient**, **Gather**, **Generation 1, 2, …**, **Freshness**,
 **Publish**. Each phase runs in a fresh **phase coordinator**: one `sessions_spawn` child
-(`context: "isolated"`) whose task is `RUN_PAGE`, the phase and generation, the owner's language,
+(`context: "isolated"`, `runTimeoutSeconds: 3600`) whose task is `RUN_PAGE`, the phase and generation, the owner's language,
 `RUN_STARTED` and the window, and "follow `/opt/plow/skills/memo-tournament/SKILL.md`
 § Invariants and § <phase>"; then `sessions_yield` until it returns. The coordinator reads
 `RUN_PAGE` first, runs its own investigators, writers, critics and culler as leaf children
-(`sessions_spawn`, which leaves cannot use themselves), rewrites `RUN_PAGE` after every spawn set,
+(`sessions_spawn` with `runTimeoutSeconds: 900`, which leaves cannot use themselves), rewrites `RUN_PAGE` after every spawn set,
 and **returns 10 lines or fewer**: the phase, whether it completed, and what the conductor needs to
 choose the next phase. The conductor never sees dossiers, receipts or verdicts, so its context
 stays flat however many generations run. A coordinator that dies or returns incomplete loses
-only its phase: the conductor re-runs that phase from `RUN_PAGE`.
+only its phase: record the failure and retry that phase **once** from `RUN_PAGE`, after
+the budget check. Keep the retry count on `RUN_PAGE` so compaction cannot reset it.
+On a second failure or timeout, stop research and use § Budget's checkpoint-or-explanation
+publication and lock-release path, naming the failed phase as the reason. Bootstrap uses
+its explanation-only stop path. Never restart a completed phase or disable a child timeout.
 
 Before every spawn set, the conductor or coordinator checks § Budget, including Orient, Gather,
 the first three generations, Freshness and bootstrap. A failed check returns the
