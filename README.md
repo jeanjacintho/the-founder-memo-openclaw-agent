@@ -14,6 +14,11 @@ gate and validates optional `memo.start` (`HH:MM`, default `01:00`) and
 replace the current `delivery.hour` schedule yet; publication and engine integration
 are separate follow-up PRs.
 
+The publication draft adds `render_memo.py`, `record_memo.py` and
+`memo_history.py` alongside the active newspaper scripts. The existing
+renderer, template, recorder and delivery finalizers remain active until
+the engine integration switches all consumers together.
+
 ## What it is
 
 The product is a **compact Letter paper**. It can open with **what Patrick

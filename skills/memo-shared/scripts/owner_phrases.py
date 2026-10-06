@@ -57,6 +57,8 @@ SOURCE = {
     "page.nothing_to_report": "Nothing to report this time.",
     "page.advice_from": "Advice from",
     "page.priority_band": "What to prioritize today",
+    "page.cost": "Tonight's research: ${usd} · {duration}",
+    "page.cost_unknown": "Tonight's research: cost unavailable · {duration}",
 }
 
 # Curated Portuguese: the paper's first language, never left to a translation.
@@ -80,6 +82,8 @@ PORTUGUESE = {
     "page.nothing_to_report": "Nada a relatar desta vez.",
     "page.advice_from": "Conselho de",
     "page.priority_band": "O que priorizar hoje",
+    "page.cost": "Pesquisa desta noite: US${usd} · {duration}",
+    "page.cost_unknown": "Pesquisa desta noite: custo indisponível · {duration}",
 }
 
 
