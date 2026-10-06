@@ -84,7 +84,9 @@ def apply_event(draft):
     if not event:
         raise ValueError(f"MEMO_EVENT {code!r} is not in {EVENTS.name}")
     draft["event"] = code
-    draft["printer"] = {"configured": True, "line": event["printer_line"], "paper": event["paper"]}
+    # print_key is a public event key, not a secret: the print server's gate (on/off,
+    # the event's hours, one small receipt per agent) is what protects the printer.
+    draft["printer"] = {"configured": True, "url": event["print_url"], "key": event["print_key"], "paper": event["paper"]}
     draft["mac"] = {"awake": False}
     draft.setdefault("start", event["start"])  # the first memo runs now; later nights at the event's hour
 

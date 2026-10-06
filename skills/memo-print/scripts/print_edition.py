@@ -65,30 +65,39 @@ def printer_name(config_path):
     return name.strip()
 
 
-def printer_line(config_path):
-    """An event install's shared printer: the E.164 Plow line its receipt is sent to."""
+def printer_url(config_path):
+    """An event install's shared printer: the https print server its receipt is POSTed to."""
     printer = _printer(config_path)
-    line = printer.get("line") if printer.get("configured") is True else None
-    return line if isinstance(line, str) and re.fullmatch(r"\+[1-9]\d{1,14}", line) else None
+    url = printer.get("url") if printer.get("configured") is True else None
+    return url if isinstance(url, str) and url.startswith("https://") else None
 
 
-def send_to_line(pdf_path, line, date):
-    """Hand the receipt to the event's printer line over Plow: this agent's chat
-    with that line alone (untrusted, so nothing the printer side says can steer
-    this agent), one message carrying the PDF. No Mac, no Latch."""
-    from bearer_http import post_json, post_json_read, require  # noqa: PLC0415
+def send_to_url(pdf_path, url, key):
+    """POST the receipt to the event's print server (the event Mac, behind Tailscale
+    Funnel) with the event's public key. 200 means it is queued and prints in order; a
+    refusal names its reason, which post_to_chat shows the owner. No Mac, no Latch."""
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+    from bearer_http import require  # noqa: PLC0415
     from owner_chat import fetch_identity  # noqa: PLC0415
-    from post_to_chat import declare_and_upload  # noqa: PLC0415
 
-    base, token = require("PLOW_API_BASE").rstrip("/"), require("PLOW_AGENT_TOKEN")
-    # Always the idempotent POST with exactly this roster: a chat merely *containing*
-    # the printer line could be a group with other people, who would get the receipt.
-    chat = post_json_read(base, "/v1/chats", token, "Plow Chat printer thread", {
-        "line_uid": fetch_identity(base, token)["line"]["uid"], "members": [line], "body": "The Founder Memo",
-        "trusted": False, "idempotency_key": f"memo-print-{line}"})["uid"]
-    attachment = declare_and_upload(base, chat, token, pdf_path, filename=f"The-Founder-Memo-{date}.pdf")
-    post_json(base, f"/v1/chats/{chat}/messages", token, "Plow Chat printer receipt",
-              {"body": "", "attachment_uids": [attachment]})
+    identity = fetch_identity(require("PLOW_API_BASE").rstrip("/"), require("PLOW_AGENT_TOKEN"))
+    with open(pdf_path, "rb") as fh:
+        data = fh.read()
+    request = urllib.request.Request(url, data=data, method="POST", headers={
+        "Authorization": f"Bearer {key}", "Content-Type": "application/pdf",
+        "X-Plow-Agent": str(identity.get("uid") or (identity.get("line") or {}).get("uid") or "unknown")})
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as exc:
+        try:
+            reason = json.loads(exc.read()).get("reason") or f"HTTP {exc.code}"
+        except ValueError:
+            reason = f"HTTP {exc.code}"
+        sys.exit(f"error: the event printer refused the receipt: {reason}")
+    except urllib.error.URLError as exc:
+        sys.exit(f"error: the event printer could not be reached: {exc.reason}")
 
 
 def receipt_paper(config_path):
@@ -235,17 +244,18 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     printer = printer_name(args.config)
-    line = printer_line(args.config)
-    if not printer and not line:
+    url = printer_url(args.config)
+    if not printer and not url:
         print("skipped: printer.configured is not true")
         return
     date = args.date or edition_date(args.pdf)
-    if line:  # an event install: the receipt goes to the event's shared printer
+    if url:  # an event install: the receipt goes to the event's shared printer
         if args.dry_run:
-            print(f"dry-run: would send the receipt to the event printer {line}")
+            print(f"dry-run: would send the receipt to the event printer {url}")
             return
-        send_to_line(write_receipt(args.pdf) if receipt_paper(args.config) else args.pdf, line, date)
-        print(f"page sent to the event printer {line}")
+        key = _printer(args.config).get("key") or ""
+        queued = send_to_url(write_receipt(args.pdf) if receipt_paper(args.config) else args.pdf, url, key)
+        print(f"page sent to the event printer (queue position {queued.get('position', '?')})")
         return
     lp_options = ["-o", f"media={RECEIPT_MEDIA}"] if receipt_paper(args.config) else []
     if args.dry_run:
