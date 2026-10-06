@@ -29,6 +29,7 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from urllib.parse import unquote
 
 from owner_chat import home_channel
 from latch_mcp import LatchError
@@ -64,14 +65,24 @@ def _copy_legacy(wiki, toml):
         if code != 0:
             raise LatchError(f"wiki index: {out.strip()}")
         index = wiki.read("index.md") or ""
-    pages = sorted(set(re.findall(rf"\(/({re.escape(LEGACY_ROOT)}/[^)\s]+\.md)\)", index)))
+    pages = sorted({unquote(rel) for rel in re.findall(rf"\(/({re.escape(LEGACY_ROOT)}/[^)\s]+\.md)\)", index)})
     for rel in pages:
         new = OVERVIEW if rel == LEGACY_OVERVIEW else ROOT + rel[len(LEGACY_ROOT):]
         if wiki.read(new) is None:
             text = wiki.read(rel)
             if text is None:
                 raise LatchError(f"legacy wiki page missing: {rel}")
-            wiki.write(new, text.replace(LEGACY_OVERVIEW, OVERVIEW).replace(LEGACY_ROOT, ROOT))
+            text = text.replace(LEGACY_OVERVIEW, OVERVIEW).replace(LEGACY_ROOT, ROOT)
+            text = text.replace("[The Founder Times](", "[The Founder Memo](")
+            if rel == LEGACY_OVERVIEW:
+                meta, body = split_page(text)
+                canonical, _ = split_page((ASSETS / "overview.md").read_text(encoding="utf-8"))
+                meta.update({key: canonical[key] for key in ("title", "description", "tags")})
+                body = body.replace("# The Founder Times\n", "# The Founder Memo\n", 1)
+                if not re.search(r"^## Memos\s*$", body, re.M):
+                    body += "\n## Memos\n"
+                text = join_page(meta, body)
+            wiki.write(new, text)
     return [f"copied {len(pages)} pages from {LEGACY_ROOT}"] if pages else []
 
 

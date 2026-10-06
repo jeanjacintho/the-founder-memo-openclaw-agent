@@ -107,6 +107,10 @@ def times_install(mac):
                       (f"{ws.LEGACY_ROOT}/resources.md", "resources.md")]:
         text = (ws.ASSETS / asset).read_text().replace("{today}", "2026-10-04").replace("{chat}", "cht_1")
         text = text.replace(OVERVIEW, ws.LEGACY_OVERVIEW).replace(ROOT, ws.LEGACY_ROOT)
+        text = text.replace("The Founder Memo", "The Founder Times")
+        if asset == "overview.md":
+            text = text.replace("tags: [memo]", "tags: [newspaper]").replace("\n## Memos\n", "")
+            text += "\n## My notes\nKeep the pilot outcomes visible.\n"
         if asset in ("qa.md", "resources.md"):
             text += "\n- owner-authored note\n"
             text += f"\n[Earlier advice](/{ws.LEGACY_OVERVIEW})\n"
@@ -123,6 +127,8 @@ def times_install(mac):
         "paper": f"[The Founder Times](/{ws.LEGACY_OVERVIEW})",
         "priority": {"headline": "Close the pilot"},
     }, "# Prior advice\n"))
+    notes = root / ws.LEGACY_ROOT / "Café notes.md"
+    notes.write_text(edition.read_text().replace("type: Edition", "type: Synthesis"))
     assert mac.wiki("index")["exit_code"] == 0
     return {p: p.read_bytes() for p in (root / ws.LEGACY_ROOT).rglob("*") if p.is_file()}
 
@@ -141,6 +147,12 @@ class TestTimesUpgrade:
             text = (wiki_dir(mac) / rel).read_text()
             assert "owner-authored note" in text and f"/{OVERVIEW}" in text
             assert ws.LEGACY_ROOT not in text
+            assert "[The Founder Times](" not in text
+        overview = (wiki_dir(mac) / OVERVIEW).read_text()
+        assert "title: The Founder Memo" in overview and "# The Founder Memo\n" in overview
+        assert "tags:\n- memo" in overview and "## Memos\n" in overview
+        assert "## My notes\nKeep the pilot outcomes visible." in overview
+        assert (wiki_dir(mac) / ROOT / "Café notes.md").exists()
         assert history.recent(w, date(2026, 10, 5)) == [
             {"date": "2026-10-04", "desk": {"headline": "Close the pilot"}}]
         assert {p: p.read_bytes() for p in before} == before
