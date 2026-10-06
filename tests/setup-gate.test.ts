@@ -44,7 +44,7 @@ test("the injected context says the first action is done", () => {
 for (const room of ["owner-dm", "group"] as const) test(`an inbound ${room} turn ${room === "owner-dm" ? "starts from the real gate" : "listens instead of the gate"}`, async t => {
   const home = await mkdtemp(`${tmpdir()}/pt-home-`);
   t.after(() => rm(home, { recursive: true }));
-  await writeFile(`${home}/config.json`, JSON.stringify({ owner: { timezone: "UTC", language: "English" }, delivery: { hour: "07:00" }, printer: { configured: false } }));
+  await writeFile(`${home}/config.json`, JSON.stringify({ owner: { timezone: "UTC", language: "English" }, memo: { start: "01:00", window_minutes: 240, max_usd: 100 }, printer: { configured: false } }));
   process.env.PT_HOME = home;
   process.env.PT_SKILLS = new URL("../skills", import.meta.url).pathname;
   t.after(() => { delete process.env.PT_HOME; delete process.env.PT_SKILLS; });
@@ -106,11 +106,11 @@ for (const [label, ctx, injects] of [
   ["owner's DM", { channel: "plow", accountId: "chat", sessionKey: "agent:main:main", trigger: "user" }, true],
   ["heartbeat in the main session", { channel: "plow", accountId: "chat", sessionKey: "agent:main:main", trigger: "heartbeat" }, false],
   ["a group", { channel: "plow", accountId: "chat", sessionKey: "agent:main:plow:group:cht_group", trigger: "user" }, "listen"],
-  ["a scheduled job", { sessionKey: "cron:pt-daily-edition", trigger: "cron" }, false],
+  ["a scheduled job", { sessionKey: "cron:memo-nightly", trigger: "cron" }, false],
 ] as const) test(`outside dispatch, ${label} ${injects === "listen" ? "listens instead of" : injects ? "starts from" : "skips"} the real gate`, async t => {
   const home = await mkdtemp(`${tmpdir()}/pt-home-`);
   t.after(() => rm(home, { recursive: true }));
-  await writeFile(`${home}/config.json`, JSON.stringify({ owner: { timezone: "UTC", language: "English" }, delivery: { hour: "07:00" }, printer: { configured: false } }));
+  await writeFile(`${home}/config.json`, JSON.stringify({ owner: { timezone: "UTC", language: "English" }, memo: { start: "01:00", window_minutes: 240, max_usd: 100 }, printer: { configured: false } }));
   process.env.PT_HOME = home;
   process.env.PT_SKILLS = new URL("../skills", import.meta.url).pathname;
   t.after(() => { delete process.env.PT_HOME; delete process.env.PT_SKILLS; });
