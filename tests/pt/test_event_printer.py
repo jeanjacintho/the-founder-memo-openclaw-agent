@@ -105,3 +105,16 @@ def test_send_to_line_always_resolves_a_chat_with_only_the_printer_line(monkeypa
     assert calls[0] == ("/v1/chats", {"line_uid": "ln_x", "members": [LINE], "body": "The Founder Memo",
                                       "trusted": False, "idempotency_key": f"memo-print-{LINE}"})
     assert calls[-1] == ("/v1/chats/cht_printer/messages", {"body": "", "attachment_uids": ["att@cht_printer"]})
+
+
+def test_an_event_installs_first_turn_is_the_connect_question_not_the_hour(tmp_path, monkeypatch):
+    # Live on Oak: with no draft the gate said DRAFT:none and the agent asked the start hour.
+    gate = load_module("setup_needed", "memo-shared/scripts/setup_needed.py")
+    config = tmp_path / "config.json"
+    monkeypatch.delenv("MEMO_EVENT", raising=False)
+    assert gate.draft_line(config) == "DRAFT:none"
+    monkeypatch.setenv("MEMO_EVENT", "EV-PLOW")
+    assert gate.draft_line(config) == "DRAFT:start,printer,awake"
+    (tmp_path / ".setup-draft.json").write_text(json.dumps({"connected": True}))
+    assert gate.draft_line(config) == "DRAFT:start,printer,awake,connected"
+    assert not (tmp_path / ".setup-draft.json").read_text().count("event"), "the gate only reads"
