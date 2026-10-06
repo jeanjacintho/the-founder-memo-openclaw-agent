@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import type { TestContext } from "node:test";
 
@@ -23,4 +23,10 @@ export async function websocketFixture(t: TestContext) {
     return controller;
   };
   return { root, server, apiBase: `http://127.0.0.1:${server.address().port}`, abortAfter };
+}
+
+/** Read both legacy UID checkpoints and adoption checkpoints. */
+export async function checkpointUid(root: string, chat: string): Promise<string> {
+  const saved = await readFile(`${root}/plow-checkpoints/${chat}`, "utf8");
+  return saved.startsWith("{") ? JSON.parse(saved).uid : saved;
 }

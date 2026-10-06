@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
 import entry from "../plugin/index.ts";
-import { websocketFixture } from "./ws-fixture.ts";
+import { websocketFixture, checkpointUid } from "./ws-fixture.ts";
 
 const require = createRequire(new URL("../plugin/package.json", import.meta.url));
 const { emitDiagnosticEvent } = await import(require.resolve("openclaw/plugin-sdk/diagnostic-runtime"));
@@ -75,7 +74,7 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
     } },
   });
   assert.ok(channel);
-  await channel.gateway.startAccount({ account, cfg: { messages: { visibleReplies: "automatic" } }, abortSignal: controller.signal, log: { info(text: string) { logs.push(text); if (text.startsWith("acked")) controller.abort(); } } });
+  await channel.gateway.startAccount({ account, cfg: { messages: { visibleReplies: "automatic" } }, abortSignal: controller.signal, log: { info(text: string) { logs.push(text); if (text.startsWith("acked") || text.startsWith("turn incomplete")) controller.abort(); } } });
   if (outcome === "plain-final") {
     const texts = fetch.mock.calls.filter(call => String(call.arguments[0]).endsWith("/messages")).map(call => JSON.parse((call.arguments[1] as RequestInit).body as string).body);
     assert.deepEqual(texts, ["plain reply"]);
@@ -88,7 +87,7 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
     assert.ok(logs.some(text => text.startsWith("completed chat=chat message=inbound")));
     assert.ok(!logs.some(text => text.startsWith("turn incomplete")));
   }
-  if (["observed", "queued", "deferred"].includes(outcome)) {
+  if (["observed", "queued"].includes(outcome)) {
     assert.ok(logs.some(text => text.startsWith("completed chat=chat message=inbound")));
     assert.ok(!logs.some(text => text.startsWith("turn incomplete")));
   }
@@ -101,6 +100,7 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
     assert.deepEqual(texts, ["I'll follow up here.\n\nNote: I did not schedule a reminder in this turn, so this will not trigger automatically."]);
   }
   if (outcome === "delivered") assert.equal(observation, true);
+  if (outcome === "deferred") assert.ok(logs.some(text => text.startsWith("deferred chat=chat message=inbound")));
   if (outcome === "duplicate") assert.ok(logs.some(text => text.startsWith("turn incomplete")));
   assert.ok(context);
   assert.equal(context.sender.id, sender.provider_key);
@@ -116,5 +116,5 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
     { name: "Member", type: "member", role: "member" },
     { type: "agent", role: "self" },
   ]);
-  assert.equal(await readFile(`${root}/plow-checkpoints/chat`, "utf8"), ["aborted", "failed", "empty", "native-other"].includes(outcome) ? "first:inbound" : "inbound");
+  assert.equal(await checkpointUid(root, `chat`), ["aborted", "failed", "empty", "native-other", "duplicate", "error-notice", "terminal-notice", "deferred"].includes(outcome) ? "first:inbound" : "inbound");
 });

@@ -2,8 +2,9 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { defineChannelPluginEntry, type ChannelPlugin, type PluginRuntime, type OpenClawConfig } from "openclaw/plugin-sdk/channel-core";
 import { hasVisibleChannelTurnDispatch } from "openclaw/plugin-sdk/channel-message";
+import type { OpenClawPluginToolContext } from "openclaw/plugin-sdk/plugin-entry";
 import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
-import { request, listen, accepts, ownerChat, HttpError, DeliveryUnknownError, type Account, type Chat, type Message, type TurnOutcome } from "./transport.ts";
+import { request, listen, accepts, ownerChat, findOwnerChat, HttpError, DeliveryUnknownError, type Account, type Chat, type Message, type TurnOutcome, type TurnIngress } from "./transport.ts";
 import { gateContext, isOwnerDmTurn, runGate } from "./setup-gate.ts";
 import { CATEGORIES, GroupInbox, isGroupTurn, isListeningGroup, listeningContext, recordSignal, type Category } from "./group-listen.ts";
 import { notifyFailedPaperRun } from "./cron-failure-notice.ts";
@@ -15,6 +16,11 @@ const shared = globalThis as typeof globalThis & { plowGroupInbox?: GroupInbox }
 const groupInbox = (shared.plowGroupInbox ??= new GroupInbox());
 type DeliveryState = { unknown: boolean };
 const outboundDeliveryState = new AsyncLocalStorage<DeliveryState>();
+
+function ownerDmRequester(context: OpenClawPluginToolContext): boolean {
+  return context.senderIsOwner === true && context.messageChannel === "plow"
+    && context.agentAccountId === "chat" && context.sessionKey === "agent:main:main";
+}
 
 function normalizedHandle(handle: string): string {
   const compact = handle.trim().replace(/[\s().-]/g, "");
@@ -54,7 +60,7 @@ async function send(account: Account, to: string, text: string, mediaUrls: strin
   return { channel: "plow" as const, messageId: sent.uid };
 }
 
-async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, message: Message, firstContact: boolean, history: Message[], log: (text: string) => void): Promise<TurnOutcome> {
+async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, message: Message, firstContact: boolean, history: Message[], ingress: TurnIngress, log: (text: string) => void): Promise<TurnOutcome> {
   const sender = message.sender;
   const senderIsOwner = sender.type === "member" && chat.participants.some(p => p.type === "member" && p.uid === sender.uid && p.role === "owner");
   const senderId = sender.type === "member" ? senderIsOwner ? "plow-owner" : normalizedHandle(sender.provider_key) : sender.line.uid;
@@ -106,14 +112,19 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
   const deliveryState: DeliveryState = { unknown: false };
   let failure: unknown;
   let observedReplyDelivery = false;
+  let finishGroup!: () => void;
+  const groupFinished = new Promise<void>(resolve => { finishGroup = resolve; });
+  ingress.abortSignal.addEventListener("abort", finishGroup, { once: true });
   if (account.accountId === "chat" && !listening) await request(account, `/chats/${chat.uid}/typing`, { action: "start" }).catch(() => log("typing start failed"));
   try {
     const result = await outboundDeliveryState.run(deliveryState, () => runtime.channel.inbound.dispatch({
       cfg, channel: "plow", accountId: account.accountId, route, ctxPayload,
       replyOptions: {
-        sourceReplyDeliveryMode: command && !senderIsOwner ? "message_tool_only" : "automatic",
+        turnAdoptionLifecycle: { ...ingress, onSettled: finishGroup },
+        ...(!senderIsOwner && (account.accountId === "email" || (!listening && !chat.trusted)) ? { disableTools: true } : {}),
+        sourceReplyDeliveryMode: command && !senderIsOwner && chat.trusted ? "message_tool_only" : "automatic",
         onObservedReplyDelivery: () => { observedReplyDelivery = true; },
-        onAgentRunTerminalOutcome: outcome => { if (outcome === "failed") failure = new Error("Agent turn failed"); },
+        onAgentRunTerminalOutcome: outcome => { if (outcome === "failed") failure = new Error("Agent turn failed"); finishGroup(); },
       },
       delivery: {
         observeMessageSent: true,
@@ -130,13 +141,15 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
         onError: error => { failure = error; },
       },
     }));
+    // One source per listening group: do not replace its inbox while a deferred run can still record it.
+    if (listening && result.dispatched && result.dispatchResult.deferredToActiveRun && !ingress.abortSignal.aborted) await groupFinished;
     if (deliveryState.unknown) throw new DeliveryUnknownError();
     if (failure) throw failure;
     if (!result.dispatched) throw new Error("Turn was not dispatched");
     const dispatchResult = result.dispatchResult;
     if (dispatchResult.deferredToActiveRun) log(`deferred chat=${chat.uid} message=${message.uid} mode=${dispatchResult.deferredToActiveRun}`);
-    const outcome = listening || hasVisibleChannelTurnDispatch(dispatchResult, { observedReplyDelivery })
-      || dispatchResult.deferredToActiveRun || dispatchResult.deliberateSilentTerminalReply
+    const outcome = dispatchResult.deferredToActiveRun ? "deferred" : listening || hasVisibleChannelTurnDispatch(dispatchResult, { observedReplyDelivery })
+      || dispatchResult.deliberateSilentTerminalReply
       ? "completed" : "incomplete";
     log(`${outcome} chat=${chat.uid} message=${message.uid}`);
     return outcome;
@@ -144,6 +157,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
     if (deliveryState.unknown) throw new DeliveryUnknownError();
     throw error;
   } finally {
+    ingress.abortSignal.removeEventListener("abort", finishGroup);
     if (account.accountId === "chat" && !listening) await request(account, `/chats/${chat.uid}/typing`, { action: "stop" }).catch(() => log("typing stop failed"));
     if (listening) groupInbox.forget(chat.uid, message.uid);
   }
@@ -168,7 +182,7 @@ const plugin: ChannelPlugin<Account> = {
   gateway: {
     startAccount: async ctx => {
       const log = (text: string) => ctx.log?.info(text);
-      await listen(ctx.account, ctx.abortSignal, log, (chat, message, firstContact, history) => receive(ctx.account, ctx.cfg, chat, message, firstContact, history, log));
+      await listen(ctx.account, ctx.abortSignal, log, (chat, message, firstContact, history, ingress) => receive(ctx.account, ctx.cfg, chat, message, firstContact, history, ingress, log));
     },
   },
   outbound: {
@@ -243,12 +257,11 @@ export default defineChannelPluginEntry({
           };
           if (deliveryState.unknown) throw new DeliveryUnknownError();
           const account = plugin.config.resolveAccount(context.config, "chat");
-          const currentChatUid = context.deliveryContext?.channel === "plow" ? context.deliveryContext.to?.replace(/^plow:/i, "") : undefined;
-          if (!currentChatUid || !context.sessionId) throw new Error("Starting a thread requires an active Plow message");
+          const currentChatUid = (context.nativeChannelId ?? context.deliveryContext?.to)?.replace(/^plow:/i, "");
+          if (!ownerDmRequester(context) || !currentChatUid || !context.sessionId) throw new Error("Starting a thread requires the owner's main Plow DM");
           const currentChat = await request<Chat>(account, `/chats/${currentChatUid}`);
-          if (!accepts(account, currentChat)) throw new Error("Plow account does not serve this conversation");
-          const owner = currentChat.participants.find(p => p.type === "member" && p.role === "owner")
-            ?? (await ownerChat(account)).participants.find(p => p.type === "member" && p.role === "owner");
+          if (findOwnerChat(account, [currentChat]) !== currentChat) throw new Error("Starting a thread requires the owner's main Plow DM");
+          const owner = currentChat.participants.find(p => p.type === "member" && p.role === "owner");
           if (owner?.type !== "member" || !owner.provider_key) throw new Error("The owner's chat has no owner handle");
           const members = [...new Set([owner.provider_key, ...args.members])].sort();
           const idempotencyKey = createHash("sha256").update(JSON.stringify([account.lineUid, context.sessionId, _id, members, args.body])).digest("hex");

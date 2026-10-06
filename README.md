@@ -112,8 +112,14 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 
 - **Chat.** The owner's phone DM is the agent's main session. Before each of
   the owner's turns the Plow channel runs the setup gate and hands the model
-  its answer; groups are only listened to for priority signals and never
-  get replies or setup questions.
+  its answer. Replies appear automatically in the current conversation;
+  groups are only listened to for priority signals and never get replies or
+  setup questions. Non-owner messages in untrusted DMs and non-owner email
+  turns get no tools. Only the owner's main phone DM can start a new group.
+- **Recovery.** Chat and email messages interrupted before OpenClaw adopts
+  them remain available after restart. Later messages already handled are
+  skipped while the earlier source is recovered. Once OpenClaw adopts a
+  source, the runtime owns its remaining work.
 - **Schedule.** Every paper is an OpenClaw scheduler job
   (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
   from your topics: an isolated turn on the chat's own model, in **your**

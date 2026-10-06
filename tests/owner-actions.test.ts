@@ -76,6 +76,11 @@ for (const action of ["pending", "thread-cache", "thread-roster", "owner-send"])
     } } },
   });
   await channel!.gateway.startAccount({ account, cfg, abortSignal: controller.signal });
+  if (action.startsWith("thread")) {
+    assert.match(String(failure), /requires the owner's main Plow DM/);
+    assert.deepEqual(posts, [], "a group turn cannot start an outbound thread");
+    return;
+  }
   assert.equal(failure, undefined);
   assert.equal(posts.length, 1);
   assert.equal(posts[0].path, ["pending", "owner-send"].includes(action) ? "/v1/chats/home/messages" : "/v1/chats");

@@ -25,7 +25,7 @@ test("start-thread refuses an owner's chat without an owner handle", async t => 
   process.env.PLOW_AGENT_TOKEN = "test-token";
   const calls: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string) => { calls.push(url); return Response.json({ uid: "home", status: "active", participants: [{ type: "agent", relationship: "self", line: { uid: "line" } }, { type: "member", role: "owner" }] }); });
-  const tool = factory({ config: { channels: { plow: { apiBase: "http://fixture", lineUid: "line" } } }, sessionId: "session", deliveryContext: { channel: "plow", to: "plow:home" } });
+  const tool = factory({ config: { channels: { plow: { apiBase: "http://fixture", lineUid: "line" } } }, senderIsOwner: true, messageChannel: "plow", agentAccountId: "chat", sessionKey: "agent:main:main", sessionId: "session", deliveryContext: { channel: "plow", to: "plow:home" } });
   await assert.rejects(tool.execute("call", { members: ["+15550000002"], body: "Meet Friday?" }), /no owner handle/);
   assert.deepEqual(calls, ["http://fixture/v1/chats/home"]);
 });
@@ -41,6 +41,34 @@ test("start-thread returns a tool error without config and makes no request", as
   });
   assert.equal(fetch.mock.callCount(), 0);
 });
+
+for (const denied of ["non-owner", "email", "other-channel", "group-session", "missing-session", "group-roster", "guest-roster"]) {
+  test(`start-thread rejects ${denied} before creating any outbound conversation`, async t => {
+    let factory: (context: object) => { execute: (id: string, args: object) => Promise<unknown> };
+    entry.register({ registrationMode: "full", runtime: {}, registerChannel() {}, logger: { info() {} }, on() {},
+      registerTool(value: (context: object) => { name: string; execute: (id: string, args: object) => Promise<unknown> }) {
+        if (value({}).name === "plow_start_thread") factory = value;
+      } });
+    process.env.PLOW_AGENT_TOKEN = "test-token";
+    const calls: RequestInit[] = [];
+    t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
+      calls.push(options);
+      return Response.json({ uid: "home", status: "active", participants: [
+        { type: "agent", relationship: "self", line: { uid: "line" } },
+        { type: "member", uid: "owner", role: denied === "guest-roster" ? "member" : "owner", provider_key: "+15550000001" },
+        ...(denied === "group-roster" ? [{ type: "member", uid: "guest", role: "member" }] : []),
+      ] });
+    });
+    const context = { config: { channels: { plow: { apiBase: "http://fixture", lineUid: "line" } } },
+      senderIsOwner: denied !== "non-owner", messageChannel: denied === "other-channel" ? "other" : "plow",
+      agentAccountId: denied === "email" ? "email" : "chat", sessionId: "session",
+      sessionKey: denied === "missing-session" ? undefined : denied === "group-session" ? "agent:main:plow:group:group" : "agent:main:main",
+      deliveryContext: { channel: "plow", to: "plow:home" } };
+    await assert.rejects(factory!(context).execute("call", { members: ["+15550000002"], body: "Hi" }), /requires the owner's main Plow DM/);
+    assert.ok(calls.every(options => options.method === "GET"), "a refused request must not create a thread or send a message");
+    assert.equal(calls.length, denied.endsWith("roster") ? 1 : 0);
+  });
+}
 
 for (const accountId of ["chat", "email"]) for (const status of [200, 403, 503, "unserved", "inactive"] as const) test(`native send checks account reach and reports only confirmed sends: ${accountId}, ${status}`, async t => {
   let channel: { outbound: { sendText: (context: object) => Promise<unknown> } };
