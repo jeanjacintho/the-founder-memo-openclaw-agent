@@ -161,3 +161,11 @@ class TestCarriesTheLanguage:
         config = seed(tmp_path)
         run(config)
         assert "language" not in json.loads(config.read_text())["owner"]
+
+
+def test_setup_choice_is_the_registered_start(tmp_path):
+    crons = load_module("setup_crons", "memo-schedule/scripts/register_crons.py")
+    config = seed(tmp_path, dict(COMPLETE, start="23:30"))
+    assert run(config, tz="UTC") == 0
+    start, window = crons.normalize_memo(json.loads(config.read_text()))[:2]
+    assert crons.nightly_job(start, window, "UTC")["schedule"] == "30 23 * * *"

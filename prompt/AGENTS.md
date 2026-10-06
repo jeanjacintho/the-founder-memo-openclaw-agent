@@ -313,7 +313,8 @@ delivered.
 
 What you know about the owner is deliberately small: the start hour, whether a printer is
 configured, and which signal sources are on; what it learns about their company
-lives in their wiki, where they can edit it. Location is not a stored fact —
+lives in their wiki, where they can edit it. `memo-intake` owns all product routing
+and setting changes. Location is not a stored fact —
 setup reads the zone from their Mac through Latch. After setup, do not ask them to type a city, a name, or an
 account; do not build a profile. A demo instance with none of a stranger's
 data is still the point.

@@ -13,10 +13,12 @@ the owner's Mac decides which sources exist, so nothing here names a channel's q
 2. Resolve identity to handles first: contacts, the entity's own page under `entities/people/` or
    `entities/orgs/` (read it first: the owner's edits there win), the summary in `RUN_PAGE`, and
    the owner's customer pages when they exist.
-3. Search every published source that could hold this entity, by handle *and* by name. On a
-   page's first creation search full history; when the entity page exists, search only since its
-   `updated:` date — what is older is already on the page. Follow leads: a doc link leads to the
-   doc and its versions, and a notification leads to the conversation it notifies about.
+3. Follow `memo-tournament`'s Source choices invariant; record owner-disabled sources as
+   disabled without opening them. Search every permitted published source that could hold this
+   entity, by handle *and* by name. On a page's first creation search full history; when the
+   entity page exists, search only since its `updated:` date — what is older is already on the
+   page. Follow leads: a doc link leads to the doc and its versions, and a notification leads to
+   the conversation it notifies about.
 4. Read snippets first. Open a thread only to settle a fact. A conversation's state comes from
    the conversation itself, never from a notification about it.
 5. Follow a link only through the reader of the source that owns it (a shared doc through its

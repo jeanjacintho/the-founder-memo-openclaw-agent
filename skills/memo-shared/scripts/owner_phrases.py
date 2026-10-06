@@ -109,6 +109,9 @@ def _stored():
         return None
     if not isinstance(data, dict) or not isinstance(data.get("phrases"), dict):
         return None
+    # Retired labels are ignored only when reading an existing pack.
+    for key in ("page.sources", "page.nothing_to_report"):
+        data["phrases"].pop(key, None)
     return data
 
 

@@ -97,29 +97,22 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `error: wiki not ready — …` exits non-zero. **This bullet is the contract.**
 - `assets/wiki/` — the seeds `wiki_setup.py` writes: the root's schema (fields and the
   Editions / Your advisors tables), the paper's page, the goals page, the desk's Q&A.
-- `scripts/post_to_chat.py` — the edition's chat leg: POST the PDF plus its
-  chat-only mail/sports companion when present, or chat text if there is no PDF.
-  `--filename The-Founder-Times-<date>.pdf` is the name shown in chat (the
-  run file stays `edition.pdf` on disk). `--hold-until HH:MM` is a scheduled paper's
-  send clock: while it is ahead the paper is staged in `pt/outbox/` for the
-  no-agent `memo-deliver` job (`--flush-outbox`), never slept on in the session;
-  once passed it posts now (the on-demand copy has none). After
-  either POST it prints the run's `edition.pdf` when the printer is configured
-  (the text leg too, so a missing PDF is reported as a miss), records
-  the edition and finalizes its topics (`memo-render` step 2).
+- `scripts/post_to_chat.py --pdf <edition.pdf> [--filename The-Founder-Memo-<date>.pdf]`
+  — immediately POST the PDF, then independently print and record its sibling
+  `edition.json`. `--recover` resumes pending print/record tickets without another
+  edition POST; the no-agent `memo-deliver` job runs it each minute.
 - `scripts/chat_status.py --busy` — setup's hang-on during memo-setup Latch/Mac
   work (one hang-on, then one "still on it", never a play-by-play). Cron never
   calls it.
 - `scripts/owner_time.py` — the owner's own clock, not the container's:
   called bare as `owner_time.py now` it prints the owner's now (the run's `RUN_STARTED`),
-  `owner_time.py minutes-since <ISO>` the whole minutes since then, and
-  `owner_time.py minutes-until HH:MM` the minutes left until that time today.
+  `owner_time.py minutes-since <ISO>` the whole minutes since then.
   As a library, `owner_now()` (an aware datetime) and `owner_today()`, from `owner.timezone`
   in `pt/config.json`. Falls back to the container's clock only when the
   config or the key is absent; a config that exists but can't be trusted (bad
   JSON, an unreadable file, an unknown zone name) raises. Shared by
   `history.py`'s window, `record_memo.py`'s timestamps and
-  `post_to_chat.py --hold-until`.
+  delivery-order timestamps.
 - `memo-tournament/scripts/history.py recent` — the cards the memo printed on the 7 nights before
   today, read from the wiki's memo pages, `[{"date", "desk"}]`.
 - `memo-render/scripts/record_memo.py <edition.json>` — the delivered memo onto its night's page
@@ -134,11 +127,10 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   (`acquired` / `stale-takeover` / `held`) and always exits 0 on acquire.
 - `scripts/run_attempts.py` — counts a day's paper starts so a paper that keeps failing stops
   re-running. Called bare, after the paper lock is held: `.../run_attempts.py begin [--key KEY] [--scheduled]`
-  (a topic edition holds no lock and passes its topic id as KEY, so its count is its own) prints `proceed`, `stop` (spent, and the owner has been told: release and stop) or `stop-untold`
+ prints `proceed`, `stop` (spent, and the owner has been told: release and stop) or `stop-untold`
   (spent, the notice could not be posted: release and stop; the next start tries again). It posts the
   notice itself, in the owner's language from the fixed phrases, so the run writes nothing to the
-  owner. `post_to_chat.py --clear-attempts [KEY]` starts the count over once the edition is posted or
-  staged. Three undelivered starts spend the owner's day.
+  owner. `post_to_chat.py --clear-attempts` starts the count over once the memo is posted. Three undelivered starts spend the owner's day.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.
   Every paper passes `--preserve-priority` (desks.md decides which advisor checkpoint

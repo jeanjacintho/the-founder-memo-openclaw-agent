@@ -118,12 +118,21 @@ def test_the_file_names_the_language_it_was_written_for(pt_home):
     assert stored["language"] == "Mandarin Chinese" and set(stored["phrases"]) == set(phrases.SOURCE)
 
 
-def test_pre_memo_pack_keeps_active_labels_but_requires_cost_translation(pt_home):
+@pytest.mark.parametrize("has_cost", [False, True])
+def test_pre_memo_pack_keeps_active_labels_and_requires_only_missing_cost_translation(pt_home, has_cost):
     configure(pt_home, "Mandarin Chinese")
-    old = {k: v for k, v in translated().items() if k not in ("page.cost", "page.cost_unknown")}
-    (pt_home / "owner-phrases.json").write_text(json.dumps({"language": "Mandarin Chinese", "phrases": old}))
+    old = translated()
+    if not has_cost:
+        old = {k: v for k, v in old.items() if k not in ("page.cost", "page.cost_unknown")}
+    old.update({"page.sources": "ZH Sources:", "page.nothing_to_report": "ZH Nothing to report."})
+    raw = json.dumps({"language": "Mandarin Chinese", "phrases": old})
+    path = pt_home / "owner-phrases.json"
+    path.write_text(raw)
     assert phrases.phrase("chat.busy") == old["chat.busy"]
     assert phrases.phrase("page.first_step") == old["page.first_step"]
-    assert phrases.status() == "missing"
-    assert "missing: page.cost" in phrases.problems(old)
+    assert phrases.status() == ("ready" if has_cost else "missing")
+    assert path.read_text() == raw
+    if not has_cost:
+        assert "missing: page.cost" in phrases.problems(old)
+    # Existing packs are readable; writing a replacement uses the current key set.
     assert run(["record"], json.dumps({"phrases": old}))[0] == 1

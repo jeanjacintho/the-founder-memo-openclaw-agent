@@ -1,57 +1,11 @@
 #!/usr/bin/env python3
-"""post_to_chat.py -- the edition's chat leg: POST the PDF (or, if none, the
-chat text) to the owner's home channel over the Plow Chat API, directly,
-with no dependency on a connected live platform adapter.
+"""Post the memo PDF directly to the owner's Plow Chat, then print and record it.
 
-Originally the fallback for a run with no --deliver arm. Promoted to the
-PRIMARY chat leg (not a fallback) after measuring cron/scheduler.py's own
-delivery live: the same unchanged content, run to run, both delivered fine
-via --deliver and was silently discarded with "Fire claim ownership lost;
-stale result was discarded" -- a genuine intermittent race in the previous
-runtime's cron heartbeat/claim mechanism, not anything about this script's content.
-Calling the Plow Chat REST API directly, the same three calls
-plow-chat-platform's own adapter makes internally (declare an attachment,
-PUT the bytes to its signed upload_url, POST the message with
-attachment_uids), needs no live adapter and is not subject to that race --
-it is a plain HTTP call that either succeeds or exits loudly, same as the
-text-only POST below always was.
-
-Text is read from ``--text-file`` when provided, otherwise from STDIN only
-when there is no PDF. With ``--pdf``, ``--text-file`` is reserved for the
-small mail/sports companion omitted from the printed page; without it the
-message is attachment-only. The full chat transcript is never a caption.
-Omit ``--pdf`` to post text only (the fallback when weasyprint could not
-write the file).
-
-The endpoint and credential come
-from the process environment alone (PLOW_API_BASE, PLOW_HOME_CHANNEL,
-PLOW_AGENT_TOKEN), which first boot publishes from the credential the host
-dropped in: a file the agent can write is not a place to look for the API
-base its own bearer is sent to. Any of the three unset or blank is refused
-BY NAME, before anything posts, so a half-delivered run cannot happen.
-
-`--pdf PATH` attaches that file (declare -> upload -> message-with-
-attachment_uids) and optionally sends the companion as its body.
-`--hold-until HH:MM` is a scheduled paper's send clock, on the owner's
-clock. If that hour has passed it posts now. If it is still ahead, nothing
-waits in the session (OpenClaw's exec is synchronous with a 30-minute
-ceiling, and a paper starts up to 150 minutes early): the PDF, companion or
-text, `edition.json` and each news section's notes are copied into
-`pt/outbox/<date>-<HHMM>/` with a `delivery.json`, it prints `held for HH:MM
-— memo-deliver posts it` and exits 0. The no-agent `memo-deliver` job runs
-`post_to_chat.py --flush-outbox` every minute and posts each entry once its
-hour has come, through the same delivery as the direct path. Without a
-registered, enabled `memo-deliver` the paper posts now -- early, never stranded.
-After the POST returns, a separate recovery ticket snapshots the edition and
-the pending finalizers before they run. `memo-deliver` resumes that ticket without
-posting the edition again, then removes it when every finalizer completes.
-After a successful POST, two
-finalizers run independently and best-effort: print the run's PDF via print_edition.py when configured (a
-miss posts one line saying why), and record via
-record_memo.py (`--pdf` and `--text-file` both) on the sibling
-`edition.json` -- one's failure never skips or undoes another, and nothing
-about the record reaches chat. `--dry-run` prints the redacted envelope and
-never sends.
+Endpoint and bearer come from the process environment, never a writable file.
+The PDF is delivered immediately. After the confirmed POST, a recovery ticket
+snapshots the PDF and sibling edition.json before independent print/record
+finalizers run. --recover resumes only those finalizers, never another POST.
+--dry-run prints the redacted envelope without sending.
 """
 from __future__ import annotations
 
@@ -60,13 +14,11 @@ import fcntl
 import mimetypes
 import json
 import os
-import re
 import shutil
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from bearer_http import post_json, post_json_read, put_bytes, require
 from owner_chat import home_channel
@@ -92,48 +44,7 @@ RECORD_SCRIPT = (
 )
 
 
-HOLD_UNTIL_RE = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
-
-
-def _hold_zone():
-    """The owner's zone: the scheduler fires jobs on owner.timezone (--tz), so
-    the send clock is the same wall clock, never the container's TZ."""
-    return owner_now().tzinfo
-
-
-def seconds_until_hhmm(hhmm, now=None):
-    """Seconds from now until today's HH:MM on the owner's clock; 0 if passed.
-
-    Never wraps to tomorrow: a late paper posts immediately rather than
-    sitting until the next day's hour.
-    """
-    if not isinstance(hhmm, str) or not HOLD_UNTIL_RE.fullmatch(hhmm):
-        sys.exit(f"error: --hold-until is not HH:MM: {hhmm!r}")
-    tz = _hold_zone()
-    now = now or datetime.now(tz)
-    if now.tzinfo is None:
-        now = now.replace(tzinfo=tz)
-    else:
-        now = now.astimezone(tz)
-    hour, minute = map(int, hhmm.split(":"))
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    # Absolute instants: same-zone datetime subtraction is wall-clock and
-    # is an hour off across a DST change.
-    remaining = target.timestamp() - now.timestamp()
-    return max(0.0, remaining)
-
-
-def _now():
-    return datetime.now(_hold_zone())
-
-
-DELIVER_JOB = "memo-deliver"
 MAX_FINALIZER_ATTEMPTS = 5
-DASHBOARD_SCRIPTS = Path(__file__).resolve().parent.parent.parent / "memo-schedule" / "scripts"
-
-
-def outbox_dir():
-    return pt_home() / "outbox"
 
 
 def delivery_recovery_dir():
@@ -146,7 +57,7 @@ def _write_delivery_state(ticket, state):
     os.replace(temporary, ticket)
 
 
-def persist_posted_delivery(edition_json, pdf, text_file, delivered_at):
+def persist_posted_delivery(edition_json, pdf, delivered_at):
     """Snapshot a posted edition and its remaining finalizers before running any."""
     if not edition_json or not Path(edition_json).is_file():
         return None
@@ -159,22 +70,9 @@ def persist_posted_delivery(edition_json, pdf, text_file, delivered_at):
     try:
         edition_json = Path(edition_json)
         shutil.copyfile(edition_json, building / "edition.json")
-        actual_pdf = Path(pdf) if pdf else edition_json.parent / "edition.pdf"
+        actual_pdf = Path(pdf)
         if actual_pdf.is_file():
             shutil.copyfile(actual_pdf, building / "edition.pdf")
-        actual_text = Path(text_file) if text_file else edition_json.parent / "edition.companion.txt"
-        if actual_text.is_file():
-            shutil.copyfile(actual_text, building / "edition.companion.txt")
-        try:
-            sections = json.loads((building / "edition.json").read_text(encoding="utf-8")).get("sections") or []
-        except (OSError, ValueError, AttributeError):
-            sections = []
-        for section in sections:
-            topic_id = section.get("topic_id") if isinstance(section, dict) else None
-            source = _notes_source(edition_json.parent, topic_id) if topic_id else None
-            if source:
-                (building / topic_id).mkdir(exist_ok=True)
-                shutil.copyfile(source, building / topic_id / "notes.json")
         state = {
             "delivered_at": delivered_at.isoformat(),
             "edition_json": "edition.json",
@@ -267,94 +165,12 @@ def recover_delivery(ticket, *, notify_print_failure=False, wait=True):
         return failures
 
 
-def deliver_job_runs():
-    """Whether the memo-deliver job is registered and enabled -- asked of the one
-    reader of the scheduler (cron_backend). Any doubt is "no", so a paper
-    posts early rather than waiting on a job that will never flush it."""
-    sys.path.insert(0, str(DASHBOARD_SCRIPTS))
-    try:
-        from cron_backend import CronBackend
-        return any(job.name == DELIVER_JOB and job.enabled for job in CronBackend().list())
-    except (SystemExit, Exception):
-        return False
-
-
-def _notes_source(run_dir, topic_id):
-    for candidate in (run_dir.parent / topic_id / "notes.json", run_dir / topic_id / "notes.json",
-                      pt_home() / "run" / topic_id / "notes.json"):
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def stage(hhmm, due, pdf=None, text_file=None, text="", filename=None):
-    """Copy this paper into the outbox for memo-deliver; the run's own files may
-    be archived by the next paper before the hour comes."""
-    name = f"{due:%Y-%m-%d}-{hhmm.replace(':', '')}"
-    outbox = outbox_dir()
-    outbox.mkdir(parents=True, exist_ok=True)
-    building = outbox / f".{name}.{os.getpid()}"
-    shutil.rmtree(building, ignore_errors=True)
-    building.mkdir()
-    posted = Path(pdf or text_file)
-    delivery = {"due": due.isoformat(), "hold_until": hhmm, "pdf": None, "text_file": None,
-                "text": None, "filename": None}
-    if pdf:
-        shutil.copyfile(pdf, building / "edition.pdf")
-        delivery["pdf"] = "edition.pdf"
-        delivery["filename"] = attachment_filename(pdf, filename)
-    if text_file:
-        shutil.copyfile(text_file, building / "edition.text.txt")
-        delivery["text_file"] = "edition.text.txt"
-    elif text:
-        delivery["text"] = text
-    edition_json = posted.parent / "edition.json"
-    if edition_json.is_file():
-        shutil.copyfile(edition_json, building / "edition.json")
-        try:
-            sections = json.loads(edition_json.read_text(encoding="utf-8")).get("sections") or []
-        except (OSError, ValueError, AttributeError):
-            sections = []
-        for section in sections:
-            topic_id = section.get("topic_id") if isinstance(section, dict) else None
-            source = _notes_source(posted.parent, topic_id) if topic_id else None
-            if source:
-                (building / topic_id).mkdir(exist_ok=True)
-                shutil.copyfile(source, building / topic_id / "notes.json")
-    (building / "delivery.json").write_text(json.dumps(delivery, indent=2) + "\n", encoding="utf-8")
-    final = outbox / name
-    shutil.rmtree(final, ignore_errors=True)
-    os.replace(building, final)
-    return final
-
-
 def resolve_chat():
     """The chat endpoint (base + path) + bearer, validated before anything posts."""
     base = require("PLOW_API_BASE").rstrip("/")
     uid = home_channel()
     token = require("PLOW_AGENT_TOKEN")
     return base, uid, token
-
-
-def read_message():
-    return sys.stdin.read().strip()
-
-
-def read_text_file(path):
-    """The edition text from a file, so the text leg needs no shell redirect.
-
-    Measured live: told to "pass the chat text on stdin" with no command
-    shown, a run built `/bin/sh -c '... post_to_chat.py < edition.chat.txt'`.
-    A shell operator is exactly what SOUL.md's gate flags, so the owner got
-    an /approve prompt instead of their memo. A flag needs no shell.
-    """
-    try:
-        text = open(path, encoding="utf-8").read().strip()
-    except OSError:
-        sys.exit(f"error: --text-file path cannot be read: {path}")
-    if not text:
-        sys.exit(f"error: --text-file is empty: {path}")
-    return text
 
 
 def attachment_filename(pdf_path, override=None):
@@ -461,20 +277,6 @@ def run_record_memo(edition_json, delivered_at):
     return blob
 
 
-def compose_payload(text, attachment_uid=None):
-    """One chat message: PDF plus optional companion, or the chat edition.
-
-    plow-chat-platform posts ``{"body": "", "attachment_uids": [...]}`` for
-    attachment-only sends; an empty body with a PDF remains valid when there
-    are no chat-only desks.
-    """
-    if attachment_uid:
-        return {"body": text, "attachment_uids": [attachment_uid]}
-    if not text:
-        sys.exit("error: no edition text on stdin")
-    return {"body": text}
-
-
 def declare_and_upload(base, uid, token, pdf_path, filename=None):
     """Declare the attachment, PUT its bytes to the signed upload_url, return its uid.
 
@@ -498,90 +300,29 @@ def declare_and_upload(base, uid, token, pdf_path, filename=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Post an edition to the owner's Plow Chat.")
-    parser.add_argument(
-        "--pdf", default=None,
-        help="path to a PDF to attach (declare -> upload -> attach, same call the "
-             "platform's own adapter makes); omit to post text only",
-    )
-    parser.add_argument(
-        "--text-file", default=None,
-        help="read the chat edition, or a PDF's chat-only desk companion, "
-             "from this file instead of stdin (no shell redirect needed)",
-    )
-    parser.add_argument(
-        "--filename", default=None,
-        help="attachment name shown in chat (basename). Default is the PDF's "
-             "own basename, which for a run file is edition.pdf",
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="print the request instead of sending it"
-    )
-    parser.add_argument(
-        "--hold-until", default=None, metavar="HH:MM",
-        help="the send clock (owner's HH:MM): stage the paper for memo-deliver while "
-             "it is ahead, post now once it has passed (scheduled papers only)",
-    )
-    parser.add_argument(
-        "--clear-attempts", nargs="?", const=run_attempts.DEFAULT_KEY, default=None, metavar="KEY",
-        help="a paper or topic run: once the post is confirmed or the edition is staged, start "
-             "that job's day of attempts over (run_attempts.py; KEY defaults to the papers' own)",
-    )
-    parser.add_argument(
-        "--flush-outbox", action="store_true",
-        help="post every staged paper whose hour has come (the memo-deliver job)",
-    )
+    parser = argparse.ArgumentParser(description="Post the memo PDF or recover its finalizers.")
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--pdf", help="memo PDF to upload and post immediately")
+    action.add_argument("--recover", action="store_true", help="resume posted memos' print/record finalizers")
+    parser.add_argument("--filename", help="attachment basename shown in chat")
+    parser.add_argument("--dry-run", action="store_true", help="print the redacted request without sending")
+    parser.add_argument("--clear-attempts", action="store_true", help="clear attempts after confirmed delivery")
     args = parser.parse_args()
-    if args.flush_outbox:
-        sys.exit(main_flush())
-
+    if args.recover:
+        sys.exit(main_recover())
     base, uid, token = resolve_chat()
-    if args.text_file:
-        text = read_text_file(args.text_file)
-    elif args.pdf:
-        text = ""
-    else:
-        text = read_message()
-    if not args.pdf and not text:
-        sys.exit("error: no edition text on stdin")
-
     if args.dry_run:
-        attach_note = f" + attach {args.pdf}" if args.pdf else ""
-        if args.pdf:
-            attach_note += f" as {attachment_filename(args.pdf, args.filename)}"
-        kind = (f"pdf + {len(text)} chars" if args.pdf and text else "pdf-only") \
-            if args.pdf else f"{len(text)} chars"
-        print(
-            f"dry-run: would POST {kind} to {base}/v1/chats/{uid}/messages"
-            f'{attach_note}'
-        )
+        print(f"dry-run: would POST pdf-only to {base}/v1/chats/{uid}/messages"
+              f" + attach {args.pdf} as {attachment_filename(args.pdf, args.filename)}")
         return
-
-    if args.hold_until:
-        remaining = seconds_until_hhmm(args.hold_until, now=_now())
-        if remaining > 0:
-            if deliver_job_runs():
-                due = _now() + timedelta(seconds=remaining)
-                stage(args.hold_until, due, pdf=args.pdf, text_file=args.text_file,
-                      text=text, filename=args.filename)
-                if args.clear_attempts:
-                    run_attempts.clear(args.clear_attempts)
-                print(f"held for {args.hold_until} — memo-deliver posts it")
-                return
-            print(f"{DELIVER_JOB} is not running: posting now instead of holding for {args.hold_until}")
-
-    deliver(base, uid, token, pdf=args.pdf, text=text, filename=args.filename,
-            text_file=args.text_file, on_posted=(lambda: run_attempts.clear(args.clear_attempts)) if args.clear_attempts else None)
+    deliver(base, uid, token, pdf=args.pdf, filename=args.filename,
+            on_posted=run_attempts.clear if args.clear_attempts else None)
 
 
-def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=None, on_posted=None):
-    """POST the edition, then the two finalizers. `on_posted` runs the moment
-    the POST returns, before any finalizer (the outbox drops its delivery.json
-    there, so a flush never posts twice)."""
-    attachment_uid = None
-    if pdf:
-        attachment_uid = declare_and_upload(base, uid, token, pdf, filename=filename)
-    body = compose_payload(text, attachment_uid)
+def deliver(base, uid, token, *, pdf, filename=None, on_posted=None):
+    """POST the PDF, then print and record; a confirmed POST is never retried."""
+    attachment_uid = declare_and_upload(base, uid, token, pdf, filename=filename)
+    body = {"body": "", "attachment_uids": [attachment_uid]}
 
     # Two concurrent runs (the daily job and an on-demand copy, say) can
     # commit their messages in one order but have their HTTP responses land
@@ -602,41 +343,29 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         delivered_at = owner_now()
         post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", body)
-    posted_path = pdf or text_file
-    edition_json = str(Path(posted_path).parent / "edition.json") if posted_path else None
+    edition_json = str(Path(pdf).parent / "edition.json")
     if on_posted:
         on_posted()
     try:
-        recovery_ticket = persist_posted_delivery(edition_json, pdf, text_file, delivered_at)
+        recovery_ticket = persist_posted_delivery(edition_json, pdf, delivered_at)
     except Exception as exc:
         print(f"post-delivery recovery ticket could not be saved: {exc}; running finalizers inline",
               file=sys.stderr)
         recovery_ticket = None
+    print(f"chat edition posted (pdf only) {pdf}")
     if recovery_ticket:
-        suffix = " + companion" if pdf and text else " only" if pdf else ""
-        print(f"chat edition posted (pdf{suffix}) {pdf}" if pdf else f"chat edition posted ({len(text)} chars)")
         recoveries = recover_delivery(recovery_ticket, notify_print_failure=True)
         if recoveries:
             sys.exit("error: post-delivery finalization remains pending; memo-deliver retries it; do not repost")
         return
 
-    if pdf:
-        suffix = " + companion" if text else " only"
-        print(f"chat edition posted (pdf{suffix}) {pdf}")
-    else:
-        print(f"chat edition posted ({len(text)} chars)")
-    # The text leg prints its run's PDF too: absent, the owner hears why.
-    pdf = pdf or (str(Path(text_file).parent / "edition.pdf") if text_file else None)
-    line = print_page(pdf) if pdf else None
+    line = print_page(pdf)
     if line:
         try:  # the edition already posted: exit 0 must keep meaning that
             post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", {"body": line})
         except SystemExit as exc:
             print(f"print-failure notice not posted: {exc}", file=sys.stderr)
-    recorded = (
-        _best_effort(run_record_memo, (edition_json, delivered_at), "memo not recorded")
-        if edition_json else "skipped: no posted file"
-    )
+    recorded = _best_effort(run_record_memo, (edition_json, delivered_at), "memo not recorded")
     print(recorded)
     recoveries = []
     if "memo not recorded" in recorded:
@@ -649,13 +378,8 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
         )
 
 
-def main_flush():
-    """Post every staged paper whose hour has come; 0 when nothing failed.
-
-    Pending post-delivery tickets are resumed first, without reposting. Staged
-    outbox posts remain single-flush-at-a-time under their exclusive lock; if
-    a post succeeded but finalizers did not, their separate recovery ticket is
-    picked up on the next minute."""
+def main_recover():
+    """Resume post-delivery finalizers without posting another memo."""
     failed = False
     recovery_root = delivery_recovery_dir()
     if recovery_root.is_dir():
@@ -666,38 +390,6 @@ def main_flush():
             if failures:
                 print(f"{ticket.parent.name}: pending finalizers: {', '.join(failures)}", file=sys.stderr)
                 failed = True
-    outbox = outbox_dir()
-    if not outbox.is_dir():
-        return 1 if failed else 0
-    with open(outbox / ".flush.lock", "a") as lock_file:
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            return 0
-        now = _now()
-        for entry in sorted(p for p in outbox.iterdir() if p.is_dir() and not p.name.startswith(".")):
-            ticket = entry / "delivery.json"
-            try:
-                delivery = json.loads(ticket.read_text(encoding="utf-8"))
-                due = datetime.fromisoformat(delivery["due"])
-            except (OSError, ValueError, KeyError, TypeError):
-                continue
-            if due > now:
-                continue
-            text = read_text_file(str(entry / delivery["text_file"])) if delivery.get("text_file") else (delivery.get("text") or "")
-            try:
-                base, uid, token = resolve_chat()
-                deliver(base, uid, token, pdf=str(entry / delivery["pdf"]) if delivery.get("pdf") else None,
-                        text=text, filename=delivery.get("filename"),
-                        text_file=str(entry / delivery["text_file"]) if delivery.get("text_file") else None,
-                        on_posted=lambda: ticket.unlink(missing_ok=True))
-            except SystemExit as exc:
-                print(f"{entry.name}: {exc}", file=sys.stderr)
-                failed = True
-                if not ticket.exists():
-                    shutil.rmtree(entry, ignore_errors=True)
-                continue
-            shutil.rmtree(entry, ignore_errors=True)
     return 1 if failed else 0
 
 
