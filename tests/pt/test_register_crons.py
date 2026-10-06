@@ -1100,8 +1100,8 @@ def test_no_prompt_asks_the_model_to_work_out_a_date():
     # the date is run_lock.py's to compute, on the owner's clock.
     for prompt in (crons.paper_prompt(), crons.paper_prompt(hold_until="09:30", lead_minutes=150)):
         assert "<today" not in prompt and "<date>" not in prompt
-        # acquire, release on a spent day, release on refusal, release
-        assert prompt.count("--name paper-workspace") == 4
+        # acquire, release on cooldown, release on a spent day, release on refusal, release
+        assert prompt.count("--name paper-workspace") == 5
     assert "check-paper --deliver-at main --as-of today" in crons.paper_prompt()
 
 
@@ -1167,3 +1167,12 @@ def test_a_job_without_a_run_budget_drifts_so_the_next_register_sets_it():
 def test_without_pt_model_jobs_stay_on_plow(monkeypatch):
     monkeypatch.delenv("PT_MODEL", raising=False)
     assert load_module("cron_backend_default", "memo-schedule/scripts/cron_backend.py").MODEL == "plow/openai/gpt-6-sol"
+
+
+def test_backoff_stops_before_research_and_releases_the_paper_lock():
+    for prompt in (crons.paper_prompt(), crons.paper_prompt(hold_until="09:30")):
+        cooldown = prompt[prompt.index("on 'cooldown'"):prompt.index("On 'stop'")]
+        assert "release --name paper-workspace" in cooldown
+        assert "stop without" in cooldown and "waiting in this session" in cooldown
+    prompt = crons.topic_prompt("t_9f2a", "quick", False)
+    assert "on 'cooldown' or 'cooldown-untold' stop without research" in prompt

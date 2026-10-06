@@ -46,6 +46,7 @@ SOURCE = {
     "print.no_pdf": "no PDF to print at {path}",
     "turn.failed": ("I couldn't finish handling your last message. Part of the request "
                     "may have already happened, so please check before resending."),
+    "attempts.cooldown": "The edition has not arrived. I am pausing retries until at least {time}; delivery is not confirmed.",
     "attempts.spent_scheduled": ("The edition was not delivered after repeated attempts, so I am not "
                                  "trying again now. The next scheduled paper comes tomorrow."),
     "attempts.spent_on_demand": ("The edition was not delivered after repeated attempts, so I am not "
@@ -69,6 +70,7 @@ PORTUGUESE = {
     "print.no_pdf": "nenhum PDF para imprimir em {path}",
     "turn.failed": ("Não consegui terminar de tratar sua última mensagem. Parte do pedido "
                     "pode já ter acontecido — confira antes de mandar de novo."),
+    "attempts.cooldown": "A edição ainda não chegou. Vou pausar as tentativas até pelo menos {time}; a entrega não está confirmada.",
     "attempts.spent_scheduled": ("A edição não foi entregue depois de várias tentativas, então não vou "
                                  "tentar de novo agora. O próximo jornal agendado sai amanhã."),
     "attempts.spent_on_demand": ("A edição não foi entregue depois de várias tentativas, então não vou "

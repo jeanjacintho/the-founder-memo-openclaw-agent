@@ -216,3 +216,17 @@ The OpenClaw runtime is pinned to `2026.9.6` by image digest, as in the base.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+### Undelivered paper retries
+
+An undelivered paper can start at most three times on the owner's day. A retry
+is admitted no sooner than two hours after its first start and four hours after
+its second; intervening cron ticks stop before research and do not consume an
+attempt. The owner receives one pause notice per interval with the earliest
+retry time on their own clock, then the existing stop notice when the day's
+attempts are spent. The time is not a delivery promise: the next scheduled tick
+still has to succeed. Delivery or staging clears that paper's counter; topic
+editions have separate counters. This bounds paper restarts after provider
+rate limits, not the provider's internal retries within an already-running
+OpenClaw session. The accepted advisor checkpoint remains reusable under the
+paper's existing rules; other daily desks are refreshed for each admitted run.

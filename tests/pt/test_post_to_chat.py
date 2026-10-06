@@ -391,8 +391,10 @@ class TestOutboxDelivery:
         post.main()
 
     def _spend_the_day(self, capsys):
-        for _ in range(post.run_attempts.MAX_ATTEMPTS):
-            post.run_attempts.begin()
+        # Start from an already-spent counter: admission timing is tested in
+        # test_run_attempts; these tests exercise delivery's clearing seam.
+        path = post.run_attempts._path()
+        path.write_text(json.dumps({"starts": post.run_attempts.MAX_ATTEMPTS, "told": False}))
         capsys.readouterr()
 
     def _next_attempt(self, capsys):
@@ -413,8 +415,7 @@ class TestOutboxDelivery:
         home, run, posts, _ = self._setup(tmp_path, monkeypatch)
         self._at(monkeypatch, 8, 0)
         for key in ("paper", "t_9f2a"):
-            for _ in range(post.run_attempts.MAX_ATTEMPTS):
-                post.run_attempts.begin(key)
+            post.run_attempts._path(key).write_text(json.dumps({"starts": post.run_attempts.MAX_ATTEMPTS, "told": False}))
         capsys.readouterr()
         self._hold(monkeypatch, run, extra=["--clear-attempts", "t_9f2a"])
         capsys.readouterr()

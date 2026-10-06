@@ -163,7 +163,9 @@ def topic_prompt(tid, depth, scheduled):
     return (
         PAPER_RUN_MARKER + " " + SKILL_LOADING +
         f"First run {attempts} begin --key {tid}{' --scheduled' if scheduled else ''}: on 'proceed' go on; "
-        f"on 'stop' or 'stop-untold' this edition's attempts for the day are spent (retries after a "
+        f"on 'cooldown' or 'cooldown-untold' stop without research or waiting in this session; "
+        f"begin owns the pause notice. On 'stop' or 'stop-untold' this edition's attempts for "
+        f"the day are spent (retries after a "
         f"provider rate limit only feed it) and begin has told the owner, or tried to, itself -- "
         f"stop without researching, writing nothing to the owner. "
         f"Then run memo-research on topic {tid} now (depth {depth}), then memo-render for it, "
@@ -269,7 +271,9 @@ def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False
         f"Run {title} now, in one session. First run {lock} acquire "
         f"{lock_arg} --stale-minutes {STALE_RUN_MINUTES}{wait}; "
         f"if its output is 'held', "
-        f"{held}. Then run {attempts} begin{next_flag}: on 'proceed' go on; on 'stop' or "
+        f"{held}. Then run {attempts} begin{next_flag}: on 'proceed' go on; "
+        f"on 'cooldown' or 'cooldown-untold' run {lock} release {lock_arg} and stop without "
+        f"research or waiting in this session; begin owns the pause notice. On 'stop' or "
         f"'stop-untold' the day's attempts are spent (retries after a provider rate limit only "
         f"feed it) and begin has told the owner, or tried to, itself -- run {lock} release "
         f"{lock_arg} and stop, writing nothing to the owner. Then "

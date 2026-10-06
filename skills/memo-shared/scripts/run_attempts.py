@@ -6,7 +6,7 @@ and OpenClaw retries the job: 201 rate-limit errors and 909 model calls in one
 afternoon, an owner told nothing. Each retry redoes the whole paper, so the
 retries themselves feed the rate limit. This counts the paper's starts on the
 owner's day and, past MAX_ATTEMPTS undelivered ones, stops the run before it
-spends another model call -- and tells the owner, once, itself.
+starts another research pass -- and tells the owner, once, itself.
 
   begin [--key KEY] [--scheduled]
               run once the workspace lock is held (a topic edition holds none),
@@ -16,6 +16,10 @@ spends another model call -- and tells the owner, once, itself.
               the main paper's day, nor the other way round.
               Prints one word:
                 proceed       attempt N of MAX_ATTEMPTS; go on
+                cooldown      an undelivered start is cooling down; the owner was
+                              told the earliest retry time: release and stop
+                cooldown-untold  same wait, but the notice failed; the failure hook
+                              may tell the owner, and the next start retries the notice
                 stop          the day's attempts are spent and the owner has been
                               told (now, by this call, or on an earlier start):
                               release the lock and stop
@@ -29,6 +33,13 @@ own language from the paper's fixed phrases (owner_phrases.py): no model turn
 falls between the send and the mark, and no model-written text reaches a
 shell. --scheduled says the job runs again on its own tomorrow, for the line
 that says when the next try is; without it the line says to ask again later.
+
+Retries are admitted no sooner than two hours after the first start and
+four hours after the second. Cooldown checks do not consume attempts. This
+covers every undelivered start, including 429s; it does not sleep inside a
+model session or promise delivery at the earliest retry time. OpenClaw owns
+the next cron tick. Existing counters without retry_at retain their count
+and acquire the delay at their next admitted start.
 
 The count starts over when post_to_chat.py --clear-attempts [KEY] confirms a
 post or stages the edition (see `clear`). Always exits 0, like run_lock.py, so a
@@ -44,13 +55,16 @@ import json
 import re
 import sys
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 
 from owner_chat import post_owner_text
 from owner_phrases import phrase
-from owner_time import owner_today
+from owner_time import owner_now, owner_today
 from pt_paths import pt_home
 
 MAX_ATTEMPTS = 3
+# Hourly cron retries must skip at least one tick, then wait longer again.
+RETRY_SECONDS = (2 * 3600, 4 * 3600)
 DEFAULT_KEY = "paper"
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
@@ -88,8 +102,22 @@ def begin(key=DEFAULT_KEY, scheduled=False):
     path = _path(key)
     with _locked():
         data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
-        if data["starts"] < MAX_ATTEMPTS:
+        now = owner_now()
+        retry_at = datetime.fromisoformat(data["retry_at"]) if data.get("retry_at") else None
+        if data["starts"] < MAX_ATTEMPTS and retry_at and now < retry_at:
+            if not data.get("cooldown_told", False):
+                try:
+                    post_owner_text(phrase("attempts.cooldown").format(
+                        time=retry_at.astimezone(now.tzinfo).strftime("%Y-%m-%d %H:%M %Z")))
+                    data["cooldown_told"] = True
+                except SystemExit as exc:
+                    print(f"run_attempts: the cooldown notice was not posted: {exc}", file=sys.stderr)
+            word = "cooldown" if data.get("cooldown_told") else "cooldown-untold"
+        elif data["starts"] < MAX_ATTEMPTS:
             data["starts"] += 1
+            if data["starts"] < MAX_ATTEMPTS:
+                data["retry_at"] = (now + timedelta(seconds=RETRY_SECONDS[data["starts"] - 1])).isoformat()
+            data["cooldown_told"] = False
             word = "proceed"
         else:
             if not data["told"]:

@@ -141,3 +141,11 @@ test("only run_attempts.py begin's own stop counts as a deliberate stop; anythin
   ]);
   assert.equal(sent.length, 6);
 });
+
+
+test("a cooldown with a confirmed notice stays quiet, but a failed notice does not", async t => {
+  assert.equal((await sentFor(t, [
+    spentDay("call_1", "call_1", "toolResult", "cooldown\n"),
+    spentDay("call_2", "call_2", "toolResult", "cooldown-untold\n"),
+  ])).length, 1);
+});

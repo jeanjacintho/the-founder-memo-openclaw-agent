@@ -105,8 +105,8 @@ function callIds(messages: unknown[], subcommand: string): Set<string> {
 
 // A run that stopped because the day's attempts are spent did so on purpose, and `begin` owns the
 // notice: it answered `stop` (the owner is told, now or on an earlier start). A generic failure
-// notice on top would repeat it. `stop-untold` (the notice could not be posted) is not a deliberate
-// quiet, so the generic notice still goes out. Only the script's own result counts: the tool result
+// notice on top would repeat it. `cooldown` likewise confirms its pause notice.
+// The `-untold` results mean the post failed, so the generic notice still goes out. Only the script's own result counts: the tool result
 // paired with the call that ran it, never text the model or another tool produced.
 function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
   const all = messages ?? [];
@@ -119,7 +119,7 @@ function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
     if (!toolResultRole.has(String(record.role ?? nested?.role))) return false;
     const callId = record.toolCallId ?? record.tool_call_id ?? record.toolUseId ?? nested?.toolCallId ?? nested?.tool_call_id;
     return typeof callId === "string" && begins.has(callId) &&
-      textValues(record.content ?? nested?.content).some(text => text.trim() === "stop");
+      textValues(record.content ?? nested?.content).some(text => ["stop", "cooldown"].includes(text.trim()));
   });
 }
 
