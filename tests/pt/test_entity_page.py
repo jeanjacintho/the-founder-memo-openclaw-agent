@@ -56,6 +56,29 @@ def test_timeline_caps_at_twenty_newest():
     assert body.count(" · {i") == 20 and "{i25}" in body and "{i5}" not in body
 
 
+def test_owner_canonical_timeline_wins_over_refresh_and_survives_cap():
+    page = ep.merge(None, D, "people", "Jane", "2026-10-01")
+    owner_line = "- 2026-09-30 · Owner corrected this fact · {gmail:me:t1}"
+    older_line = "- 2020-01-01 · Owner wants to keep this · {old-receipt}"
+    page = page.replace("## Timeline\n", f"## Timeline\n{owner_line}\n{older_line}\n")
+    refresh = {**D, "timeline": D["timeline"] + [
+        {"date": f"2026-10-{d:02d}", "fact": f"New fact {d}", "item": f"i{d}"} for d in range(1, 26)]}
+    text = ep.merge(page, refresh, "people", "Jane", "2026-10-26")
+    assert owner_line in text and older_line in text
+    assert text.count("{gmail:me:t1}") == 1
+    assert text.count(ep.MANAGED) == 20
+    assert "{i25}" in text and "{i5}" not in text
+
+
+def test_owner_edit_to_a_generated_bullet_survives_with_its_hidden_marker():
+    page = ep.merge(None, D, "people", "Jane", "2026-10-01")
+    page = page.replace("Said the sheet comes Friday", "Owner corrected the deadline")
+    text = ep.merge(page, D, "people", "Jane", "2026-10-02")
+    assert "Owner corrected the deadline" in text
+    assert "Said the sheet comes Friday" not in text
+    assert text.count("{gmail:me:t1}") == 1
+
+
 @pytest.mark.parametrize("bad", [
     {**D, "timeline": [{"date": "Friday", "fact": "x", "item": "y"}]},
     {**D, "timeline": [{"date": "2026-09-30", "fact": "x", "item": ""}]},

@@ -65,7 +65,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 - `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
   `entity_page.py merge --kind people|orgs --slug <lowercase-kebab-slug> --title <title> --dossier <file|->`,
   the dossier `{"description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
-  It replaces `## Now`, merges `## Timeline` on (date, item) newest first, capped at 20, keeps
+  It replaces `## Now`, merges its marked `## Timeline` entries on (date, item) newest first,
+  capped at 20, keeps unmarked owner entries (which win on matching keys), keeps
   every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
   `wiki validate --writer shared`. Exit 1 names the problem on stderr; nothing is half-merged.
 - `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints

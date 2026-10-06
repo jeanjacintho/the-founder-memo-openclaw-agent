@@ -18,6 +18,7 @@ Facts are paraphrases; `item` is the re-open handle, never an excerpt.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -32,7 +33,12 @@ from run_lock import guarded
 
 TYPES = {"people": "Person", "orgs": "Organization"}
 CAP = 20
-LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2}) · (.+) · \{(.+)\}$")
+MANAGED = " <!-- memo-managed:"
+LINE = re.compile(r"^- (\d{4}-\d{2}-\d{2}) · (.+) · \{(.+)\}(?: <!-- memo-managed:([a-f0-9]{12}) -->)?$")
+
+
+def _stamp(line):
+    return hashlib.sha256(line.encode()).hexdigest()[:12]
 
 
 def _check(dossier):
@@ -62,11 +68,17 @@ def merge(existing, dossier, kind, title, today):
     meta, body = split_page(existing) if existing else ({}, f"# {title}\n")
     sections = _sections(body)
     old = dict(sections).get("Timeline", "")
-    kept = [line for line in old.splitlines() if line.strip() and not LINE.match(line)]
-    entries = {(m[1], m[3]): m[2] for m in (LINE.match(line) for line in old.splitlines()) if m}
-    entries.update({(e["date"], e["item"]): e["fact"] for e in dossier.get("timeline", [])})
+    lines = [(line, LINE.match(line)) for line in old.splitlines()]
+    # A changed marked bullet is the owner's edit; a stale stamp cannot authorize replacing it.
+    managed = lambda line, m: m and m[4] == _stamp(line.split(MANAGED)[0])
+    kept = [line for line, m in lines if line.strip() and not managed(line, m)]
+    owned = {(m[1], m[3]) for line, m in lines if m and not managed(line, m)}
+    entries = {(m[1], m[3]): m[2] for line, m in lines if managed(line, m) and (m[1], m[3]) not in owned}
+    entries.update({(e["date"], e["item"]): e["fact"] for e in dossier.get("timeline", [])
+                    if (e["date"], e["item"]) not in owned})
     newest = sorted(entries.items(), key=lambda kv: kv[0][0], reverse=True)[:CAP]
-    timeline = "\n".join(kept + [f"- {d} · {fact} · {{{item}}}" for (d, item), fact in newest])
+    generated = [f"- {d} · {fact} · {{{item}}}" for (d, item), fact in newest]
+    timeline = "\n".join(kept + [f"{line}{MANAGED}{_stamp(line)} -->" for line in generated])
 
     replaced = {"Now": dossier["now"].strip(), "Timeline": timeline}
     out = []
