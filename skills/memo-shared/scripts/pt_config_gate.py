@@ -31,7 +31,8 @@ The checks:
      so a truthy string ("false" reads truthy) would hand memo-print a printer
      that does not exist -- a print leg that fails on every nightly run.
   6. printer.name must be a non-blank string when configured is true: `lp -d`
-     needs a destination. When configured is false, name may be null or
+     needs a destination -- unless printer.line is the E.164 Plow line of an
+     event's shared printer. When configured is false, name may be null or
      absent.
   7. owner.language, when present, is a non-blank string: the language the
      owner writes to this agent in, plain-English name ("Portuguese",
@@ -128,10 +129,13 @@ def gate(config):
     if not isinstance(configured, bool):
         failures.append("printer.configured is not a boolean")
 
-    # 6. a configured printer has a name; an unconfigured one may not.
+    # 6. a configured printer has a name (lp -d) or, on an event install, the
+    #    E.164 Plow line of the event's shared printer; an unconfigured one may not.
     if configured is True:
         name = _index(_index(config, "printer"), "name")
-        if not _nonblank(name):
+        line = _index(_index(config, "printer"), "line")
+        line_ok = isinstance(line, str) and re.fullmatch(r"\+[1-9]\d{1,14}", line)
+        if not line_ok and not _nonblank(name):
             failures.append("printer.name is blank while printer.configured is true")
 
     # 7. owner.language, when present, is non-blank. Absent is valid --
