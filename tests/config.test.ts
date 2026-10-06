@@ -110,7 +110,7 @@ for (const [label, env] of [["without", {}], ["with", {
 });
 
 test("a one-click install runs on Plow's Sol, with Plow's Luna as its fallback", () => {
-  const config = renderConfig(identity, "http://api:8000");
+  const config = renderConfig(identity, "http://api:8000", undefined, {});
   assert.deepEqual(config.agents.defaults.model, {
     primary: "plow/openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-luna"],
   });
@@ -127,7 +127,7 @@ test("a one-click install runs on Plow's Sol, with Plow's Luna as its fallback",
 });
 
 test("an OpenAI route falls back to Plow and runs on OpenClaw's own runtime", () => {
-  const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route);
+  const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route, {});
   assert.deepEqual(config.agents.defaults.model,
     { primary: "openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-sol", "plow/openai/gpt-6-luna"] });
   assert.deepEqual(config.agents.defaults.models, { "openai/*": { agentRuntime: { id: "openclaw" } } });
@@ -221,7 +221,7 @@ test("native messaging retains local workspace and memory file tools", () => {
     message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } },
     profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
       "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
-      "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
+      "plow_set_thread_trust", "plow_reply_to", "plow_send_email", "plow_google", "plow_slack", "plow_connect",
       "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
       "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
     ], deny: ["ask_user", "secrets"],
