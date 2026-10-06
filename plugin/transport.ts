@@ -152,12 +152,12 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
         unadopted.get(chat)?.delete(uid);
       }
       if (!unadopted.get(chat)?.size) while (handled.size > 512) handled.delete(handled.values().next().value!);
+      recent.set(chat, handled);
       // Later handled rows must not move recovery past an unfinished source.
       const cursor = !adopted ? uid : unadopted.get(chat)?.size ? checkpoints.get(chat)! : recoveryEnds.get(chat) ?? uid;
       await writeFile(`${dir}/${encodeURIComponent(chat)}.tmp`, JSON.stringify({ uid: cursor, recent: [...handled] }));
       await rename(`${dir}/${encodeURIComponent(chat)}.tmp`, `${dir}/${encodeURIComponent(chat)}`);
       checkpoints.set(chat, cursor);
-      recent.set(chat, handled);
     });
     checkpointWrites.set(chat, write.catch(() => {}));
     return write;
