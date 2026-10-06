@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 from datetime import date
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 
@@ -15,6 +17,11 @@ D = {"description": "Partner at Acme Ventures; owes a term sheet.",
      "now": "Waiting on Acme's term sheet; ball: them.",
      "timeline": [{"date": "2026-09-30", "fact": "Said the sheet comes Friday", "item": "gmail:me:t1"}],
      "sources": [{"resource": "gmail:me:t1"}], "tags": ["investor"]}
+
+
+@pytest.fixture(autouse=True)
+def local_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("PT_HOME", str(tmp_path / "state"))
 
 
 def test_new_page_is_valid_okf_with_now_and_timeline():
@@ -112,3 +119,45 @@ def test_bare_cli_uses_owner_day(mac, tmp_path, monkeypatch):
                     "--dossier", str(f)], call_tool=mac.call_tool) == 0
     meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
     assert meta["created"] == meta["updated"] == "2026-10-02"
+
+
+@pytest.mark.parametrize("reject_second", [False, True])
+def test_overlapping_updates_preserve_successful_page(mac, tmp_path, reject_second):
+    mac.wiki("init", "~/Plow/wiki")
+    first_read, release, second_read = Event(), Event(), Event()
+    first = tmp_path / "first.json"
+    first.write_text(json.dumps(D))
+    second = tmp_path / "second.json"
+    second.write_text(json.dumps({**D, "timeline": [{"date": "2026-10-02", "fact": "New fact", "item": "gmail:me:t2"}],
+                                  "sources": [{"resource": "" if reject_second else "gmail:me:t2"}]}))
+
+    def call(which):
+        def tool(name, args):
+            result = mac.call_tool(name, args)
+            if name == "plow_read_file":
+                # Missing pages raise before this point, so seed the page below.
+                if which == 1:
+                    first_read.set()
+                    assert release.wait(5)
+                else:
+                    second_read.set()
+            return result
+        return tool
+
+    page = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(ep.merge(None, {**D, "timeline": []}, "people", "Jane", "2026-10-01"))
+    argv = ["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane", "--today", "2026-10-02", "--dossier"]
+    with ThreadPoolExecutor(2) as pool:
+        one = pool.submit(ep.main, [*argv, str(first)], call(1))
+        try:
+            assert first_read.wait(5)
+            two = pool.submit(ep.main, [*argv, str(second)], call(2))
+            assert not second_read.wait(0.2)
+        finally:
+            release.set()
+        assert one.result(timeout=5) == 0
+        assert two.result(timeout=5) == int(reject_second)
+    text = page.read_text()
+    assert "{gmail:me:t1}" in text
+    assert ("{gmail:me:t2}" in text) is not reject_second

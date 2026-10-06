@@ -27,6 +27,8 @@ from latch_mcp import LatchError
 from latch_mcp import connect as latch_connect
 from wiki import Wiki, join_page, split_page
 from owner_time import owner_today
+from pt_paths import pt_home
+from run_lock import guarded
 
 TYPES = {"people": "Person", "orgs": "Organization"}
 CAP = 20
@@ -104,19 +106,20 @@ def main(argv=None, call_tool=None):
         with (sys.stdin if a.dossier == "-" else open(a.dossier, encoding="utf-8")) as f:
             dossier = json.load(f)
         w = Wiki(call_tool or latch_connect().call_tool)
-        original = w.read(rel)
-        page = merge(original, dossier, a.kind, a.title, a.today or owner_today().isoformat())
-        try:
-            w.write(rel, page)
-            problems = w._validate("shared", rel)
-            if problems:
-                raise LatchError("wiki validate: " + "; ".join(problems))
-        except (OSError, ValueError, KeyError, TypeError, LatchError):
-            if original is None:
-                w.remove(rel)
-            else:
-                w.write(rel, original)
-            raise
+        with guarded(pt_home() / "entity-locks" / a.kind / a.slug):
+            original = w.read(rel)
+            page = merge(original, dossier, a.kind, a.title, a.today or owner_today().isoformat())
+            try:
+                w.write(rel, page)
+                problems = w._validate("shared", rel)
+                if problems:
+                    raise LatchError("wiki validate: " + "; ".join(problems))
+            except (OSError, ValueError, KeyError, TypeError, LatchError):
+                if original is None:
+                    w.remove(rel)
+                else:
+                    w.write(rel, original)
+                raise
     except (OSError, ValueError, KeyError, TypeError, LatchError) as exc:
         print(f"entity_page: {rel}: {exc}", file=sys.stderr)
         return 1
