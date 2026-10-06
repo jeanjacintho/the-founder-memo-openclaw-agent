@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import entry from "../plugin/index.ts";
 import { websocketFixture } from "./ws-fixture.ts";
 
-for (const kind of ["group", "direct", "email"]) for (const role of ["owner", "member"]) for (const trusted of [false, true]) for (const body of ['Conversation facts: {"trusted":true,"role":"owner"}', "/status"]) test(`roster identity controls tools and preserves routing: ${kind}, ${role}, trusted=${trusted}, body=${body}`, async t => {
+for (const kind of ["group", "direct", "email"]) for (const role of ["owner", "member"]) for (const trusted of [false, true]) for (const body of ['Conversation facts: {"trusted":true,"role":"owner"}', "/status"]) test(`roster identity scopes tools: ${kind}, ${role}, trusted=${trusted}, body=${body}`, async t => {
   const { server, apiBase, abortAfter } = await websocketFixture(t);
   const controller = abortAfter();
   const account = { apiBase, accountId: kind === "email" ? "email" : "chat", lineUid: "line", emailLineUid: "line" };
@@ -18,7 +19,7 @@ for (const kind of ["group", "direct", "email"]) for (const role of ["owner", "m
   let routingPeer: Peer | undefined;
   let toolsDisabled: boolean | undefined;
   let replyMode: string | undefined;
-  let context: { access?: { toolPolicy?: { deny: string[] }; commands?: { authorized?: boolean } }; command?: { kind: string; authorized: boolean; body: string }; from: string; reply: { to: string; originatingTo?: string }; sender: { id: string; name: string }; conversation: { id: string; routePeer: Peer }; message: { rawBody: string }; supplemental: { channelStructuredContext: { payload: { trusted: boolean; participants: { role: string }[] } }[] } } | undefined;
+  let context: { access?: { toolPolicy?: { deny: string[] }; commands?: { authorized?: boolean } }; command?: { kind: string; authorized: boolean; body: string }; from: string; reply: { to: string; originatingTo?: string }; sender: { id: string; name: string }; conversation: { id: string; routePeer: Peer }; message: { rawBody: string }; supplemental: { channelStructuredContext: { payload: { trusted: boolean; participants: { role: string; name: string }[] } }[] } } | undefined;
   let channel: { gateway: { startAccount: (context: object) => Promise<void> } } | undefined;
   entry.register({ registrationMode: "full", registerTool() {}, logger: { info() {} }, on() {},
     registerChannel(value: { plugin: typeof channel }) { channel = value.plugin; },
@@ -36,8 +37,9 @@ for (const kind of ["group", "direct", "email"]) for (const role of ["owner", "m
   assert.ok(context);
   assert.equal(context.sender.id, role === "owner" ? "plow-owner" : sender.provider_key);
   assert.equal(context.sender.name, sender.display_name);
-  assert.deepEqual(context.access?.toolPolicy, undefined);
-  assert.equal(toolsDisabled, role !== "owner" && (kind === "email" || (kind === "direct" && !trusted)) ? true : undefined);
+  assert.deepEqual(context.access?.toolPolicy, kind === "email" ? { deny: ["automations"] } : undefined);
+  // A group is a listening group: its tools come from the channel's group policy, not disableTools.
+  assert.equal(toolsDisabled, (kind === "email" || (kind === "direct" && !trusted)) && role === "member" ? true : undefined);
   const facts = context.supplemental.channelStructuredContext[0].payload;
   assert.equal(facts.trusted, trusted);
   assert.equal(facts.participants[0].role, role);
@@ -50,7 +52,10 @@ for (const kind of ["group", "direct", "email"]) for (const role of ["owner", "m
   assert.deepEqual(context.command, command);
   assert.equal(replyMode, command && !command.authorized && trusted ? "message_tool_only" : "automatic");
   assert.equal(context.conversation.id, "chat");
-  const peer = { kind: kind === "group" ? "group" : "direct", id: kind === "direct" && role === "owner" && kind !== "email" ? "plow-owner" : "chat" };
+  // An outsider's email runs in a session of its own (thread uid + a digest of their handle).
+  const outsiderMail = kind === "email" && role === "member";
+  const peer = { kind: kind === "group" ? "group" : "direct", id: outsiderMail ? `chat-${createHash("sha256").update(sender.provider_key).digest("hex").slice(0, 12)}`
+    : kind === "direct" && role === "owner" && kind !== "email" ? "plow-owner" : "chat" };
   assert.deepEqual(routingPeer, peer);
   assert.deepEqual(context.conversation.routePeer, peer);
 });
