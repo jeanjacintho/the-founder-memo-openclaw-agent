@@ -1073,3 +1073,42 @@ class TestImportability:
         with contextlib.redirect_stdout(buf):
             gate.main([str(path)])
         assert buf.getvalue().strip() == ""
+
+
+class TestMemoContract:
+    """The repo is the memo now: what ships names only what exists, and nothing of the paper."""
+
+    def test_every_script_a_skill_names_exists(self):
+        import re
+
+        named = set()
+        for md in ROOT.rglob("*.md"):
+            for ref in re.findall(r"/opt/plow/skills/(memo-[\w-]+/scripts/[\w.]+\.py)", md.read_text()):
+                named.add((md.relative_to(ROOT), ref))
+        assert named, "no script references found -- regex is wrong, test is vacuous"
+        for md, ref in sorted(named):
+            assert (ROOT / ref).exists(), f"{md}: {ref}"
+
+    def test_every_reference_a_skill_names_exists(self):
+        import re
+
+        for md in ROOT.rglob("*.md"):
+            for ref in re.findall(r"/opt/plow/skills/(memo-[\w-]+/(?:references|assets)/[\w./-]+\.md)", md.read_text()):
+                assert (ROOT / ref).exists(), f"{md.relative_to(ROOT)}: {ref}"
+
+    def test_no_newspaper_leftovers_in_what_ships(self):
+        import re
+
+        shipped = [p for base in ("skills", "prompt", "plugin", "boot") for p in (REPO / base).rglob("*")
+                   if p.is_file() and p.suffix in {".md", ".py", ".ts", ".json", ".html"}]
+        assert shipped
+        hits = [str(p.relative_to(REPO)) for p in shipped
+                if re.search(r"pt-(?:research|intake)|thefoundertimes|newspaper",
+                             p.read_text(encoding="utf-8", errors="ignore"), re.I)]
+        assert hits == []
+
+    def test_no_model_id_in_skill_text(self):
+        import re
+
+        for md in ROOT.rglob("*.md"):
+            assert not re.search(r"(gpt-\d|claude-|gemini-)", md.read_text()), md.relative_to(ROOT)

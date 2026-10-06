@@ -346,7 +346,7 @@ def read_text_file(path):
     Measured live: told to "pass the chat text on stdin" with no command
     shown, a run built `/bin/sh -c '... post_to_chat.py < edition.chat.txt'`.
     A shell operator is exactly what SOUL.md's gate flags, so the owner got
-    an /approve prompt instead of their newspaper. A flag needs no shell.
+    an /approve prompt instead of their memo. A flag needs no shell.
     """
     try:
         text = open(path, encoding="utf-8").read().strip()

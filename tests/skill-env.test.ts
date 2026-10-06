@@ -12,7 +12,7 @@ const identity: Identity = {
   chats: [{ uid: "cht_dm", status: "active", participants: [self, owner] }],
 };
 
-test("exports the Mac relay and the owner's DM for the newspaper scripts", () => {
+test("exports the Mac relay and the owner's DM for the memo scripts", () => {
   assert.deepEqual(skillEnv(identity), { PLOW_MCP_URL: "https://relay.test/mcp/dev_1", PLOW_HOME_CHANNEL: "cht_dm" });
 });
 
