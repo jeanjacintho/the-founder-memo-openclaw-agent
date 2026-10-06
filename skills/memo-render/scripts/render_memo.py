@@ -306,7 +306,7 @@ def priorities_html(memo, language):
 
 # A 72 mm thermal roll (printer.paper "72mm"; Star TSP100). The Letter page shrunk
 # to 72 mm prints ~2.5 pt type, so the roll gets its own page: a fixed front page,
-# not the whole card. Masthead, three slots (headline and first step), the
+# not the whole card. Masthead, the owner's name, three slots (headline and first step), the
 # questions, the first advisor line and the cost; every slot has a line cap, so
 # every receipt runs about the same short length. The full card stays on the
 # Letter page and in the chat. One tall page; the driver cuts after the ink.
@@ -328,6 +328,7 @@ p, h1, h2, h3, ul { margin: 0; padding: 0; }
 .r-masthead span { display: block; }
 .r-orn { margin: 5px 0 0; border-top: 2px solid #000; height: 0; }
 .r-orn span { position: relative; top: -9px; padding: 0 6px; background: #fff; font-size: 11px; line-height: 1; }
+.r-owner { margin-top: 4px; font: 900 21px/1.1 "Memo Display", serif; line-clamp: 2; }
 .r-folio { margin-top: 3px; padding: 4px 0; border-top: 2px solid #000; border-bottom: 2px solid #000;
   font: 700 10.5px/1.2 "Memo Text", serif; letter-spacing: 3px; }
 .r-band { margin-top: 3px; padding: 4px 4px 5px; background: #000; color: #fff;
@@ -361,8 +362,8 @@ footer::after { content: "\\25C6"; display: block; margin-top: 3px; font-size: 1
 """
 
 
-def receipt_html(memo):
-    """The roll's page: the fixed front page, at 72 mm."""
+def receipt_html(memo, owner=None):
+    """The roll's page: the fixed front page, at 72 mm, under the owner's name when known."""
     language = memo["language"]
     css = RECEIPT_CSS
     for slot, name in (("{display}", "PlayfairDisplay-Black"), ("{text}", "SourceSerif4-Regular"),
@@ -372,7 +373,8 @@ def receipt_html(memo):
     head = (f'<header class="r-head"><h1 class="r-masthead">'
             + "".join(f"<span>{_esc(line)}</span>" for line in masthead)
             + '</h1><div class="r-orn"><span>◆</span></div>'
-            f'<p class="r-folio">{_esc(memo["date"])}</p>')
+            + (f'<p class="r-owner">{_esc(owner)}</p>' if owner else "")
+            + f'<p class="r-folio">{_esc(memo["date"])}</p>')
     if "priority" in memo:
         recommendations = memo["priority"]["recommendations"]
         head += f'<p class="r-band">{_esc(phrase("page.priority_band", language))}</p></header>'

@@ -26,10 +26,12 @@ The page never passes through a tool argument.
 
 `printer.paper` `"72mm"` marks a thermal roll (a Star TSP100). A Letter page
 shrunk to 72 mm prints unreadable type, so the script renders `receipt.pdf`
-beside `edition.pdf` instead: a short fixed front page (the three ranked
-headlines with their first steps, the questions, the first advisor line and the
-cost line, each capped in lines; the bodies and evidence stay on the Letter page
-and in the chat), or the night's reasons when there is no card, at 72 mm, sent with
+beside `edition.pdf` instead: a short fixed front page at 72 mm. Under the
+masthead is the owner's Plow display name (left off when Plow has none, or only
+a number or address), then the three ranked headlines and their first steps, the
+questions, the first advisor line and the cost line, each capped in lines (the
+bodies and evidence stay on the Letter page and in the chat), or the night's
+reasons when there is no card. It is sent with
 `-o media=X72MMY2000MM` (the
 driver's variable length cuts after the ink). No `paper` key is the Letter
 page, unchanged.

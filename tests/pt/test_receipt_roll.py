@@ -31,6 +31,13 @@ def test_the_receipt_is_a_front_page_of_three_slots_questions_one_quote_and_cost
     assert "Forget the naming" in page and "Raise the right amount" not in page
 
 
+def test_the_owners_name_heads_the_roll_escaped_or_is_left_out():
+    named = render.receipt_html(memo(), "Ana <Lima>")
+    assert '<p class="r-owner">Ana &lt;Lima&gt;</p>' in named
+    assert named.index("r-owner\">") < named.index("2026-10-02</p>")
+    assert 'class="r-owner"' not in render.receipt_html(memo())
+
+
 def test_every_slot_is_capped_so_the_roll_stays_short():
     weasyprint = pytest.importorskip("weasyprint")
     worst = memo()
@@ -38,8 +45,8 @@ def test_every_slot_is_capped_so_the_roll_stays_short():
     for item in worst["priority"]["recommendations"]:
         item.update(headline=long, first_step=long, advisor={**item["advisor"], "quote": long, "name": long})
     worst["priority"]["questions"] = [long] * 3
-    html = weasyprint.HTML(string=render.receipt_html(worst)).render().pages[0]._page_box.children[0]
-    assert html.margin_height() * 25.4 / 96 < 205  # mm; uncapped, this memo runs over a meter
+    html = weasyprint.HTML(string=render.receipt_html(worst, long)).render().pages[0]._page_box.children[0]
+    assert html.margin_height() * 25.4 / 96 < 220  # mm (213 today); uncapped, this memo runs over a meter
 
 
 def test_the_receipt_embeds_its_fonts_and_renders_one_72mm_page():

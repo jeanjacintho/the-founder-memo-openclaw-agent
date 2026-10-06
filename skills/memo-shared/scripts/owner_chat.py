@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -72,6 +73,21 @@ def home_channel() -> str:
     if not uid:
         sys.exit("error: PLOW_HOME_CHANNEL is not set and the owner's chat does not exist yet")
     return uid
+
+
+def owner_name() -> str | None:
+    """The owner's Plow display name for the printed receipt; None when unknown.
+
+    Never exits: a receipt without a name still prints. A name with no letter or
+    with an @ is a phone number or an address, which a receipt never prints."""
+    try:
+        identity = fetch_identity(require("PLOW_API_BASE"), require("PLOW_AGENT_TOKEN"))
+    except (SystemExit, Exception):  # noqa: BLE001 -- the name is decoration, the print is not
+        return None
+    names = [p.get("display_name") for chat in identity.get("chats") or [] if chat.get("status") == "active"
+             for p in chat.get("participants") or [] if p.get("type") == "member" and p.get("role") == "owner"]
+    return next((" ".join(n.split()) for n in names if isinstance(n, str)
+                 and re.search(r"[^\W\d_]", n) and "@" not in n), None)
 
 
 def post_owner_text(text: str) -> None:
