@@ -70,11 +70,11 @@ chat.
 **Opener — send this, then stop and wait.** Copy it. Match the owner's language.
 Portuguese:
 
-> 📰 Oi! Eu sou o The Founder Memo: toda noite eu leio seu e-mail, mensagens e agenda e de manhã você tem as 3 prioridades impressas. A que horas eu começo? Se não disser nada, começo à 1h.
+> 📰 Oi! Eu sou o The Founder Memo: toda noite eu leio seu e-mail, mensagens e agenda e de manhã a prioridade que mais importa sai impressa. A que horas eu começo? Se não disser nada, começo à 1h.
 
 English:
 
-> 📰 Hi — I'm The Founder Memo: every night I read your mail, messages and calendar, and in the morning your top 3 priorities are printed. What time should I start? If you don't say, I'll start at 1:00.
+> 📰 Hi — I'm The Founder Memo: every night I read your mail, messages and calendar, and in the morning the one priority that matters most is printed. What time should I start? If you don't say, I'll start at 1:00.
 
 **Changing one setting later** is not this skill: a different start hour
 (`memo.start`, the owner's own clock — never ask the zone again), **turning a
