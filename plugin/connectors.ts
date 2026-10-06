@@ -10,6 +10,10 @@ import type { Account } from "./transport.ts";
 
 export type Provider = "google" | "slack";
 export const WORKSPACE = "/var/lib/plow/workspace";
+
+/** Whether boot gave this install the connector tools: its config is the one source of "no Latch". */
+export const connectorsEnabled = (cfg: { tools?: { alsoAllow?: readonly string[] } } | undefined) =>
+  Boolean(cfg?.tools?.alsoAllow?.includes("plow_google"));
 // Plow's plow-gog runner gives up at 60s; leave room for minting and the network.
 const RUN_TIMEOUT_MS = 90_000;
 
@@ -62,6 +66,22 @@ export async function withUploads(argv: readonly string[], workspace = WORKSPACE
   return { argv: out, files };
 }
 
+/**
+ * The command words plow-gog plans from: its own `--account`/`-a` (with value)
+ * and `--confirm-conflict` may come anywhere and are not part of the command,
+ * as in Latch's planner (`plowGog.ts`).
+ */
+export function commandWords(argv: readonly string[]): string[] {
+  const words: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg === "--account" || arg === "-a") i++;
+    else if (arg.startsWith("--account=") || arg.startsWith("-a=") || arg === "--confirm-conflict") continue;
+    else words.push(arg);
+  }
+  return words;
+}
+
 const safe = (name: string) => basename(name).replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "file";
 
 /**
@@ -70,7 +90,8 @@ const safe = (name: string) => basename(name).replace(/[^A-Za-z0-9._-]/g, "_").s
  * conversation.
  */
 export async function savingAttachment(argv: readonly string[], output: string, workspace = WORKSPACE): Promise<string> {
-  if (!["gmail", "mail", "email"].includes(argv[0] ?? "") || argv[1] !== "attachment") return output;
+  const words = commandWords(argv);
+  if (!["gmail", "mail", "email"].includes(words[0] ?? "") || words[1] !== "attachment") return output;
   let answer: { stdout?: unknown };
   let file: { filename?: unknown; mimeType?: unknown; bytes?: unknown; contentBase64?: unknown };
   try {
@@ -82,7 +103,7 @@ export async function savingAttachment(argv: readonly string[], output: string, 
   if (typeof file.contentBase64 !== "string") return output;
   const dir = join(workspace, "attachments");
   await mkdir(dir, { recursive: true });
-  const savedTo = join(dir, `${safe(argv[2] ?? "message")}_${safe(String(file.filename ?? "attachment"))}`);
+  const savedTo = join(dir, `${safe(words[2] ?? "message")}_${safe(String(file.filename ?? "attachment"))}`);
   const content = Buffer.from(file.contentBase64, "base64");
   await writeFile(savedTo, content, { mode: 0o600 });
   return JSON.stringify({ ...answer, stdout: { saved_to: savedTo, filename: file.filename, mimeType: file.mimeType, bytes: content.length } });

@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { CONNECTORS_CHANGED, connectLink, onConnectorsChanged, runConnector } from "../plugin/connectors.ts";
+import { CONNECTORS_CHANGED, connectLink, connectorsEnabled, onConnectorsChanged, runConnector } from "../plugin/connectors.ts";
 import { listen, type Account } from "../plugin/transport.ts";
 import { websocketFixture } from "./ws-fixture.ts";
 
@@ -91,6 +91,20 @@ test("an inline attachment is saved to the workspace and its bytes never reach t
   assert.match(text(result), new RegExp(`"bytes":${pdf.length}`));
 });
 
+test("an attachment command is recognised with plow-gog's own flags first, as its planner reads it", async t => {
+  const dir = await workspace(t);
+  plow(t, () => Response.json({ output: JSON.stringify({ stdout: JSON.stringify({ filename: "a.pdf", mimeType: "application/pdf", contentBase64: "YWJj" }) }) }));
+  const result = await runConnector(account, "google", ["--account", "a@example.com", "mail", "attachment", "18f2a", "att-1"], undefined, dir);
+  assert.deepEqual(await readFile(join(dir, "attachments", "18f2a_a.pdf")), Buffer.from("abc"));
+  assert.ok(!text(result).includes("YWJj"));
+});
+
+test("connector event handling follows the config boot wrote: on only without Latch", () => {
+  assert.equal(connectorsEnabled({ tools: { alsoAllow: ["read", "plow_google", "plow_slack"] } }), true);
+  assert.equal(connectorsEnabled({ tools: { alsoAllow: ["read", "plow__plow_run_command"] } }), false);
+  assert.equal(connectorsEnabled(undefined), false);
+});
+
 test("local files named in --attach and *-file flags are uploaded and argv says @N", async t => {
   const dir = await workspace(t);
   await writeFile(join(dir, "notes.txt"), "notes");
@@ -142,7 +156,10 @@ test("the transport hands a connectors.changed frame to the channel and dispatch
   const { server, apiBase, abortAfter } = await websocketFixture(t);
   const controller = abortAfter();
   t.mock.method(globalThis, "fetch", async (url: string) => Response.json(url.endsWith("/chats") ? { data: [], has_more: false } : { ticket: "ticket" }));
-  server.on("connection", socket => setTimeout(() => socket.send(JSON.stringify({ event_type: "connectors.changed", event_id: "evt_1" })), 50));
+  server.on("connection", socket => setTimeout(() => socket.send(JSON.stringify({
+    // The frame exactly as Plow sends it (connectors/events.py): a chat event with no chat_id.
+    event_id: "evt_1", event_type: "connectors.changed", created_at: "2026-10-06T06:00:00Z", data: { type: "connectors.changed" },
+  })), 50));
   let changed = 0;
   let turns = 0;
   await listen({ apiBase, accountId: "chat", lineUid: "line" } as Account, controller.signal, () => {}, async () => { turns++; return "completed"; },

@@ -6,7 +6,7 @@ import { request, listen, accepts, ownerChat, HttpError, DeliveryUnknownError, t
 import { gateContext, isOwnerDm, isOwnerDmTurn, runGate } from "./setup-gate.ts";
 import { CATEGORIES, GroupInbox, isGroupTurn, isListeningGroup, listeningContext, recordSignal, type Category } from "./group-listen.ts";
 import { notifyFailedPaperRun } from "./cron-failure-notice.ts";
-import { connectLink, onConnectorsChanged, runConnector, type Provider } from "./connectors.ts";
+import { connectLink, connectorsEnabled, onConnectorsChanged, runConnector, type Provider } from "./connectors.ts";
 import { OWNER_DM_SESSION } from "./setup-gate.ts";
 
 let runtime: PluginRuntime;
@@ -168,7 +168,8 @@ const plugin: ChannelPlugin<Account> = {
     startAccount: async ctx => {
       const log = (text: string) => ctx.log?.info(text);
       await listen(ctx.account, ctx.abortSignal, log, (chat, message, firstContact, history) => receive(ctx.account, ctx.cfg, chat, message, firstContact, history, log),
-        ctx.account.accountId === "chat" ? () => onConnectorsChanged(runtime.system, OWNER_DM_SESSION) : undefined);
+        // Only an install that uses Google and Slack through the Plow API re-checks them; with Latch, Google stays on the Mac.
+        ctx.account.accountId === "chat" && connectorsEnabled(ctx.cfg) ? () => onConnectorsChanged(runtime.system, OWNER_DM_SESSION) : undefined);
     },
   },
   outbound: {
