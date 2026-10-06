@@ -24,7 +24,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   every other value is kept verbatim as a string, so a dotted or underscored
   value needs no quoting — only a value containing a space does. Prints
   `DRAFT:<fields recorded, or "none">` then
-  `NEXT_QUESTION=<hour|printer|priority|mail|news|signals|close>`; that second line — never
+  `NEXT_QUESTION=<hour|printer|awake|close>`; that second line — never
   the draft's shape, never the chat thread — decides what `memo-setup` asks
   next. Called as `record_setup.py <config.json path> --done` it instead
   **clears** the draft (prints `DRAFT:cleared`) — the close step's last
@@ -59,50 +59,64 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   print-miss line and the priority card's "Advice from" line). A library, not a flow
   script: nothing invokes it, the memo-* scripts import it.
 - `scripts/wiki.py` — the paper's pages in the owner's wiki (`~/Plow/wiki`, plow-wiki):
-  the root `projects/thefoundertimes` (writer `thefoundertimes`), the shared
+  the root `projects/founder-memo` (writer `founder-memo`), the shared
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
-  (`thefoundertimes`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
+  (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
+- `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
+  `entity_page.py merge --dossier /var/lib/plow/pt/run/dossiers/<n>.json`, nothing else on the line:
+  the dossier file, written with the write tool, carries `{"kind", "slug", "title", "description",
+  "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}` — the entity's names travel in
+  the file, never on a command line. A slug that is not one lowercase kebab-case component, an
+  unknown kind or a missing title is refused before the Mac is touched.
+  It replaces `## Now`, merges its marked `## Timeline` entries on (date, item) newest first,
+  capped at 20, keeps unmarked owner entries (which win on matching keys), keeps
+  every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
+  `wiki validate --writer shared`. Writes check the expected bytes on the Mac and retry
+  conflicting merges up to three times. Failed validation restores/removes only an unchanged
+  memo-written page; a subsequent owner save is preserved. Exit 1 names the problem on stderr.
+- `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints
+  `{"usd": <float|null>, "sessions": n, "unpriced": m}` (every transcript call priced with its model's configured rates; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
+  --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not
+  or spend is unknown. Any call with unknown usage or missing input/output/cache prices makes the total unknown.
+  The SQLite reads are local and read-only; the shipped Agent Index client decodes compressed
+  events and their timestamps. Resumed sessions retain every call in the minute window.
+- `scripts/run_gate.py` — the night waits for the Mac. Bare:
+  `run_gate.py wait --started <ISO-8601> --window <minutes>` probes `~/Plow/wiki/wiki.toml`
+  through Latch every five minutes; `MAC:reachable` (0) start, `MAC:window-closed` (2) the
+  window closed with no answer, `MAC:still-waiting` (3) call again with the same `--started`
+  (one call stays under the 30-minute exec timeout).
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
-  the Mac has none, copies an install's pages from the pre-rename root
-  `projects/theplowtimes` to `projects/thefoundertimes` once (links rewritten; the old
-  folder and its `wiki.toml` entry are left as they were and never read again), writes
-  the paper's schema and page when absent, declares
-  `projects/thefoundertimes` in `wiki.toml` (appending; no other root is touched), and
+  the Mac has none, copies an existing `projects/thefoundertimes` root's indexed
+  pages to `projects/founder-memo` once (links rewritten, old pages and root
+  declaration kept, already-copied pages never overwritten), writes
+  the memo's schema and page when absent, declares
+  `projects/founder-memo` in `wiki.toml` (appending; no other root is touched), and
   with `--desk` the goals page and the desk's Q&A, carrying an older install's notes
   file over once. Prints `WIKI:ready` or `WIKI:set up …`;
   `error: wiki not ready — …` exits non-zero. **This bullet is the contract.**
 - `assets/wiki/` — the seeds `wiki_setup.py` writes: the root's schema (fields and the
   Editions / Your advisors tables), the paper's page, the goals page, the desk's Q&A.
-- `scripts/post_to_chat.py` — the edition's chat leg: POST the PDF plus its
-  chat-only mail/sports companion when present, or chat text if there is no PDF.
-  `--filename The-Founder-Times-<date>.pdf` is the name shown in chat (the
-  run file stays `edition.pdf` on disk). `--hold-until HH:MM` is a scheduled paper's
-  send clock: while it is ahead the paper is staged in `pt/outbox/` for the
-  no-agent `pt-deliver` job (`--flush-outbox`), never slept on in the session;
-  once passed it posts now (the on-demand copy has none). After
-  either POST it prints the run's `edition.pdf` when the printer is configured
-  (the text leg too, so a missing PDF is reported as a miss), records
-  the edition and finalizes its topics (`memo-render` step 2).
+- `scripts/post_to_chat.py --pdf <edition.pdf> [--filename The-Founder-Memo-<date>.pdf]`
+  — immediately POST the PDF, then independently print and record its sibling
+  `edition.json`. `--recover` resumes pending print/record tickets without another
+  edition POST; the no-agent `memo-deliver` job runs it each minute.
 - `scripts/chat_status.py --busy` — setup's hang-on during memo-setup Latch/Mac
   work (one hang-on, then one "still on it", never a play-by-play). Cron never
   calls it.
 - `scripts/owner_time.py` — the owner's own clock, not the container's:
-  called bare as `owner_time.py minutes-until HH:MM` it prints the minutes left
-  until that time today (negative once passed; the priority desk's window check).
+  called bare as `owner_time.py now` it prints the owner's now (the run's `RUN_STARTED`),
+  `owner_time.py minutes-since <ISO>` the whole minutes since then.
   As a library, `owner_now()` (an aware datetime) and `owner_today()`, from `owner.timezone`
   in `pt/config.json`. Falls back to the container's clock only when the
   config or the key is absent; a config that exists but can't be trusted (bad
   JSON, an unreadable file, an unknown zone name) raises. Shared by
-  `history.py`'s window, `record_edition.py`'s heading and
-  `post_to_chat.py --hold-until`.
-- `memo-tournament/scripts/history.py recent [--topic ID]` — what this paper printed on the last 7
-  days, read from the wiki's edition pages: bare, the advisor desk's cards, `[{"date", "desk"}]`;
-  with a news section's topic id, that section's own blocks,
-  `[{"date", "headline", "printed": [{"claim", "url"}]}]`, so a pass knows which sources it has
-  already spent.
-- `memo-render/scripts/record_edition.py <edition.json>` — the delivered edition onto the day's
-  page in the wiki, then `wiki validate` + `wiki index`.
+  `history.py`'s window, `record_memo.py`'s timestamps and
+  delivery-order timestamps.
+- `memo-tournament/scripts/history.py recent` — the cards the memo printed on the 7 nights before
+  today, read from the wiki's memo pages, `[{"date", "desk"}]`.
+- `memo-render/scripts/record_memo.py <edition.json>` — the delivered memo onto its night's page
+  (`memos/<date>.md`) in the wiki, then `wiki validate` + `wiki index`.
 - `scripts/run_lock.py` — one exclusive run per name with stale takeover, so
   two daily-paper runs can never race and deliver a hollow edition.
   Called bare, never through an interpreter:
@@ -113,11 +127,10 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   (`acquired` / `stale-takeover` / `held`) and always exits 0 on acquire.
 - `scripts/run_attempts.py` — counts a day's paper starts so a paper that keeps failing stops
   re-running. Called bare, after the paper lock is held: `.../run_attempts.py begin [--key KEY] [--scheduled]`
-  (a topic edition holds no lock and passes its topic id as KEY, so its count is its own) prints `proceed`, `stop` (spent, and the owner has been told: release and stop) or `stop-untold`
+ prints `proceed`, `stop` (spent, and the owner has been told: release and stop) or `stop-untold`
   (spent, the notice could not be posted: release and stop; the next start tries again). It posts the
   notice itself, in the owner's language from the fixed phrases, so the run writes nothing to the
-  owner. `post_to_chat.py --clear-attempts [KEY]` starts the count over once the edition is posted or
-  staged. Three undelivered starts spend the owner's day.
+  owner. `post_to_chat.py --clear-attempts` starts the count over once the memo is posted. Three undelivered starts spend the owner's day.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.
   Every paper passes `--preserve-priority` (desks.md decides which advisor checkpoint
@@ -153,5 +166,11 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 - `references/signal-triage.md` — the one priority / fyi / spam rubric for group
   chats, mail and iMessage; the channel puts it in front of every group turn.
 - `references/config.example.json` — the config contract `pt_config_gate.py`
-  enforces (including the optional `delivery.lead_minutes`, default 0, and
-  optional `mail.configured`, default off)
+  enforces: `memo.start`, `memo.window_minutes` (default 240) and `memo.max_usd`
+  (default 100) beside the owner's zone and the printer
+
+- `/opt/plow/skills/memo-schedule/scripts/register_crons.py` — reconcile the memo jobs.
+  `--start HH:MM` changes the research start; `--enabled on|off` turns the nightly
+  memo on or off; `--now` queues an enabled memo on demand. Changes are validated
+  and saved before reconciliation (`saved:` confirms that write); only confirm
+  scheduling after the command succeeds.

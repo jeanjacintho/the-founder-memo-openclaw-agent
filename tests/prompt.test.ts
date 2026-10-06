@@ -5,9 +5,35 @@ import { test } from "node:test";
 import { renderConfig } from "../boot/config.ts";
 import { probeIdentity } from "../boot/probe-fixture.ts";
 import { renderPrompt } from "../boot/prompt.ts";
+import { llmRoute, roleModels } from "../boot/llm.ts";
 
 const prompt = await readFile(new URL("../prompt/AGENTS.md", import.meta.url), "utf8");
 const maxChars = renderConfig(probeIdentity, "http://api").agents.defaults.bootstrapMaxChars;
+
+test("the tournament dispatch contract uses the configured writer and critic routes", async () => {
+  const roles = roleModels({
+    MEMO_MODEL_WRITER: "plow/anthropic/writer-fixture", MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25",
+    MEMO_MODEL_CRITIC: "plow/openai/critic-fixture", MEMO_MODEL_CRITIC_PRICE: "1,10,0.1,1",
+  })!;
+  const rendered = prompt.replaceAll("{{writer_model}}", roles.writer).replaceAll("{{critic_model}}", roles.critic);
+  assert.match(rendered, /writer model is `plow\/anthropic\/writer-fixture`/);
+  assert.match(rendered, /critic\s+model is `plow\/openai\/critic-fixture`/);
+  assert.match(rendered, /Pass these exact ids as `sessions_spawn.model`/);
+  assert.doesNotMatch(rendered, /\{\{(?:writer|critic)_model\}\}/);
+  const skill = await readFile(new URL("../skills/memo-tournament/SKILL.md", import.meta.url), "utf8");
+  const loop = skill.split("### Mechanical loop (authoritative)")[1].split("### ")[0];
+  assert.match(loop, /five writer children \(`model`: the writer model\)/);
+  assert.match(loop, /critics:[\s\S]*\(`model`: the critic model\)/);
+  assert.match(loop, /one culler child \(`model`: the writer\s+model\)/);
+});
+
+test("unset role models render the selected boot route for both roles", () => {
+  const route = llmRoute({ AGENT_PROVIDER: "openai", AGENT_MODEL: "chat-fixture" }, "").route;
+  const roles = roleModels({}) ?? { writer: route.primary, critic: route.primary };
+  const rendered = prompt.replaceAll("{{writer_model}}", roles.writer).replaceAll("{{critic_model}}", roles.critic);
+  assert.match(rendered, /writer model is `openai\/chat-fixture`/);
+  assert.match(rendered, /critic\s+model is `openai\/chat-fixture`/);
+});
 
 test("dashboard address comes from agent identity, including absence", async () => {
   assert.equal(await renderPrompt(prompt, null, "test-token", "https://dashboard.example/agent"),
@@ -63,6 +89,8 @@ test("the prompt directs existing-chat sends to the native tool", () => {
   assert.ok(!prompt.includes("Do not use message"));
   assert.doesNotMatch(prompt, /message\(action="send"\) is for OTHER conversations/i);
   assert.match(prompt, /message\(action="send"\).*current conversation/i);
+  assert.match(prompt, /omit target for\s+the current conversation/i);
+  assert.match(prompt, /chat uid as target for another conversation/i);
   assert.match(prompt, /accountId/);
   assert.match(prompt, /plow_start_thread/);
 });

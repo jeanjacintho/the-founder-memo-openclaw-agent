@@ -8,7 +8,7 @@ import { test, type TestContext } from "node:test";
 import JSON5 from "json5";
 import { fileURLToPath } from "node:url";
 import { renderConfig, syncConfig, type Identity } from "../boot/config.ts";
-import { llmRoute } from "../boot/llm.ts";
+import { llmRoute, roleModels } from "../boot/llm.ts";
 
 const identity: Identity = {
   agent: { name: "Juniper" },
@@ -84,11 +84,14 @@ test("provider and optional MCP use environment references, never credential val
   assert.deepEqual(renderConfig(identity, "http://api:8000").mcp, { sessionIdleTtlMs: 300_000 });
 });
 
-test("rendered config passes OpenClaw's config validate command", async t => {
+for (const [label, env] of [["without", {}], ["with", {
+  MEMO_MODEL_WRITER: "plow/anthropic/claude-opus-5-5", MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25",
+  MEMO_MODEL_CRITIC: "plow/openai/gpt-6-sol", MEMO_MODEL_CRITIC_PRICE: "1.25,10,0.125,1.25",
+}]] as const) test(`rendered config ${label} role models passes OpenClaw's config validate command`, async t => {
   const dir = await mkdtemp(join(tmpdir(), "plow-openclaw-config-validate-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const configPath = join(dir, "openclaw.json");
-  const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
+  const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000", undefined, env);
   await writeFile(configPath, JSON.stringify(config));
 
   const openclawDist = dirname(fileURLToPath(import.meta.resolve("openclaw")));
@@ -151,7 +154,7 @@ test("MCP sessions share the loopback bridge and expire after five idle minutes"
   } } });
 });
 
-test("the Plow MCP filter exposes only the Latch tools used by newspaper research", () => {
+test("the Plow MCP filter exposes only the Latch tools used by the memo research", () => {
   const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
   assert.deepEqual(config.mcp?.servers?.plow?.toolFilter?.include, [
     "plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file", "plow_read_skill",
@@ -165,10 +168,43 @@ test("the Plow MCP filter exposes only the Latch tools used by newspaper researc
   assert.ok(!config.tools.alsoAllow.includes("group:plugins"), "do not grant every plugin tool");
 });
 
-test("the advisor tournament can run six leaf sub-agents without chat turns preferring delegation", () => {
+test("the tournament allows depth-two phase coordinators and ten leaf children without chat turns preferring delegation", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").agents.defaults.subagents, {
-    maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest",
+    maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest",
   });
+});
+
+const ROLES = {
+  MEMO_MODEL_WRITER: "plow/anthropic/claude-opus-5-5", MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25",
+  MEMO_MODEL_CRITIC: "plow/openai/gpt-6-sol", MEMO_MODEL_CRITIC_PRICE: "1.25,10,0.125,1.25",
+};
+
+test("writer and critic models join the Plow provider with their prices", () => {
+  const cfg = renderConfig(identity, "http://api:8000", undefined, ROLES);
+  const byId = Object.fromEntries(cfg.models.providers.plow.models.map((m: { id: string }) => [m.id, m]));
+  assert.deepEqual(byId["anthropic/claude-opus-5-5"].cost, { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 });
+  // A role model Plow already lists keeps its entry and gains the price for its listed tokens.
+  assert.deepEqual(byId["openai/gpt-6-sol"], { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"],
+    contextWindow: 1050000, cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 } });
+  assert.equal(cfg.models.providers.plow.models.length, 3);
+  assert.deepEqual(roleModels(ROLES), { writer: "plow/anthropic/claude-opus-5-5", critic: "plow/openai/gpt-6-sol" });
+});
+
+test("without role models the tournament runs on the chat's own model", () => {
+  assert.equal(roleModels({}), undefined);
+  assert.deepEqual(renderConfig(identity, "http://api:8000", undefined, {}).models.providers.plow.models.map(
+    (m: { id: string }) => m.id), ["openai/gpt-6-sol", "openai/gpt-6-luna"]);
+});
+
+test("role models are refused at boot unless both are priced Plow models on different providers", () => {
+  const refuse = (env: Record<string, string>, why: RegExp) =>
+    assert.throws(() => renderConfig(identity, "http://api:8000", undefined, env), why);
+  refuse({ ...ROLES, MEMO_MODEL_CRITIC: "plow/anthropic/claude-sonnet-5" }, /critic must be a different provider than writer/);
+  refuse({ MEMO_MODEL_WRITER: ROLES.MEMO_MODEL_WRITER, MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25" }, /set both MEMO_MODEL_WRITER and MEMO_MODEL_CRITIC/);
+  refuse({ ...ROLES, MEMO_MODEL_CRITIC_PRICE: "" }, /MEMO_MODEL_CRITIC_PRICE/);
+  for (const price of ["cheap", "5,25", "5,25,-1,6", "5,25,NaN,6"])
+    refuse({ ...ROLES, MEMO_MODEL_WRITER_PRICE: price }, /MEMO_MODEL_WRITER_PRICE/);
+  refuse({ ...ROLES, MEMO_MODEL_WRITER: "openai/gpt-6-sol" }, /MEMO_MODEL_WRITER must be a plow\/<provider>\/<model> id/);
 });
 
 test("phone turns cannot block on ask_user or read secrets", () => {
@@ -186,7 +222,7 @@ test("native messaging retains local workspace and memory file tools", () => {
   });
 });
 
-test("exec resolves python3 to the newspaper venv", () => {
+test("exec resolves python3 to the memo venv", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools.exec, { pathPrepend: ["/opt/plow/pt-venv/bin"] });
 });
 
@@ -208,6 +244,7 @@ test("the base image uses boot-owned config with the OpenClaw browser UI", () =>
   const config = renderConfig(identity, "http://api:8000");
   assert.equal(config.gateway.controlUi.enabled, true);
   assert.equal(config.agents.defaults.skipBootstrap, true);
+  assert.deepEqual(config.messages, { visibleReplies: "automatic" });
   assert.deepEqual(config.meta, {});
 });
 
@@ -242,6 +279,8 @@ test("fresh boot seeds owner defaults and external includes for Plow-owned setti
   assert.deepEqual(owner.skills, { $include: join(includes, "skills.json5") });
   assert.equal(JSON5.parse(await readFile(join(includes, "skills.json5"), "utf8")).load.extraDirs[0], "/opt/plow/skills");
   assert.deepEqual(owner.gateway, { $include: join(includes, "gateway.json5") });
+  assert.deepEqual(owner.messages.visibleReplies, { $include: join(includes, "visible-replies.json5") });
+  assert.equal(JSON5.parse(await readFile(join(includes, "visible-replies.json5"), "utf8")), "automatic");
   assert.equal(owner.bindings.length, 2);
   assert.deepEqual(owner.bindings[0], { $include: join(includes, "binding.json5") });
   assert.deepEqual(owner.bindings[1].match.peer, { kind: "group", id: "*" });
@@ -257,6 +296,7 @@ test("restart migrates a full render and keeps owner edits outside Plow-owned pa
   old.agents.defaults.model.primary = "extra/model";
   old.agents.entries.main.identity.emoji = "old";
   old.agents.entries.main.heartbeat = { every: "30m", target: "last" };
+  old.messages.groupChat = { visibleReplies: "message_tool" };
   old.bindings.unshift({ agentId: "extra", match: { channel: "telegram" } });
   await writeFile(path, `// owner settings\n${JSON.stringify(old)}\n`);
   await syncConfig(renderConfig(identity, "http://new-api:8000"), path, includes);
