@@ -16,6 +16,7 @@ answer must never read like "post nowhere".
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -75,19 +76,44 @@ def home_channel() -> str:
     return uid
 
 
-def owner_name() -> str | None:
-    """The owner's Plow display name for the printed receipt; None when unknown.
+# No 0/O, 1/I/L: a code read off paper at an event is never mistyped.
+CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
-    Never exits: a receipt without a name still prints. A name with no letter or
-    with an @ is a phone number or an address, which a receipt never prints."""
+
+def receipt_code(chat_uid: str) -> str:
+    """The owner's receipt code, "#" and 4 characters, from their DM's uid: the slip and
+    the memo message print the same one, so a slip and a phone match on the spot.
+    ponytail: 31^4 = 923,521 codes; 100 attendees repeat one about 0.5% of the time."""
+    digest = hashlib.sha256(chat_uid.encode("utf-8")).digest()
+    return "#" + "".join(CODE_ALPHABET[b % len(CODE_ALPHABET)] for b in digest[:4])
+
+
+def receipt_owner() -> tuple[str | None, str | None]:
+    """(name, last 4 phone digits) for the receipt, the CEO's rule (2026-10-06); either may be None.
+
+    The name row: a first and last name as is, else the one name Plow has, else an
+    address's part before the @. The digits go beside the receipt code at the
+    bottom whenever there is no full name and the owner has a phone. Never the
+    whole number or address. Never exits: a receipt without them still prints."""
     try:
         identity = fetch_identity(require("PLOW_API_BASE"), require("PLOW_AGENT_TOKEN"))
     except (SystemExit, Exception):  # noqa: BLE001 -- the name is decoration, the print is not
-        return None
-    names = [p.get("display_name") for chat in identity.get("chats") or [] if chat.get("status") == "active"
-             for p in chat.get("participants") or [] if p.get("type") == "member" and p.get("role") == "owner"]
-    return next((" ".join(n.split()) for n in names if isinstance(n, str)
-                 and re.search(r"[^\W\d_]", n) and "@" not in n), None)
+        return None, None
+    owners = [p for chat in identity.get("chats") or [] if chat.get("status") == "active"
+              for p in chat.get("participants") or [] if p.get("type") == "member" and p.get("role") == "owner"]
+    for owner in owners:
+        name = " ".join(str(owner.get("display_name") or "").split())
+        handle = str(owner.get("provider_key") or "").strip()
+        if "@" in name or not re.search(r"[^\W\d_]", name):  # Plow fell back to the handle itself
+            handle, name = handle or name, ""
+        if "@" in handle:
+            name, digits = name or handle.split("@", 1)[0], ""
+        else:
+            digits = re.sub(r"\D", "", handle)[-4:]
+        digits = digits if len(digits) == 4 and len(name.split()) < 2 else ""
+        if name or digits:
+            return name or None, digits or None
+    return None, None
 
 
 def post_owner_text(text: str) -> None:

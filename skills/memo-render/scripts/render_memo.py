@@ -306,9 +306,10 @@ def priorities_html(memo, language):
 
 # A 72 mm thermal roll (printer.paper "72mm"; Star TSP100). The Letter page shrunk
 # to 72 mm prints ~2.5 pt type, so the roll gets its own page: a fixed front page,
-# not the whole card. Masthead, the owner's name, three slots (headline and first step), the
-# questions, the first advisor line and the cost; every slot has a line cap, so
-# every receipt runs about the same short length. The full card stays on the
+# not the whole card. Masthead, the owner's name, three slots (headline, its why
+# and first step), the questions, the first advisor line, the receipt code and the cost;
+# every slot has a line cap, so every receipt runs about the same short length.
+# The full card stays on the
 # Letter page and in the chat. One tall page; the driver cuts after the ink.
 # For a 203 dpi black-only head: the fonts ship beside this script and embed in
 # the PDF (the image has only DejaVu), every mark is solid black, and no rule is
@@ -328,41 +329,52 @@ p, h1, h2, h3, ul { margin: 0; padding: 0; }
 .r-masthead span { display: block; }
 .r-orn { margin: 5px 0 0; border-top: 2px solid #000; height: 0; }
 .r-orn span { position: relative; top: -9px; padding: 0 6px; background: #fff; font-size: 11px; line-height: 1; }
-.r-owner { margin-top: 4px; font: 900 21px/1.1 "Memo Display", serif; line-clamp: 2; }
+.r-owner { margin-top: 4px; font: 900 21px/1.1 "Memo Display", serif; font-variant-numeric: lining-nums;
+  line-clamp: 2; }
+.r-code { margin-top: 10px; padding-top: 7px; border-top: 2px dashed #000; text-align: center;
+  font: 700 10.5px/1.3 "Memo Text", serif; letter-spacing: 2px; font-variant-numeric: lining-nums; }
 .r-folio { margin-top: 3px; padding: 4px 0; border-top: 2px solid #000; border-bottom: 2px solid #000;
   font: 700 10.5px/1.2 "Memo Text", serif; letter-spacing: 3px; }
 .r-band { margin-top: 3px; padding: 4px 4px 5px; background: #000; color: #fff;
   font: 700 10px/1.25 "Memo Text", serif; letter-spacing: 1.5px; text-transform: uppercase; }
 
-.slot { padding: 9px 0; border-bottom: 2px solid #000; }
+.slot { padding: 7px 0; border-bottom: 2px solid #000; }
 .slot .num { float: left; width: 26px; height: 26px; margin: 0 8px 0 0; border-radius: 50%;
   background: #000; color: #fff; text-align: center; font: 900 17px/25px "Memo Display", serif;
   font-variant-numeric: lining-nums; }
 .slot h2 { min-height: 26px; font: 900 16px/1.12 "Memo Display", serif; line-clamp: 3; }
-.slot .step { clear: left; margin-top: 4px; line-clamp: 5; }
+.slot .why { clear: left; margin-top: 3px; font-style: italic; font-size: 11px; line-height: 1.33;
+  line-clamp: 3; }
+.slot .step { clear: left; margin-top: 3px; line-clamp: 5; }
 .slot .step strong { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; }
 
-.r-box { margin-top: 10px; border: 2px solid #000; padding: 0 7px 5px; }
+.r-box { margin-top: 8px; border: 2px solid #000; padding: 0 7px 4px; }
 .r-box h3 { margin: 0 -7px 5px; padding: 3px 4px 4px; background: #000; color: #fff; text-align: center;
   font: 700 9px/1.3 "Memo Text", serif; letter-spacing: 1px; text-transform: uppercase; }
 .r-box ul { list-style: none; }
 .r-box li { padding: 3px 0; border-bottom: 2px dotted #000; font-weight: 700; line-clamp: 4; }
 .r-box li:last-child { border-bottom: 0; }
 
-blockquote { margin: 10px 0 0; padding: 7px 4px 6px; border-top: 2px solid #000; border-bottom: 2px solid #000;
+blockquote { margin: 8px 0 0; padding: 5px 4px; border-top: 2px solid #000; border-bottom: 2px solid #000;
   text-align: center; }
 blockquote p { font-style: italic; font-size: 12px; line-clamp: 3; }
 blockquote .src { margin-top: 3px; font: 700 8.5px/1.3 "Memo Text", serif; letter-spacing: 1px;
   text-transform: uppercase; line-clamp: 2; }
 
-footer { margin-top: 8px; font: 700 8.5px/1.4 "Memo Text", serif; letter-spacing: 1px; text-align: center;
+footer { margin-top: 6px; font: 700 8.5px/1.4 "Memo Text", serif; letter-spacing: 1px; text-align: center;
   text-transform: uppercase; }
 footer::after { content: "\\25C6"; display: block; margin-top: 3px; font-size: 10px; }
 """
 
 
-def receipt_html(memo, owner=None):
-    """The roll's page: the fixed front page, at 72 mm, under the owner's name when known."""
+def _lede(body):
+    """The body's first sentence: the slot's why, the rest stays on the Letter page."""
+    return re.split(r"(?<=[.!?])\s+", " ".join(body.split()), maxsplit=1)[0]
+
+
+def receipt_html(memo, owner=None, code=None):
+    """The roll's page: the fixed front page, at 72 mm: the owner's name on its row under the
+    masthead, their receipt code (and phone digits, when used) on a stub at the bottom."""
     language = memo["language"]
     css = RECEIPT_CSS
     for slot, name in (("{display}", "PlayfairDisplay-Black"), ("{text}", "SourceSerif4-Regular"),
@@ -379,6 +391,7 @@ def receipt_html(memo, owner=None):
         head += f'<p class="r-band">{_esc(phrase("page.priority_band", language))}</p></header>'
         body = "".join(
             f'<section class="slot"><p class="num">{rank}</p><h2>{_esc(item["headline"])}</h2>'
+            f'<p class="why">{_esc(_lede(item["body"]))}</p>'
             f'<p class="step"><strong>{_esc(phrase("page.first_step", language))}</strong> '
             f'{_esc(item["first_step"])}</p></section>'
             for rank, item in enumerate(recommendations, 1))
@@ -396,7 +409,8 @@ def receipt_html(memo, owner=None):
                 + "".join(f"<li>{_esc(r)}</li>" for r in memo["could_not_source"]) + "</ul></section>")
     return (f'<!doctype html><html lang="{_esc(language)}"><head><meta charset="utf-8">'
             f"<title>{_esc(MASTHEAD)} · {_esc(memo['date'])}</title><style>{css}</style></head><body>"
-            f"{head}{body}<footer>{_esc(cost_line(memo['run'], language))}</footer></body></html>")
+            f"{head}{body}" + (f'<p class="r-code"><span>{_esc(code)}</span></p>' if code else "")
+            + f"<footer>{_esc(cost_line(memo['run'], language))}</footer></body></html>")
 
 
 def write_pdf(html_text, path):

@@ -40,11 +40,25 @@ def test_the_closed_set_covers_every_fixed_line():
     assert set(phrases.SOURCE) == {
         "chat.busy", "chat.busy_still",
         "print.lede", "print.retry", "print.timeout", "print.no_pdf",
-        "edition.failed", "attempts.cooldown", "attempts.spent_scheduled", "attempts.spent_on_demand",
+        "print.ready", "edition.failed", "attempts.cooldown",
+        "attempts.spent_scheduled", "attempts.spent_on_demand",
         "page.first_step", "page.questions", "page.could_not_source",
         "page.advice_from", "page.priority_band", "page.cost", "page.cost_unknown",
     }
     assert "{seconds}" in phrases.SOURCE["print.timeout"] and "{path}" in phrases.SOURCE["print.no_pdf"]
+    assert "{code}" in phrases.SOURCE["print.ready"] and "{code}" in phrases.PORTUGUESE["print.ready"]
+
+
+def test_a_pack_written_before_print_ready_still_tells_the_attendee_in_english(pt_home):
+    # The event's "go get it" line came after packs were written: an older pack keeps its own
+    # labels, the new line falls back to English (never a KeyError mid-print), and status asks
+    # for the missing translation.
+    configure(pt_home, "Mandarin Chinese")
+    old = {k: v for k, v in translated().items() if k != "print.ready"}
+    (pt_home / "owner-phrases.json").write_text(json.dumps({"language": "Mandarin Chinese", "phrases": old}))
+    assert phrases.phrase("chat.busy") == old["chat.busy"]
+    assert phrases.phrase("print.ready", code="#K7Q2") == phrases.SOURCE["print.ready"].format(code="#K7Q2")
+    assert phrases.status() == "missing"
 
 
 def test_template_prints_the_english_source(pt_home):

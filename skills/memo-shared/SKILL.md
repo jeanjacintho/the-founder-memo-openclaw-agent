@@ -44,6 +44,9 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `PLOW_HOME_CHANNEL` when boot exported it, else asks `/v1/agents/me` (the
   owner has not texted yet at boot). Every script that posts or records
   calls its `home_channel()`; it exits by name when there is no owner's chat
+- `scripts/printer_config.py` — `read_printer(config)`: config.json's `printer`
+  object, `{}` when anything is missing; print_edition.py and post_to_chat.py
+  both read it here (library, no CLI).
 - `scripts/bearer_http.py` — one bearer JSON call that never follows a redirect
   (a forwarded Authorization header is the credential walking to a host the API
   did not authenticate)
