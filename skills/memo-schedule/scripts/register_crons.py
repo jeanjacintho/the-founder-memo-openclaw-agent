@@ -59,6 +59,7 @@ import pt_config_gate as _gate
 from record_owner_language import _write_json
 from pt_paths import config_file, pt_home, skills  # noqa: E402
 import run_attempts  # noqa: E402
+import run_lock  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
@@ -276,15 +277,28 @@ def job_drift(job, spec):
     return False
 
 
-def queue_now(backend, listing, window_minutes, owner_tz, clock=None):
+def queue_now(backend, window_minutes, owner_tz, clock=None):
     """Tonight's run on demand: the nightly prompt as a one-shot a minute out.
 
     Previous copies are removed by id only after the new one is created, so a
     failed create never cancels a run the owner was already promised. While a
     run is in flight nothing is queued: `cron rm` aborts its session mid-run,
-    and a copy queued behind it reads 'held' and stops.
+    and a copy queued behind it reads 'held' and stops. With no run in flight,
+    a workspace lock is a dead run's leftover, released before queueing (#91).
     """
-    running = [j for j in listing if j.name in (NIGHTLY_NAME, NOW_NAME) and j.running]
+    # Every decision below reads one listing taken under the guard each acquirer holds
+    # while it takes the workspace: a run that started since main's own listing shows
+    # here as running, so it is neither cancelled nor robbed of its lock.
+    lock = run_lock.lock_path(WORKSPACE_LOCK)
+    with run_lock.guarded(lock.parent):
+        listing = backend.list()
+        running = [j for j in listing if j.name in (NIGHTLY_NAME, NOW_NAME) and j.running]
+        # No run in flight: the lock was kept by a run that died (a provider error, say)
+        # for its stale-lock window, and this copy would read 'held' and end NO_REPLY
+        # behind the owner's "queued".
+        if not running and lock.exists():
+            lock.unlink()
+            print(f"released: {WORKSPACE_LOCK}, left by a run that is no longer running")
     if running:
         print(f"already running: {running[0].name} ({running[0].id}) -- its memo is on the way")
         return
@@ -384,7 +398,7 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
     if args.now and not enabled:
         raise SystemExit("not queued: priority.configured is false; enable the memo first")
     if args.now:
-        queue_now(backend, listing, window, owner_tz)
+        queue_now(backend, window, owner_tz)
 
     return 0
 

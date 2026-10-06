@@ -23,7 +23,9 @@ window counts from when the run actually starts, not from the nominal hour.
 The prompt hands the night to `memo-tournament`'s Start section, which takes
 the workspace lock with `memo-shared/scripts/run_lock.py`: a manual
 `openclaw cron run` beside the scheduled fire would otherwise write the same
-scratch and deliver twice.
+scratch and deliver twice. `--now` is the one registration step that touches the
+lock: with no run in flight it releases a leftover `paper-workspace` lock, since
+only a run that died can hold it.
 
 ## Registering
 
