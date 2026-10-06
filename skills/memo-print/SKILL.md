@@ -32,11 +32,12 @@ cost line, or the night's reasons when there is no card, at 72 mm, sent with
 driver's variable length cuts after the ink). No `paper` key is the Letter
 page, unchanged.
 
-An event install has no Mac: its `printer.line` is the E.164 Plow line of the
-event's shared printer. The script renders the 72 mm receipt and sends it to that
-line instead of running `lp`. It uses this agent's chat with the line (started
-once, untrusted, so nothing the printer side says can steer this agent), one
-message carrying the PDF. The event's own relay prints it.
+An event install has no Mac: its `printer.url` is the event's print server (the
+event Mac, behind Tailscale Funnel). The script renders the 72 mm receipt and
+POSTs it there with the event's public key (`printer.key`, from events.json; the
+server's gate is the protection) instead of running `lp`. 200 means it is queued and prints in order; a
+refusal (printer off, outside the event's hours, one print per 15 minutes) fails
+the print with that reason.
 
 ## When it fails — and it is allowed to
 
