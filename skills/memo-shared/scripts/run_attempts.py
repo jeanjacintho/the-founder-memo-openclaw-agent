@@ -65,11 +65,11 @@ DEFAULT_KEY = "paper"
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def _path(key=DEFAULT_KEY):
+def _path(key=DEFAULT_KEY, day=None):
     if not KEY_RE.fullmatch(key):
         sys.exit(f"error: --key {key!r} has characters not allowed in an attempts key")
     suffix = "" if key == DEFAULT_KEY else f"-{key}"
-    return pt_home() / f"paper-attempts-{owner_today().isoformat()}{suffix}.json"
+    return pt_home() / f"paper-attempts-{(day or owner_today()).isoformat()}{suffix}.json"
 
 
 @contextmanager
@@ -113,12 +113,18 @@ def grant():
 def begin(key=DEFAULT_KEY, scheduled=False):
     path = _path(key)
     with _locked():
+        now = owner_now()
         data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
+        # A delay is at most four hours: only yesterday can overlap this owner's day.
+        previous = _path(key, owner_today() - timedelta(days=1))
+        if not path.exists() and previous.exists():
+            prior = json.loads(previous.read_text())
+            if prior.get("retry_at") and now.astimezone(timezone.utc) < datetime.fromisoformat(prior["retry_at"]):
+                data.update(retry_at=prior["retry_at"], told=prior["told"])
         # Any start of the paper consumes the grant, so none lingers to lift a later retry.
         granted = key == DEFAULT_KEY and _grant_path().exists()
         if granted:
             _grant_path().unlink()
-        now = owner_now()
         retry_at = datetime.fromisoformat(data["retry_at"]) if data.get("retry_at") else None
         if not granted and data["starts"] < MAX_ATTEMPTS and retry_at and now.astimezone(timezone.utc) < retry_at:
             if not data["told"]:
@@ -151,6 +157,7 @@ def clear(key=DEFAULT_KEY):
     """The edition is out: the owner's day starts over."""
     with _locked():
         _path(key).unlink(missing_ok=True)
+        _path(key, owner_today() - timedelta(days=1)).unlink(missing_ok=True)
 
 
 def main(argv=None):

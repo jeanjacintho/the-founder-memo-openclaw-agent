@@ -287,10 +287,11 @@ MIT. See [LICENSE](LICENSE).
 Automatic starts of an undelivered memo are capped at three on the owner's day. A retry
 is admitted no sooner than two hours after its first start and four hours after
 its second; intervening cron ticks stop before research and do not consume an
-attempt. The owner receives one pause notice per interval with the earliest
+attempt. Active pauses survive the owner's midnight while the daily start count resets.
+The owner receives one pause notice per interval with the earliest
 retry time on their own clock, then the existing stop notice when the day's
 attempts are spent. The time is not a delivery promise: the next scheduled tick
-still has to succeed. Confirmed delivery clears the memo's counter. An explicit owner request grants one
+still has to succeed. Confirmed delivery clears the memo's counter and any carried pause. An explicit owner request grants one
 start past a cooldown or spent day; automatic retries are bounded again afterward. This bounds paper restarts after provider
 rate limits, not the provider's internal retries within an already-running
 OpenClaw session. The accepted advisor checkpoint remains reusable under the

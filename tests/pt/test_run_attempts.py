@@ -25,6 +25,7 @@ def clock(monkeypatch):
     class Clock:
         now = datetime(2026, 10, 6, 8, tzinfo=timezone.utc)
     monkeypatch.setattr(attempts, "owner_now", lambda: Clock.now)
+    monkeypatch.setattr(attempts, "owner_today", lambda: Clock.now.date())
     return Clock
 
 
@@ -59,9 +60,10 @@ def chat(monkeypatch):
 
 
 def spend_the_day(clock):
-    for _ in range(attempts.MAX_ATTEMPTS):
+    for n in range(attempts.MAX_ATTEMPTS):
         assert run("begin") == "proceed"
-        clock.now += timedelta(hours=4)
+        if n + 1 < attempts.MAX_ATTEMPTS:
+            clock.now += timedelta(hours=4)
 
 
 def test_the_next_start_tells_the_owner_once_in_the_same_call_and_stays_quiet_after(pt_home, chat, clock):
@@ -80,6 +82,7 @@ def test_the_notice_speaks_the_owners_language_and_says_the_next_paper_comes_on_
 
 
 def test_a_topic_edition_has_its_own_count_apart_from_the_papers(pt_home, chat, clock):
+    clock.now = clock.now.replace(hour=0)
     spend_the_day(clock)
     assert run("begin") == "stop"
     # The papers' day is spent; a topic's is not, and a spent topic does not touch the papers'.
@@ -188,15 +191,6 @@ def test_cooldown_notice_uses_the_owners_clock_and_language(pt_home, chat, clock
     assert chat.posts == ["A edição ainda não chegou. Vou pausar as tentativas até pelo menos 2026-10-06 07:00 -03; a entrega não está confirmada."]
 
 
-def test_an_owner_ask_grants_one_start_past_a_spent_day_and_a_retry_is_capped_again(pt_home, chat, clock):
-    spend_the_day(clock)
-    assert run("begin") == "stop"
-    attempts.grant()
-    assert run("begin", "--key", "t_8c1d") == "proceed"  # a topic's own count is not the grant's
-    assert run("begin") == "proceed"
-    assert run("begin") == "stop"
-
-
 @pytest.mark.parametrize("start", ["2026-03-08T01:30", "2026-11-01T00:30"])
 def test_retry_waits_two_elapsed_hours_across_dst(pt_home, chat, clock, start):
     from zoneinfo import ZoneInfo
@@ -213,16 +207,20 @@ def test_retry_waits_two_elapsed_hours_across_dst(pt_home, chat, clock, start):
     assert run("begin") == "proceed"
 
 
-def test_owner_request_lifts_cooldown_once_and_automatic_retry_waits(pt_home, chat, clock):
+@pytest.mark.parametrize("starts,notice", [(1, "2026-10-06 12:00 UTC"), (3, "Ask me again later.")])
+def test_owner_grant_admits_once(pt_home, chat, clock, starts, notice):
     assert run("begin") == "proceed"
+    for _ in range(starts - 1):
+        clock.now += timedelta(hours=4)
+        assert run("begin") == "proceed"
     assert run("begin") == "stop"
     attempts.grant()
     assert run("begin", "--key", "topic") == "proceed"
     assert run("begin") == "proceed"
     assert run("begin") == "stop"
     assert len(chat.posts) == 2
-    assert "2026-10-06 12:00 UTC" in chat.posts[-1]
-    assert json.loads(attempts._path().read_text())["starts"] == 2
+    assert notice in chat.posts[-1]
+    assert json.loads(attempts._path().read_text())["starts"] == starts + 1
 
 
 def test_existing_translation_is_refreshed_before_a_cooldown_notice(pt_home, chat):
@@ -241,3 +239,35 @@ def test_existing_translation_is_refreshed_before_a_cooldown_notice(pt_home, cha
     start = (ROOT / "memo-tournament/SKILL.md").read_text().split("## Start", 1)[1].split("## ", 1)[0]
     assert start.index("owner_phrases.py status") < start.index("owner_phrases.py template") < start.index("owner_phrases.py record") < start.index("run_attempts.py begin")
     assert "release --name paper-workspace" in start and "stop without research or waiting" in start
+
+
+@pytest.mark.parametrize("starts", [1, 2])
+@pytest.mark.parametrize("key", ["paper", "topic"])
+def test_midnight_keeps_active_cooldown_but_resets_daily_starts(pt_home, chat, clock, starts, key):
+    clock.now = datetime(2026, 10, 6, 23, 30, tzinfo=timezone.utc) - timedelta(hours=4 * (starts - 1))
+    for _ in range(starts):
+        assert run("begin", "--key", key) == "proceed"
+        if _ + 1 < starts:
+            clock.now += timedelta(hours=4)
+    deadline = clock.now + timedelta(hours=2 * starts)
+    assert run("begin", "--key", key) == "stop"
+    clock.now = datetime(2026, 10, 7, 0, 5, tzinfo=timezone.utc)
+    assert run("begin", "--key", key) == "stop"
+    assert json.loads(attempts._path(key).read_text())["starts"] == 0
+    assert len(chat.posts) == 1, "the same blocked interval does not repeat its notice"
+    assert run("begin", "--key", "other") == "proceed"
+    clock.now = deadline
+    assert run("begin", "--key", key) == "proceed"
+    assert json.loads(attempts._path(key).read_text())["starts"] == 1
+
+
+@pytest.mark.parametrize("key", ["paper", "topic"])
+@pytest.mark.parametrize("check_before_delivery", [False, True])
+def test_delivery_after_midnight_clears_the_previous_days_cooldown(pt_home, chat, clock, key, check_before_delivery):
+    clock.now = datetime(2026, 10, 6, 23, 30, tzinfo=timezone.utc)
+    assert run("begin", "--key", key) == "proceed"
+    clock.now += timedelta(hours=1)
+    if check_before_delivery:
+        assert run("begin", "--key", key) == "stop"
+    attempts.clear(key)
+    assert run("begin", "--key", key) == "proceed"
