@@ -58,12 +58,12 @@ export function forgetLatchProbe(): void {
   delete shared.plowLatchProbe;
 }
 
-const LATCH_ANSWERS = "Your owner's Mac (Latch) is connected: reach Google through it as the skills describe (plow-gog via plow_run_command). plow_google, plow_slack and plow_connect are for when the Mac is not connected.";
+const LATCH_ANSWERS = "Your owner's Mac (Latch) is connected: reach Google through it as the skills describe (plow-gog via plow_run_command). plow_google and plow_connect for Google are for when the Mac is not connected; Slack always goes through plow_slack.";
 
 /** The connector note for one turn, from this turn's probe: only when the Mac does not answer, so a Latch turn reads as before. */
 export async function latchContext(): Promise<string | undefined> {
   return await latchPresent() ? undefined
-    : "Your owner's Mac (Latch) is not connected right now: use plow_google and plow_slack for Gmail, Calendar and Slack, and plow_connect if an account is not connected yet.";
+    : "Your owner's Mac (Latch) is not connected right now: use plow_google for Gmail and Calendar (plow_slack for Slack, as always), and plow_connect if an account is not connected yet.";
 }
 // Plow's plow-gog runner gives up at 60s; leave room for minting and the network.
 const RUN_TIMEOUT_MS = 90_000;
@@ -164,14 +164,14 @@ export type ToolText = { isError?: true; content: { type: "text"; text: string }
 
 const untrusted = (provider: Provider, text: string) => wrapExternalContent(text, { source: "api", sender: provider === "google" ? "Google" : "Slack" });
 
-/** While Latch answers, Google stays on the Mac exactly as before. */
-async function latchRefusal(): Promise<ToolText | undefined> {
-  return await latchPresent() ? { isError: true, content: [{ type: "text", text: LATCH_ANSWERS }], details: { latch: true } } : undefined;
+/** While Latch answers, Google stays on the Mac exactly as before. Latch has no Slack, so Slack always goes through Plow. */
+async function latchRefusal(provider: Provider): Promise<ToolText | undefined> {
+  return provider === "google" && await latchPresent() ? { isError: true, content: [{ type: "text", text: LATCH_ANSWERS }], details: { latch: true } } : undefined;
 }
 
 /** One `plow_google` / `plow_slack` call, as the tool returns it. */
 export async function runConnector(account: Pick<Account, "apiBase">, provider: Provider, argv: string[], timezone?: string, workspace = WORKSPACE): Promise<ToolText> {
-  const latch = await latchRefusal();
+  const latch = await latchRefusal(provider);
   if (latch) return latch;
   let body: Record<string, unknown> = { argv };
   if (provider === "google") {
@@ -195,7 +195,7 @@ export async function runConnector(account: Pick<Account, "apiBase">, provider: 
  * given; the code inside it is single-use and lasts minutes, not seconds.
  */
 export async function connectLink(account: Pick<Account, "apiBase">, provider: Provider): Promise<ToolText> {
-  const latch = await latchRefusal();
+  const latch = await latchRefusal(provider);
   if (latch) return latch;
   const path = `/connectors/${provider === "google" ? "gmail" : "slack"}/connect-code`;
   const result = await post(account, path, {});
@@ -206,6 +206,8 @@ export async function connectLink(account: Pick<Account, "apiBase">, provider: P
 }
 
 /** Said to the owner's session when Plow reports its connectors changed. */
+const SLACK_CHANGED = "Plow says your owner's connections just changed. Re-check Slack (plow_slack [\"status\"]) and carry on with anything that was waiting on it; Google stays on the Mac.";
+
 export const CONNECTORS_CHANGED = "Plow says your owner's Google or Slack connections just changed. Re-check them (plow_google [\"accounts\"], plow_slack [\"status\"]) and carry on with anything that was waiting on a connection.";
 
 type SystemEvents = {
@@ -213,11 +215,11 @@ type SystemEvents = {
   requestHeartbeat: (options: { source: "notifications-event"; intent: "event"; reason?: string; sessionKey?: string }) => void;
 };
 
-/** On `connectors.changed`, tell the owner's session and wake it to re-check, unless Latch has Google. */
+/** On `connectors.changed`, tell the owner's session and wake it to re-check: Slack always, Google only when it is not on the Mac. */
 export async function onConnectorsChanged(system: SystemEvents, sessionKey: string): Promise<void> {
   forgetLatchProbe();
-  if (await latchPresent()) return;
+  const notice = await latchPresent() ? SLACK_CHANGED : CONNECTORS_CHANGED;
   // One pending notice at a time: a burst of changes is still one re-check.
-  system.enqueueSystemEvent(CONNECTORS_CHANGED, { sessionKey, contextKey: "plow:connectors.changed", replace: true });
+  system.enqueueSystemEvent(notice, { sessionKey, contextKey: "plow:connectors.changed", replace: true });
   system.requestHeartbeat({ source: "notifications-event", intent: "event", reason: "connectors.changed", sessionKey });
 }

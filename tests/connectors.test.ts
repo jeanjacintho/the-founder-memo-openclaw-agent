@@ -168,11 +168,15 @@ test("with no Mac, connectors.changed tells the owner's session to re-check, and
   assert.match(CONNECTORS_CHANGED, /plow_google \["accounts"\]/);
 });
 
-test("while Latch answers, connectors.changed is left alone: Google stays on the Mac", async t => {
+test("while Latch answers, connectors.changed asks only for a Slack re-check: Google stays on the Mac", async t => {
   plowWithRelay(t, macAnswers);
   const { calls, events } = system();
   await onConnectorsChanged(events as never, "agent:main:main");
-  assert.deepEqual(calls, []);
+  const [enqueue, wake] = calls as [unknown[], unknown[]];
+  assert.equal(enqueue[0], "enqueue");
+  assert.match(enqueue[1] as string, /plow_slack \["status"\]/);
+  assert.doesNotMatch(enqueue[1] as string, /plow_google/);
+  assert.equal(wake[0], "wake");
 });
 
 test("Latch is present only when the Mac answers plow_device_status through the relay", async t => {
@@ -212,13 +216,22 @@ test("the probe is cached for a turn's worth of calls, then asked again", async 
   assert.equal(calls.length, 2);
 });
 
-test("while Latch answers, the connector tools step aside and Plow is not asked", async t => {
+test("while Latch answers, Google steps aside and Plow is not asked", async t => {
   const calls = plowWithRelay(t, macAnswers);
-  for (const result of [await runConnector(account, "google", ["gmail", "search", "x"]), await connectLink(account, "slack")]) {
+  for (const result of [await runConnector(account, "google", ["gmail", "search", "x"]), await connectLink(account, "google")]) {
     assert.equal(result.isError, true);
     assert.match(text(result), /Mac \(Latch\) is connected/);
   }
   assert.deepEqual(calls.map(c => c.url), [RELAY]);
+});
+
+test("Slack goes through Plow whether or not Latch answers: Latch has no Slack", async t => {
+  const calls = plowWithRelay(t, macAnswers, () => Response.json({ output: '{"accounts":[]}', url: "https://app.plow.co/connect/slack?code=c" }));
+  const run = await runConnector(account, "slack", ["status"]);
+  const link = await connectLink(account, "slack");
+  assert.equal(run.isError, undefined);
+  assert.equal(link.isError, undefined);
+  assert.deepEqual(calls.map(c => c.url), ["http://plow.test/v1/connectors/slack/run", "http://plow.test/v1/connectors/slack/connect-code"]);
 });
 
 test("the turn note appears only when the Mac does not answer", async t => {
