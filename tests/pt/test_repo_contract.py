@@ -915,7 +915,7 @@ class TestSkills:
     def test_bundled_advisors_are_one_named_markdown_file_each(self):
         advisor_dir = ROOT / "memo-setup" / "assets" / "advisors"
         markdown = sorted(p.name for p in advisor_dir.glob("*.md") if p.name != "README.md")
-        assert markdown == ["patrick-salyer.md"]
+        assert markdown == ["ben-horowitz.md", "patrick-salyer.md", "paul-graham.md"]
         assert not list(advisor_dir.glob("*-bank.json"))
         priority = (ROOT / "memo-tournament" / "SKILL.md").read_text()
         assert "every `*.md` except `README.md`" in priority
