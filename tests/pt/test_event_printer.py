@@ -138,6 +138,9 @@ def test_an_event_install_speaks_english_until_the_attendee_writes_otherwise(tmp
     gate = load_module("setup_needed", "memo-shared/scripts/setup_needed.py")
     config = tmp_path / "config.json"
     monkeypatch.setenv("MEMO_EVENT", "EV-PLOW")
+    # srosro #104: the very first turn, before any file exists, already reads English.
+    assert gate.language_line(config) == "LANG:English"
+    assert not (tmp_path / ".setup-draft.json").exists(), "the gate only reads"
     assert record.main(["record_setup.py", str(config), "connected=true"]) == 0
     assert gate.language_line(config) == "LANG:English"
     assert record.main(["record_setup.py", str(config), "owner.language=Portuguese"]) == 0
