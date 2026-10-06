@@ -322,7 +322,8 @@ poll; do not type what the probe is.
    A result (including zero messages) means the Google account in Latch
    works.
 
-   **No Latch?** If you have the `plow_google` tool, probe with it instead:
+   **Mac not connected?** When this turn's note says the owner's Mac (Latch)
+   is not connected, probe with `plow_google` instead:
    argv `["gmail", "search", "newer_than:1d", "--max", "5", "--json", "--fields", "id,date,from,subject"]`.
    A result means Google works. If it says no Google account is connected
    and they said yes, call `plow_connect` with `google`, send the owner its

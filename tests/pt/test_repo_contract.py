@@ -1122,12 +1122,8 @@ class TestDeployment:
         manifest = json.loads((REPO / "plugin" / "openclaw.plugin.json").read_text())
         config = (REPO / "boot" / "config.ts").read_text()
         also_allow = re.search(r"alsoAllow: \[([^\]]*)\]", config).group(1)
-        # Google and Slack through the Plow API are allowed only on an install
-        # with no Latch, spread into alsoAllow from LATCHLESS_TOOLS.
-        latchless = re.search(r"LATCHLESS_TOOLS = \[([^\]]*)\]", config).group(1)
-        assert "...latchlessTools" in also_allow
         for tool in manifest["contracts"]["tools"]:
-            assert f'"{tool}"' in also_allow or f'"{tool}"' in latchless, tool
+            assert f'"{tool}"' in also_allow, tool
 
     def test_channel_schema_admits_every_key_boot_writes(self):
         # The plugin's channel schema is additionalProperties:false; a key the

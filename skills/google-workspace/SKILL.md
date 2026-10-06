@@ -23,8 +23,9 @@ refer to private overlaps as an existing commitment, not the event's name.
 
 ## Without a Mac
 
-If you have the `plow_google` tool, this install has no Latch: Gmail and
-Calendar go through Plow instead, with the same plow-gog commands. Pass argv
+When the turn's note says the owner's Mac (Latch) is not connected, Gmail and
+Calendar go through Plow instead, with the same plow-gog commands and the same
+Google accounts. Pass argv
 without the leading `plow-gog` and learn the surface from `["--help"]`;
 `["accounts"]` lists what is connected. If Google is not connected, call
 `plow_connect` with `google`, send the owner the link it returns, and carry on

@@ -11,17 +11,9 @@ export type Identity = {
   line: { uid: string };
   chats: { uid: string; status: string; participants: Participant[] }[];
   mcp_url?: string | null;
-  // Whether the owner has an active Latch (a paired Mac). Every agent gets an
-  // mcp_url, Mac or not, so that cannot say it.
-  latch_paired?: boolean;
 };
 
 type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
-
-// With no Latch (latch_paired false), Google and Slack go through the Plow API
-// instead of the owner's Mac; with Latch they stay on the Mac as before. An API
-// that does not report latch_paired yet keeps the Mac path.
-export const LATCHLESS_TOOLS = ["plow_google", "plow_slack", "plow_connect"];
 
 export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
   const name = identity.agent?.name;
@@ -41,7 +33,6 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     if (listed) listed.cost = role.cost;
     else plowModels.push({ id: role.id, name: role.id, input: ["text"], cost: role.cost });
   }
-  const latchlessTools = identity.latch_paired === false ? LATCHLESS_TOOLS : [];
   return {
     meta: {},
     gateway: {
@@ -121,7 +112,9 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       // per-tool visibility allowlist.
       profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
         "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
-        ...latchlessTools,
+        // Google and Slack through Plow; each call first checks the owner's Mac
+        // (plugin/connectors.ts) and steps aside while Latch answers.
+        "plow_google", "plow_slack", "plow_connect",
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
       ], deny: ["ask_user", "secrets"],

@@ -6,7 +6,7 @@ import { request, listen, accepts, ownerChat, HttpError, DeliveryUnknownError, t
 import { gateContext, isOwnerDm, isOwnerDmTurn, runGate } from "./setup-gate.ts";
 import { CATEGORIES, GroupInbox, isGroupTurn, isListeningGroup, listeningContext, recordSignal, type Category } from "./group-listen.ts";
 import { notifyFailedPaperRun } from "./cron-failure-notice.ts";
-import { connectLink, connectorsEnabled, onConnectorsChanged, runConnector, type Provider } from "./connectors.ts";
+import { connectLink, latchContext, onConnectorsChanged, runConnector, type Provider } from "./connectors.ts";
 import { OWNER_DM_SESSION } from "./setup-gate.ts";
 
 let runtime: PluginRuntime;
@@ -168,8 +168,9 @@ const plugin: ChannelPlugin<Account> = {
     startAccount: async ctx => {
       const log = (text: string) => ctx.log?.info(text);
       await listen(ctx.account, ctx.abortSignal, log, (chat, message, firstContact, history) => receive(ctx.account, ctx.cfg, chat, message, firstContact, history, log),
-        // Only an install that uses Google and Slack through the Plow API re-checks them; with Latch, Google stays on the Mac.
-        ctx.account.accountId === "chat" && connectorsEnabled(ctx.cfg) ? () => onConnectorsChanged(runtime.system, OWNER_DM_SESSION) : undefined);
+        ctx.account.accountId === "chat"
+          ? () => void onConnectorsChanged(runtime.system, OWNER_DM_SESSION).catch(error => log(`connectors changed: ${(error as Error).name}`))
+          : undefined);
     },
   },
   outbound: {
@@ -199,12 +200,18 @@ export default defineChannelPluginEntry({
         return { prependContext: await listeningContext() };
       }
       const inDispatch = Boolean(turn?.account && turn.account.accountId === "chat" && isOwnerDm(turn.chat, turn.account.lineUid));
-      if (!inDispatch && !isOwnerDmTurn(ctx)) return;
+      // Owner turns and paper runs learn, per turn, whether Google is on the Mac or on Plow.
+      if (!inDispatch && !isOwnerDmTurn(ctx)) {
+        const connectors = ctx.sessionKey?.includes(":cron:") ? await latchContext() : undefined;
+        return connectors ? { prependContext: connectors } : undefined;
+      }
       const output = await runGate();
       // One line per owner turn: the trace keeps only the owner's own text, so
       // this is how a live run shows the gate reached the prompt.
       api.logger.info(output ? `plow setup gate prepended: ${output.split("\n")[0]}` : "plow setup gate unavailable; prompt fallback applies");
-      return output ? { prependContext: gateContext(output) } : undefined;
+      const connectors = await latchContext();
+      const context = [output ? gateContext(output) : undefined, connectors].filter(Boolean).join("\n\n");
+      return context ? { prependContext: context } : undefined;
     });
   },
   registerCapabilities(api) {
