@@ -20,8 +20,6 @@ ROOT = f"projects/{WRITER}"
 OVERVIEW = f"{ROOT}/{WRITER}.md"
 # The day's printed edition until memo-render records memos/<date>.md instead.
 EDITIONS = f"{ROOT}/editions"
-MEMOS = f"{ROOT}/memos"
-RUNS = f"{ROOT}/runs"
 QA = f"{ROOT}/qa.md"
 RESOURCES = f"{ROOT}/resources.md"
 GOALS = "entities/owner/goals.md"

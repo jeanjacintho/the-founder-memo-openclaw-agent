@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import load_module
-from wiki import GOALS, MEMOS, OVERVIEW, QA, RESOURCES, ROOT, RUNS, SCHEMA, Wiki
+from wiki import GOALS, OVERVIEW, QA, RESOURCES, ROOT, SCHEMA, Wiki, join_page
 
 ws = load_module("wiki_setup", "memo-shared/scripts/wiki_setup.py")
 
@@ -88,13 +88,110 @@ class TestRoot:
     def test_the_memo_writes_under_its_own_name(self):
         assert ROOT == "projects/founder-memo"
         assert OVERVIEW == f"{ROOT}/founder-memo.md"
-        assert MEMOS == f"{ROOT}/memos" and RUNS == f"{ROOT}/runs"
 
     def test_setup_creates_the_memo_root_and_validates(self, mac):
         ws.ensure(Wiki(mac.call_tool), "cht_1", desk=True)
         root = wiki_dir(mac) / ROOT
         assert (root / "founder-memo.md").exists() and (root / "qa.md").exists()
         assert mac.wiki("validate", "--writer", "founder-memo")["exit_code"] == 0
+
+
+def times_install(mac):
+    mac.wiki("init", "~/Plow/wiki")
+    root = wiki_dir(mac)
+    toml = root / "wiki.toml"
+    toml.write_text(toml.read_text() + f'\n[roots."{ws.LEGACY_ROOT}"]\nwriter = "thefoundertimes"\n')
+    for rel, asset in [(f"_meta/schemas/{ws.LEGACY_ROOT}.md", "schema.md"),
+                      (ws.LEGACY_OVERVIEW, "overview.md"),
+                      (f"{ws.LEGACY_ROOT}/qa.md", "qa.md"),
+                      (f"{ws.LEGACY_ROOT}/resources.md", "resources.md")]:
+        text = (ws.ASSETS / asset).read_text().replace("{today}", "2026-10-04").replace("{chat}", "cht_1")
+        text = text.replace(OVERVIEW, ws.LEGACY_OVERVIEW).replace(ROOT, ws.LEGACY_ROOT)
+        text = text.replace("The Founder Memo", "The Founder Times")
+        if asset == "overview.md":
+            text = text.replace("tags: [memo]", "tags: [newspaper]").replace("\n## Memos\n", "")
+            text += "\n## My notes\nKeep the pilot outcomes visible.\n"
+        if asset in ("qa.md", "resources.md"):
+            text += "\n- owner-authored note\n"
+            text += f"\n[Earlier advice](/{ws.LEGACY_OVERVIEW})\n"
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    edition = root / ws.LEGACY_ROOT / "editions/2026-10-04.md"
+    edition.parent.mkdir(parents=True, exist_ok=True)
+    edition.write_text(join_page({
+        "type": "Edition", "title": "Prior advice", "description": "Prior advice",
+        "category": "projects", "tags": ["edition"], "date": "2026-10-04",
+        "created": "2026-10-04", "updated": "2026-10-04",
+        "sources": [{"resource": "plow-chat:cht_1"}],
+        "paper": f"[The Founder Times](/{ws.LEGACY_OVERVIEW})",
+        "priority": {"headline": "Close the pilot"},
+    }, "# Prior advice\n"))
+    notes = root / ws.LEGACY_ROOT / "Café notes.md"
+    notes.write_text(edition.read_text().replace("type: Edition", "type: Synthesis"))
+    assert mac.wiki("index")["exit_code"] == 0
+    return {p: p.read_bytes() for p in (root / ws.LEGACY_ROOT).rglob("*") if p.is_file()}
+
+
+class TestTimesUpgrade:
+    @pytest.mark.parametrize("missing_index", [False, True])
+    def test_upgrade_preserves_owner_notes_links_and_readable_history(self, mac, missing_index):
+        from datetime import date
+        history = load_module("history", "memo-tournament/scripts/history.py")
+        before = times_install(mac)
+        if missing_index:
+            (wiki_dir(mac) / "index.md").unlink()
+        w = Wiki(mac.call_tool)
+        ws.ensure(w, "cht_1", desk=True)
+        for rel in (QA, RESOURCES):
+            text = (wiki_dir(mac) / rel).read_text()
+            assert "owner-authored note" in text and f"/{OVERVIEW}" in text
+            assert ws.LEGACY_ROOT not in text
+            assert "[The Founder Times](" not in text
+        overview = (wiki_dir(mac) / OVERVIEW).read_text()
+        assert "title: The Founder Memo" in overview and "# The Founder Memo\n" in overview
+        assert "tags:\n- memo" in overview and "## Memos\n" in overview
+        assert "## My notes\nKeep the pilot outcomes visible." in overview
+        assert (wiki_dir(mac) / ROOT / "Café notes.md").exists()
+        assert history.recent(w, date(2026, 10, 5)) == [
+            {"date": "2026-10-04", "desk": {"headline": "Close the pilot"}}]
+        assert {p: p.read_bytes() for p in before} == before
+        assert f'[roots."{ws.LEGACY_ROOT}"]' in (wiki_dir(mac) / "wiki.toml").read_text()
+        assert mac.wiki("validate", "--writer", "founder-memo")["exit_code"] == 0
+        ready = files(mac)
+        assert ws.ensure(w, "cht_1", desk=True) == []
+        assert files(mac) == ready
+
+    def test_retry_keeps_copied_owner_edits_and_finishes_remaining_pages(self, mac, monkeypatch):
+        times_install(mac)
+        w = Wiki(mac.call_tool)
+        write = w.write
+
+        def fail_resources(rel, text):
+            if rel == RESOURCES:
+                raise ws.LatchError("copy interrupted")
+            write(rel, text)
+
+        monkeypatch.setattr(w, "write", fail_resources)
+        with pytest.raises(ws.LatchError, match="copy interrupted"):
+            ws.ensure(w, "cht_1", desk=True)
+        assert ROOT not in (wiki_dir(mac) / "wiki.toml").read_text()
+        copied = wiki_dir(mac) / QA
+        copied.write_text(copied.read_text() + "\n- edited after interruption\n")
+        monkeypatch.setattr(w, "write", write)
+        ws.ensure(w, "cht_1", desk=True)
+        assert copied.read_text().endswith("- edited after interruption\n")
+        assert "owner-authored note" in (wiki_dir(mac) / RESOURCES).read_text()
+
+    def test_index_failure_does_not_declare_a_blank_new_root(self, mac, monkeypatch):
+        times_install(mac)
+        (wiki_dir(mac) / "index.md").unlink()
+        w = Wiki(mac.call_tool)
+        monkeypatch.setattr(w, "run", lambda *args, **kwargs: (1, "index failed"))
+        with pytest.raises(ws.LatchError, match="wiki index: index failed"):
+            ws.ensure(w, "cht_1", desk=True)
+        assert not (wiki_dir(mac) / ROOT).exists()
+        assert ROOT not in (wiki_dir(mac) / "wiki.toml").read_text()
 
 
 class TestCli:
