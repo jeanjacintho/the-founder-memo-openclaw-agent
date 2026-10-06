@@ -74,20 +74,18 @@ def printer_line(config_path):
 
 def send_to_line(pdf_path, line, date):
     """Hand the receipt to the event's printer line over Plow: this agent's chat
-    with that line (found, or started once, untrusted, so nothing the printer side
-    says can steer this agent), one message carrying the PDF. No Mac, no Latch."""
+    with that line alone (untrusted, so nothing the printer side says can steer
+    this agent), one message carrying the PDF. No Mac, no Latch."""
     from bearer_http import post_json, post_json_read, require  # noqa: PLC0415
     from owner_chat import fetch_identity  # noqa: PLC0415
     from post_to_chat import declare_and_upload  # noqa: PLC0415
 
     base, token = require("PLOW_API_BASE").rstrip("/"), require("PLOW_AGENT_TOKEN")
-    identity = fetch_identity(base, token)
-    chat = next((c["uid"] for c in identity.get("chats") or []
-                 if any(p.get("provider_key") == line for p in c.get("participants") or [])), None)
-    if not chat:
-        chat = post_json_read(base, "/v1/chats", token, "Plow Chat printer thread", {
-            "line_uid": identity["line"]["uid"], "members": [line], "body": "The Founder Memo",
-            "trusted": False, "idempotency_key": f"memo-print-{line}"})["uid"]
+    # Always the idempotent POST with exactly this roster: a chat merely *containing*
+    # the printer line could be a group with other people, who would get the receipt.
+    chat = post_json_read(base, "/v1/chats", token, "Plow Chat printer thread", {
+        "line_uid": fetch_identity(base, token)["line"]["uid"], "members": [line], "body": "The Founder Memo",
+        "trusted": False, "idempotency_key": f"memo-print-{line}"})["uid"]
     attachment = declare_and_upload(base, chat, token, pdf_path, filename=f"The-Founder-Memo-{date}.pdf")
     post_json(base, f"/v1/chats/{chat}/messages", token, "Plow Chat printer receipt",
               {"body": "", "attachment_uids": [attachment]})
