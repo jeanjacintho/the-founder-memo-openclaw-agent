@@ -1191,7 +1191,7 @@ class TestLabelsFollowTheOwnersLanguage:
     def test_a_written_language_leaves_no_english_label(self, tmp_path, monkeypatch):
         phrases = load_module("owner_phrases", "memo-shared/scripts/owner_phrases.py")
         monkeypatch.setenv("PT_HOME", str(tmp_path))
-        table = {k: (f"〔{k}〕" if k.startswith("page.") else v) for k, v in phrases.SOURCE.items()}
+        table = {k: (f"〔{k}〕" + " ".join("{" + field + "}" for field in phrases._placeholders(v)) if k.startswith("page.") else v) for k, v in phrases.SOURCE.items()}
         (tmp_path / "owner-phrases.json").write_text(
             json.dumps({"language": "Mandarin Chinese", "phrases": table}, ensure_ascii=False))
         out = self._render(self._every_label_edition(), "Mandarin Chinese")

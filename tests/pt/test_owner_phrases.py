@@ -42,7 +42,7 @@ def test_the_closed_set_covers_every_fixed_line():
         "print.lede", "print.retry", "print.timeout", "print.no_pdf",
         "turn.failed", "attempts.spent_scheduled", "attempts.spent_on_demand",
         "page.first_step", "page.questions", "page.sources", "page.could_not_source",
-        "page.nothing_to_report", "page.advice_from", "page.priority_band",
+        "page.nothing_to_report", "page.advice_from", "page.priority_band", "page.cost", "page.cost_unknown",
     }
     assert "{seconds}" in phrases.SOURCE["print.timeout"] and "{path}" in phrases.SOURCE["print.no_pdf"]
 
@@ -116,3 +116,14 @@ def test_the_file_names_the_language_it_was_written_for(pt_home):
     run(["record"], json.dumps({"phrases": translated()}))
     stored = json.loads((pt_home / "owner-phrases.json").read_text())
     assert stored["language"] == "Mandarin Chinese" and set(stored["phrases"]) == set(phrases.SOURCE)
+
+
+def test_pre_memo_pack_keeps_active_labels_but_requires_cost_translation(pt_home):
+    configure(pt_home, "Mandarin Chinese")
+    old = {k: v for k, v in translated().items() if k not in ("page.cost", "page.cost_unknown")}
+    (pt_home / "owner-phrases.json").write_text(json.dumps({"language": "Mandarin Chinese", "phrases": old}))
+    assert phrases.phrase("chat.busy") == old["chat.busy"]
+    assert phrases.phrase("page.first_step") == old["page.first_step"]
+    assert phrases.status() == "missing"
+    assert "missing: page.cost" in phrases.problems(old)
+    assert run(["record"], json.dumps({"phrases": old}))[0] == 1
