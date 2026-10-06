@@ -198,11 +198,23 @@ class TestTimesUpgrade:
     def test_index_failure_does_not_declare_a_blank_new_root(self, mac, monkeypatch):
         times_install(mac)
         w = Wiki(mac.call_tool)
-        monkeypatch.setattr(w, "run", lambda *args, **kwargs: (1, "index failed"))
+        run = w.run
+        monkeypatch.setattr(w, "run", lambda *args, **kwargs:
+                            (1, "index failed") if args[0] == "index" else run(*args, **kwargs))
         with pytest.raises(ws.LatchError, match="wiki index: index failed"):
             ws.ensure(w, "cht_1", desk=True)
         assert not (wiki_dir(mac) / ROOT).exists()
         assert ROOT not in (wiki_dir(mac) / "wiki.toml").read_text()
+
+    def test_malformed_legacy_page_aborts_before_copying_or_declaring_the_root(self, mac):
+        times_install(mac)
+        bad = wiki_dir(mac) / ws.LEGACY_ROOT / "editions/2026-10-03.md"
+        bad.write_text("---\ntitle: [unfinished\n---\n# Owner notes\nKeep this page.\n")
+        before = files(mac)
+        with pytest.raises(ws.LatchError, match="legacy wiki validate:.*2026-10-03.md"):
+            ws.ensure(Wiki(mac.call_tool), "cht_1", desk=True)
+        assert files(mac) == before
+        assert not (wiki_dir(mac) / ROOT).exists()
 
 
 class TestCli:
