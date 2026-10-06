@@ -215,11 +215,20 @@ test("native messaging retains local workspace and memory file tools", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools, {
     profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
       "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+      "plow_google", "plow_slack", "plow_connect",
       "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
       "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
     ], deny: ["ask_user", "secrets"],
     exec: { pathPrepend: ["/opt/plow/pt-venv/bin"] },
   });
+});
+
+test("Google and Slack go through the Plow API only when there is no Latch", () => {
+  const connectors = ["plow_google", "plow_slack", "plow_connect"];
+  const without = renderConfig(identity, "http://api:8000").tools.alsoAllow;
+  const withLatch = renderConfig({ ...identity, mcp_url: "http://api:8000/v1/relay/devices/d/mcp" }, "http://api:8000").tools.alsoAllow;
+  assert.ok(connectors.every(name => without.includes(name)));
+  assert.ok(connectors.every(name => !withLatch.includes(name)));
 });
 
 test("exec resolves python3 to the newspaper venv", () => {

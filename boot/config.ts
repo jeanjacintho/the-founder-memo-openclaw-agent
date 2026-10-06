@@ -15,6 +15,10 @@ export type Identity = {
 
 type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
 
+// With no Latch (no relay mcp_url), Google and Slack go through the Plow API
+// instead of the owner's Mac; with Latch they stay on the Mac as before.
+export const LATCHLESS_TOOLS = ["plow_google", "plow_slack", "plow_connect"];
+
 export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
   const name = identity.agent?.name;
   if (typeof name !== "string" || !name.trim()) throw new Error(`Identity has no usable agent.name: ${JSON.stringify(name)}`);
@@ -33,6 +37,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     if (listed) listed.cost = role.cost;
     else plowModels.push({ id: role.id, name: role.id, input: ["text"], cost: role.cost });
   }
+  const latchlessTools = identity.mcp_url ? [] : LATCHLESS_TOOLS;
   return {
     meta: {},
     gateway: {
@@ -112,6 +117,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       // per-tool visibility allowlist.
       profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
         "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+        ...latchlessTools,
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
       ], deny: ["ask_user", "secrets"],

@@ -58,7 +58,10 @@ for (const action of ["pending", "thread-cache", "thread-roster", "owner-send"])
   let failure: unknown;
   entry.register({ registrationMode: "full", logger: { info() {} }, on() {},
     registerChannel(value: { plugin: typeof channel }) { channel = value.plugin; },
-    registerTool(factory: (context: object) => typeof tool) { tool = factory({ config: cfg, sessionKey: "group" }); },
+    registerTool(factory: (context: object) => typeof tool & { name: string }) {
+      const made = factory({ config: cfg, sessionKey: "group" });
+      if (made.name === "plow_start_thread") tool = made;
+    },
     runtime: { channel: { routing: { resolveAgentRoute: () => ({ sessionKey: "group" }) }, inbound: {
       buildContext: async (context: { supplemental: { channelStructuredContext: { payload: { first_contact: boolean } }[] } }) => {
         firstContact = context.supplemental.channelStructuredContext[0].payload.first_contact; return {};

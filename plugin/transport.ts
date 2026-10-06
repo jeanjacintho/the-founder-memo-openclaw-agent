@@ -108,7 +108,7 @@ async function earliestUnansweredOwnerMessage(account: Account, chat: string, ne
   }
 }
 
-export async function listen(account: Account, signal: AbortSignal, log: (text: string) => void, turn: (chat: Chat, message: Message, firstContact: boolean, history: Message[]) => Promise<TurnOutcome>) {
+export async function listen(account: Account, signal: AbortSignal, log: (text: string) => void, turn: (chat: Chat, message: Message, firstContact: boolean, history: Message[]) => Promise<TurnOutcome>, onConnectorsChanged?: () => void) {
   const root = process.env.OPENCLAW_STATE_DIR;
   if (!root) throw new Error("OPENCLAW_STATE_DIR is required");
   const dir = `${root}/plow-checkpoints`;
@@ -291,6 +291,12 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
       }
       for await (const [raw] of frames) {
         const event = JSON.parse(raw.toString());
+        // A shallow notice that the owner's Google or Slack connections changed.
+        if (event.event_type === "connectors.changed") {
+          log(`connectors changed account=${account.accountId}`);
+          onConnectorsChanged?.();
+          continue;
+        }
         if (event.event_type !== "message_received" || !validChatId(event.chat_id) || seen.has(event.event_id) || replayed.has(event.data.message.uid)) continue;
         // Persist discovery before queueing: a dropped connection discards unstarted work.
         if (account.accountId === "chat" && !checkpoints.has(event.chat_id)) {

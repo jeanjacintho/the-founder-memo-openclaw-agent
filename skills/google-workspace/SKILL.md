@@ -21,6 +21,15 @@ Check calendar conflicts. Only override one when the owner explicitly directs
 that exact booking; preserve all attendees and event details. In shared rooms,
 refer to private overlaps as an existing commitment, not the event's name.
 
+## Without a Mac
+
+If you have the `plow_google` tool, this install has no Latch: Gmail and
+Calendar go through Plow instead, with the same plow-gog commands. Pass argv
+without the leading `plow-gog` and learn the surface from `["--help"]`;
+`["accounts"]` lists what is connected. If Google is not connected, call
+`plow_connect` with `google`, send the owner the link it returns, and carry on
+when Plow tells you their connections changed. The rules above still apply.
+
 If the Mac cannot be reached, ask the owner to open Latch on their Mac. If the
 Mac's skill list has no Google Workspace capability, say Google access is not
 available. Neither case permits falling back to local OAuth or invented tools.

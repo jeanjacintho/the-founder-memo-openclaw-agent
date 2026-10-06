@@ -321,6 +321,14 @@ poll; do not type what the probe is.
 
    A result (including zero messages) means the Google account in Latch
    works.
+
+   **No Latch?** If you have the `plow_google` tool, probe with it instead:
+   argv `["gmail", "search", "newer_than:1d", "--max", "5", "--json", "--fields", "id,date,from,subject"]`.
+   A result means Google works. If it says no Google account is connected
+   and they said yes, call `plow_connect` with `google`, send the owner its
+   link in their language, record `mail.configured=false` for now, and set
+   it to `true` once Plow tells you their connections changed and the probe
+   answers. There is no Mail.app without a Mac: skip step 2.
 2. Only if that call is denied, 401/412, or Latch has no Google account:
    probe Mail.app:
 
