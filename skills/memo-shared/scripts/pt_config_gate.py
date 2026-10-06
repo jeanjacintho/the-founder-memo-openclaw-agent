@@ -216,6 +216,20 @@ def gate(config):
                 elif not isinstance(switch, bool):
                     failures.append(f"signals.{source} is not a boolean")
 
+    # Optional future nightly-run settings. Existing delivery schedules remain active
+    # until the engine integration switches their consumer to these fields.
+    memo = _index(config, "memo")
+    if memo is not None:
+        if not isinstance(memo, dict):
+            failures.append("memo is not an object")
+        else:
+            start = memo.get("start", "01:00")
+            if not isinstance(start, str) or not _DELIVERY_HOUR_RE.fullmatch(start):
+                failures.append('memo.start is not "HH:MM"')
+            window = memo.get("window_minutes", 240)
+            if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+                failures.append("memo.window_minutes is not a positive integer")
+
     # 9. no leftover [UPPER_SNAKE] placeholder anywhere.
     if any(_PLACEHOLDER_RE.match(s) for s in _all_strings(config)):
         failures.append("an unfilled [UPPER_SNAKE] placeholder remains")

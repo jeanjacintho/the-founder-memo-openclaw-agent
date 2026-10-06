@@ -52,11 +52,11 @@ SOURCE = {
                                  "trying again now. Ask me again later."),
     "page.first_step": "FIRST STEP",
     "page.questions": "QUESTIONS FOR YOU · TEXT “Q2: …”",
+    "page.sources": "Sources:",
     "page.could_not_source": "Couldn't source:",
+    "page.nothing_to_report": "Nothing to report this time.",
     "page.advice_from": "Advice from",
     "page.priority_band": "What to prioritize today",
-    "page.cost": "Tonight's research: ${usd} · {duration}",
-    "page.cost_unknown": "Tonight's research: cost unavailable · {duration}",
 }
 
 # Curated Portuguese: the paper's first language, never left to a translation.
@@ -75,11 +75,11 @@ PORTUGUESE = {
                                  "tentar de novo agora. Peça de novo mais tarde."),
     "page.first_step": "PRIMEIRO PASSO",
     "page.questions": "PERGUNTAS PARA VOCÊ · RESPONDA “Q2: …”",
+    "page.sources": "Fontes:",
     "page.could_not_source": "Sem fonte:",
+    "page.nothing_to_report": "Nada a relatar desta vez.",
     "page.advice_from": "Conselho de",
     "page.priority_band": "O que priorizar hoje",
-    "page.cost": "Pesquisa desta noite: US${usd} · {duration}",
-    "page.cost_unknown": "Pesquisa desta noite: custo indisponível · {duration}",
 }
 
 

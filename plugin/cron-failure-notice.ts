@@ -5,7 +5,7 @@ type AgentEnd = { runId?: string; success: boolean; messages?: unknown[] };
 type AgentContext = { jobId?: string; sessionKey?: string; sessionId?: string };
 
 const notifiedRuns = new Set<string>();
-const paperJob = /^memo-(?:nightly|now)$/;
+const paperJob = /^pt-(?:daily-edition(?:-now|-\d+)?|paper-|subscription-|oneoff-)/;
 const paperMarker = "[PLOW_PAPER_RUN]";
 
 function textValues(value: unknown): string[] {
@@ -54,7 +54,7 @@ function deliveryWasConfirmed(messages: unknown[] | undefined): boolean {
   return (messages ?? []).some(message => {
     const content = JSON.stringify(message);
     return content.includes("chat edition posted (") ||
-      /held for \d\d:\d\d — memo-deliver posts it/.test(content);
+      /held for \d\d:\d\d — pt-deliver posts it/.test(content);
   });
 }
 

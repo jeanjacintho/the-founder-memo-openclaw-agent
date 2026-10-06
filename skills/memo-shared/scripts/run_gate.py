@@ -47,13 +47,17 @@ def wait(call_tool, started, window_minutes, sleep=time.sleep, now=_now, max_wai
     """0 when the Mac answers, 2 when the window closed first, 3 when this call's own wait ran out."""
     called = now()
     while True:
+        remaining = window_minutes * 60 - (now() - started).total_seconds()
+        if remaining <= 0:
+            return 2
         if reachable(call_tool):
             return 0
-        if (now() - started).total_seconds() >= window_minutes * 60:
+        remaining = window_minutes * 60 - (now() - started).total_seconds()
+        if remaining <= 0:
             return 2
         if max_wait_seconds is not None and (now() - called).total_seconds() + INTERVAL_SECONDS > max_wait_seconds:
             return 3
-        sleep(INTERVAL_SECONDS)
+        sleep(min(INTERVAL_SECONDS, remaining))
 
 
 def main(argv=None, call_tool=None):

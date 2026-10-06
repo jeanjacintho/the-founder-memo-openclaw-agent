@@ -11,13 +11,13 @@ offset (`--at`).
 What this module guarantees, measured against OpenClaw 2026.9.4:
 
   * `cron list` hides disabled jobs, so listing always passes `--all` -- a
-    disabled (paused) memo-* job must be seen, or it is re-created beside itself.
+    disabled (paused) pt-* job must be seen, or it is re-created beside itself.
   * The listing is paginated (`hasMore`). A partial listing is not an answer.
   * Never read "I could not tell what is registered" as "nothing is": a
     failed command, non-JSON, a wrong shape or a truncated page ABORTS.
   * OpenClaw's own jobs (heartbeat, memory dreaming, skill review) live in the
-    same list; callers only ever act on memo-* names.
-  * A job with a `command` (memo-deliver) is a no-agent command payload
+    same list; callers only ever act on pt-* names.
+  * A job with a `command` (pt-deliver) is a no-agent command payload
     (`--command-argv`): no session, message or model, run on the gateway.
 """
 from __future__ import annotations
@@ -27,9 +27,11 @@ import os
 import subprocess
 
 COMMAND_TIMEOUT_SECONDS = 600
-# A memo run is an isolated agent turn. Left unset, the scheduler's own 60-minute
-# watchdog ends it with its lock still held. Each job carries its own budget
-# (`timeout`, the run window plus its publish margin); this is the fallback.
+# A paper is an isolated agent turn. Left unset, the scheduler's own 60-minute
+# watchdog ends it, and the time a paper spends waiting for the workspace lock
+# (up to ~40 minutes) comes out of that same budget: a slow, rate-limited paper
+# is aborted mid-run with its lock still held. Three hours covers the tournament,
+# the research and a lock wait, and stays under the lock's own stale limit.
 PAPER_TIMEOUT_SECONDS = 10800
 
 OPENCLAW = ["node", "/app/openclaw.mjs"]
@@ -120,9 +122,9 @@ class CronBackend:
             return self._cron("add", "--name", job["name"], *self._schedule_args(job), *self._command_args(job))
         return self._cron("add", "--name", job["name"], *self._schedule_args(job),
                           "--session", "isolated", "--message", job["prompt"],
-                          *(["--keep-after-run"] if job.get("keep_after_run") else []),
+                          *(["--keep-after-run"] if job["name"] == "pt-daily-edition-now" else []),
                           "--no-deliver", "--model", job.get("model", MODEL),
-                          "--timeout-seconds", str(job.get("timeout", PAPER_TIMEOUT_SECONDS)), "--json")
+                          "--timeout-seconds", str(PAPER_TIMEOUT_SECONDS), "--json")
 
     def edit_argv(self, job_id, job):
         """Patch a registered job in place -- never remove-then-create, or a
@@ -132,7 +134,7 @@ class CronBackend:
         return self._cron("edit", job_id, *self._schedule_args(job),
                           "--message", job["prompt"], "--no-deliver",
                           "--model", job.get("model", MODEL),
-                          "--timeout-seconds", str(job.get("timeout", PAPER_TIMEOUT_SECONDS)), "--json")
+                          "--timeout-seconds", str(PAPER_TIMEOUT_SECONDS), "--json")
 
     def remove_argv(self, job_id):
         return self._cron("rm", job_id, "--json")

@@ -14,6 +14,10 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 
 - `scripts/pt_config_gate.py` — the single definition of a valid `pt/config.json`;
   prints failing invariant names, empty stdout is pass
+- `scripts/run_gate.py wait --started <ISO-8601> --window <minutes>` — probes the Mac;
+  exits 0 (`MAC:reachable`), 2 (`MAC:window-closed`), or 3 (`MAC:still-waiting`).
+  Retry exit 3 with the same start time; each CLI call waits at most 25 minutes.
+  This helper is for the upcoming nightly engine; current cron behavior is unchanged.
 - `scripts/setup_needed.py` — live-chat first-run gate: prints `SETUP_NEEDED`
   then `DRAFT:` and `LANG:`, or `READY` then `LANG:` (from `pt/config.json`;
   missing file is needed)
@@ -73,11 +77,6 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   price; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
   --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not
   or spend is unknown. Any token-bearing session without a price makes the total unknown.
-- `scripts/run_gate.py` — the night waits for the Mac. Bare:
-  `run_gate.py wait --started <ISO-8601> --window <minutes>` probes `~/Plow/wiki/wiki.toml`
-  through Latch every five minutes; `MAC:reachable` (0) start, `MAC:window-closed` (2) the
-  window closed with no answer, `MAC:still-waiting` (3) call again with the same `--started`
-  (one call stays under the 30-minute exec timeout).
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
   the Mac has none, writes
@@ -93,7 +92,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `--filename The-Founder-Times-<date>.pdf` is the name shown in chat (the
   run file stays `edition.pdf` on disk). `--hold-until HH:MM` is a scheduled paper's
   send clock: while it is ahead the paper is staged in `pt/outbox/` for the
-  no-agent `memo-deliver` job (`--flush-outbox`), never slept on in the session;
+  no-agent `pt-deliver` job (`--flush-outbox`), never slept on in the session;
   once passed it posts now (the on-demand copy has none). After
   either POST it prints the run's `edition.pdf` when the printer is configured
   (the text leg too, so a missing PDF is reported as a miss), records
@@ -102,19 +101,21 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   work (one hang-on, then one "still on it", never a play-by-play). Cron never
   calls it.
 - `scripts/owner_time.py` — the owner's own clock, not the container's:
-  called bare as `owner_time.py now` it prints the owner's now (the run's `RUN_STARTED`),
-  `owner_time.py minutes-since <ISO>` the whole minutes since then, and
-  `owner_time.py minutes-until HH:MM` the minutes left until that time today.
+  called bare as `owner_time.py minutes-until HH:MM` it prints the minutes left
+  until that time today (negative once passed; the priority desk's window check).
   As a library, `owner_now()` (an aware datetime) and `owner_today()`, from `owner.timezone`
   in `pt/config.json`. Falls back to the container's clock only when the
   config or the key is absent; a config that exists but can't be trusted (bad
   JSON, an unreadable file, an unknown zone name) raises. Shared by
-  `history.py`'s window, `record_memo.py`'s timestamps and
+  `history.py`'s window, `record_edition.py`'s heading and
   `post_to_chat.py --hold-until`.
-- `memo-tournament/scripts/history.py recent` — the cards the memo printed on the 7 nights before
-  today, read from the wiki's memo pages, `[{"date", "desk"}]`.
-- `memo-render/scripts/record_memo.py <memo.json>` — the delivered memo onto its night's page
-  (`memos/<date>.md`) in the wiki, then `wiki validate` + `wiki index`.
+- `memo-tournament/scripts/history.py recent [--topic ID]` — what this paper printed on the last 7
+  days, read from the wiki's edition pages: bare, the advisor desk's cards, `[{"date", "desk"}]`;
+  with a news section's topic id, that section's own blocks,
+  `[{"date", "headline", "printed": [{"claim", "url"}]}]`, so a pass knows which sources it has
+  already spent.
+- `memo-render/scripts/record_edition.py <edition.json>` — the delivered edition onto the day's
+  page in the wiki, then `wiki validate` + `wiki index`.
 - `scripts/run_lock.py` — one exclusive run per name with stale takeover, so
   two daily-paper runs can never race and deliver a hollow edition.
   Called bare, never through an interpreter:

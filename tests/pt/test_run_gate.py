@@ -57,3 +57,15 @@ def test_cli_prints_its_answer(mac, clock, monkeypatch, capsys, asleep, code, li
     started = (clock.now()).isoformat()
     assert run_gate.main(["wait", "--started", started, "--window", "10"], call_tool=mac.call_tool) == code
     assert capsys.readouterr().out.strip() == line
+
+
+def test_an_awake_mac_after_the_window_cannot_start(mac, clock):
+    started = clock.now()
+    clock.advance(11 * 60)
+    assert run_gate.wait(mac.call_tool, started, 10, now=clock.now) == 2
+
+
+def test_sleep_stops_at_a_short_window_boundary(mac, clock):
+    mac.asleep = True
+    assert run_gate.wait(mac.call_tool, clock.now(), 1, sleep=clock.advance, now=clock.now) == 2
+    assert clock.elapsed == 60

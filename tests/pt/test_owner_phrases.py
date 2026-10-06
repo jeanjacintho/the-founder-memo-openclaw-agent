@@ -41,8 +41,8 @@ def test_the_closed_set_covers_every_fixed_line():
         "chat.busy", "chat.busy_still",
         "print.lede", "print.retry", "print.timeout", "print.no_pdf",
         "turn.failed", "attempts.spent_scheduled", "attempts.spent_on_demand",
-        "page.first_step", "page.questions", "page.could_not_source",
-        "page.advice_from", "page.priority_band", "page.cost", "page.cost_unknown",
+        "page.first_step", "page.questions", "page.sources", "page.could_not_source",
+        "page.nothing_to_report", "page.advice_from", "page.priority_band",
     }
     assert "{seconds}" in phrases.SOURCE["print.timeout"] and "{path}" in phrases.SOURCE["print.no_pdf"]
 

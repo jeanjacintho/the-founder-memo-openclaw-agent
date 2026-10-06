@@ -8,6 +8,12 @@ An [OpenClaw](https://github.com/openclaw/openclaw) agent on
 chatbot. It is one person's paper: the sections you asked for, at the hour you
 named, in the language you write.
 
+The nightly Founder Memo rollout is staged: this branch adds the Mac reachability
+gate and validates optional `memo.start` (`HH:MM`, default `01:00`) and
+`memo.window_minutes` (positive integer, default 240). These settings do not
+replace the current `delivery.hour` schedule yet; publication and engine integration
+are separate follow-up PRs.
+
 ## What it is
 
 The product is a **compact Letter paper**. It can open with **what Patrick
