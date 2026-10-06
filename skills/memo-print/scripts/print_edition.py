@@ -118,7 +118,8 @@ def write_receipt(pdf_path):
     except (OSError, ValueError) as exc:
         sys.exit(f"error: no edition.json for the receipt page: {exc}")
     receipt = run_dir / "receipt.pdf"
-    render_memo.write_pdf(render_memo.receipt_html(memo), receipt)
+    import owner_chat  # noqa: PLC0415 -- the name is asked of Plow only for a roll
+    render_memo.write_pdf(render_memo.receipt_html(memo, owner_chat.owner_name()), receipt)
     return str(receipt)
 
 

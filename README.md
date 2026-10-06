@@ -32,7 +32,9 @@ Every night, from the start hour, it runs a tournament on your Mac through
 4. **Freshness** — re-reads the names the winners rest on.
 5. **Publish** — prints the memo: three ranked priorities, each with its
    evidence, **first step** and a different sourced advisor line (a 72 mm
-   receipt printer, `printer.paper: "72mm"`, gets the same content); the questions
+   receipt printer, `printer.paper: "72mm"`, gets a short fixed front page:
+   each headline and first step, the questions, the first advisor line and the
+   cost, each capped in lines); the questions
    whose answers would change the advice; and one line with what tonight's
    research cost and how long it took ("cost unavailable" when a model has no
    price — never $0.00).

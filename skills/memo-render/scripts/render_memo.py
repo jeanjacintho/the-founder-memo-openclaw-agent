@@ -305,11 +305,14 @@ def priorities_html(memo, language):
     return body
 
 # A 72 mm thermal roll (printer.paper "72mm"; Star TSP100). The Letter page shrunk
-# to 72 mm prints ~2.5 pt type, so the roll gets its own page with the same card.
-# One tall page; the driver's variable-length mode cuts the paper after the ink.
-# Set like a broadsheet front page for a 203 dpi black-only head: the fonts ship
-# beside this script and embed in the PDF (the image has only DejaVu), every mark
-# is solid black, and no rule is under 2 px (4 dots), so nothing dithers or drops out.
+# to 72 mm prints ~2.5 pt type, so the roll gets its own page: a fixed front page,
+# not the whole card. Masthead, the owner's name, three slots (headline and first step), the
+# questions, the first advisor line and the cost; every slot has a line cap, so
+# every receipt runs about the same short length. The full card stays on the
+# Letter page and in the chat. One tall page; the driver cuts after the ink.
+# For a 203 dpi black-only head: the fonts ship beside this script and embed in
+# the PDF (the image has only DejaVu), every mark is solid black, and no rule is
+# under 2 px (4 dots), so nothing dithers or drops out.
 FONTS = pathlib.Path(__file__).resolve().parent.parent / "fonts"
 RECEIPT_CSS = """
 @font-face { font-family: "Memo Display"; font-weight: 900; src: url("{display}"); }
@@ -317,68 +320,83 @@ RECEIPT_CSS = """
 @font-face { font-family: "Memo Text"; font-weight: 400; font-style: italic; src: url("{italic}"); }
 @font-face { font-family: "Memo Text"; font-weight: 700; src: url("{bold}"); }
 @page { size: 72mm 2000mm; margin: 3mm 3mm 8mm; }
-body { margin: 0; color: #000; font: 12.5px/1.42 "Memo Text", "DejaVu Serif", serif; overflow-wrap: break-word; }
-a { color: #000; text-decoration: none; }
-p { margin: 0 0 6px; }
+body { margin: 0; color: #000; font: 11.5px/1.35 "Memo Text", "DejaVu Serif", serif; overflow-wrap: break-word; }
+p, h1, h2, h3, ul { margin: 0; padding: 0; }
 
-.r-head { border-top: 5px solid #000; padding-top: 7px; text-align: center; }
-.r-the { margin: 0; font: 700 10px/1 "Memo Text", serif; letter-spacing: 5px; text-transform: uppercase; }
-.r-the::before, .r-the::after { content: ""; display: inline-block; width: 52px; margin: 0 6px 3px;
-  border-top: 2px solid #000; vertical-align: middle; }
-.r-masthead { margin: 3px 0 0; font: 900 47px/0.94 "Memo Display", serif; text-transform: uppercase; }
+.r-head { border-top: 2px solid #000; padding-top: 6px; text-align: center; }
+.r-masthead { font: 900 33px/0.95 "Memo Display", serif; text-transform: uppercase; }
 .r-masthead span { display: block; }
-.r-rule { margin: 7px 0 0; border-top: 2px solid #000; border-bottom: 5px solid #000; height: 2px; }
-.r-date { margin: 0; padding: 5px 0 6px; font: 700 11px/1 "Memo Text", serif; letter-spacing: 4px;
-  border-bottom: 2px solid #000; }
+.r-orn { margin: 5px 0 0; border-top: 2px solid #000; height: 0; }
+.r-orn span { position: relative; top: -9px; padding: 0 6px; background: #fff; font-size: 11px; line-height: 1; }
+.r-owner { margin-top: 4px; font: 900 21px/1.1 "Memo Display", serif; line-clamp: 2; }
+.r-folio { margin-top: 3px; padding: 4px 0; border-top: 2px solid #000; border-bottom: 2px solid #000;
+  font: 700 10.5px/1.2 "Memo Text", serif; letter-spacing: 3px; }
+.r-band { margin-top: 3px; padding: 4px 4px 5px; background: #000; color: #fff;
+  font: 700 10px/1.25 "Memo Text", serif; letter-spacing: 1.5px; text-transform: uppercase; }
 
-.priority { margin-top: 30px; border-top: 3px solid #000; }
-.priority .rank { width: 32px; height: 32px; margin: -19px auto 6px; border: 3px solid #fff;
-  border-radius: 50%; background: #000; color: #fff; text-align: center;
-  font: 900 21px/27px "Memo Display", serif; font-variant-numeric: lining-nums; }
-.priority h2 { margin: 0 0 8px; font: 900 21px/1.1 "Memo Display", serif; text-align: center; }
-.evidence { margin: 8px 0; padding: 0 0 0 9px; border-left: 2px solid #000; list-style: none;
-  font-size: 10.5px; line-height: 1.35; }
-.evidence li { margin-bottom: 3px; }
-.src { font-style: italic; }
-.first-step { margin: 10px 0; border: 3px solid #000; padding: 0 8px 7px; font-weight: 700; font-size: 13px;
-  line-height: 1.35; }
-.first-step strong { display: block; margin: 0 -8px 6px; padding: 4px 8px 5px; background: #000; color: #fff;
-  font-size: 10px; letter-spacing: 3px; text-align: center; }
-blockquote { margin: 10px 0 0; padding: 1px 0 1px 10px; border-left: 5px solid #000; font-style: italic; }
-blockquote .src { display: block; margin-top: 4px; font: 700 9.5px/1.3 "Memo Text", serif;
-  letter-spacing: 1px; text-transform: uppercase; }
+.slot { padding: 9px 0; border-bottom: 2px solid #000; }
+.slot .num { float: left; width: 26px; height: 26px; margin: 0 8px 0 0; border-radius: 50%;
+  background: #000; color: #fff; text-align: center; font: 900 17px/25px "Memo Display", serif;
+  font-variant-numeric: lining-nums; }
+.slot h2 { min-height: 26px; font: 900 16px/1.12 "Memo Display", serif; line-clamp: 3; }
+.slot .step { clear: left; margin-top: 4px; line-clamp: 5; }
+.slot .step strong { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; }
 
-.questions, .unavailable { margin-top: 28px; border: 3px solid #000; padding: 0 9px 4px; }
-.questions h3, .unavailable h3 { margin: 0 -9px 8px; padding: 5px 6px 6px; background: #000; color: #fff;
-  font: 700 9.5px/1.3 "Memo Text", serif; letter-spacing: 1px; text-align: center; text-transform: uppercase; }
-.questions ul, .unavailable ul { margin: 0; padding: 0; list-style: none; }
-.questions li, .unavailable li { padding: 0 0 6px; margin-bottom: 6px; border-bottom: 2px dotted #000;
-  font-weight: 700; }
-.questions li:last-child, .unavailable li:last-child { border-bottom: 0; margin-bottom: 0; }
+.r-box { margin-top: 10px; border: 2px solid #000; padding: 0 7px 5px; }
+.r-box h3 { margin: 0 -7px 5px; padding: 3px 4px 4px; background: #000; color: #fff; text-align: center;
+  font: 700 9px/1.3 "Memo Text", serif; letter-spacing: 1px; text-transform: uppercase; }
+.r-box ul { list-style: none; }
+.r-box li { padding: 3px 0; border-bottom: 2px dotted #000; font-weight: 700; line-clamp: 4; }
+.r-box li:last-child { border-bottom: 0; }
 
-footer { margin-top: 26px; padding-top: 7px; border-top: 5px solid #000; font: 700 9.5px/1.4 "Memo Text", serif;
-  letter-spacing: 1.5px; text-align: center; text-transform: uppercase; }
-footer::after { content: "\\25C6"; display: block; margin-top: 8px; font-size: 12px; }
+blockquote { margin: 10px 0 0; padding: 7px 4px 6px; border-top: 2px solid #000; border-bottom: 2px solid #000;
+  text-align: center; }
+blockquote p { font-style: italic; font-size: 12px; line-clamp: 3; }
+blockquote .src { margin-top: 3px; font: 700 8.5px/1.3 "Memo Text", serif; letter-spacing: 1px;
+  text-transform: uppercase; line-clamp: 2; }
+
+footer { margin-top: 8px; font: 700 8.5px/1.4 "Memo Text", serif; letter-spacing: 1px; text-align: center;
+  text-transform: uppercase; }
+footer::after { content: "\\25C6"; display: block; margin-top: 3px; font-size: 10px; }
 """
 
 
-def receipt_html(memo):
-    """The roll's page: the same card as the Letter page, at 72 mm, set as a broadsheet front page."""
+def receipt_html(memo, owner=None):
+    """The roll's page: the fixed front page, at 72 mm, under the owner's name when known."""
     language = memo["language"]
     css = RECEIPT_CSS
     for slot, name in (("{display}", "PlayfairDisplay-Black"), ("{text}", "SourceSerif4-Regular"),
                        ("{italic}", "SourceSerif4-Italic"), ("{bold}", "SourceSerif4-Bold")):
         css = css.replace(slot, (FONTS / f"{name}.ttf").as_uri())
-    the, _, title = MASTHEAD.partition(" ")
-    lines = "".join(f"<span>{_esc(word)}</span>" for word in title.split())
-    # The questions label is two phrases; at 72 mm it breaks at its middle dot, not mid-phrase.
-    label = f'<h3>{_esc(phrase("page.questions", language))}</h3>'
-    body = priorities_html(memo, language).replace(label, label.replace(" · ", "<br>", 1))
+    masthead = MASTHEAD.rsplit(" ", 1)
+    head = (f'<header class="r-head"><h1 class="r-masthead">'
+            + "".join(f"<span>{_esc(line)}</span>" for line in masthead)
+            + '</h1><div class="r-orn"><span>◆</span></div>'
+            + (f'<p class="r-owner">{_esc(owner)}</p>' if owner else "")
+            + f'<p class="r-folio">{_esc(memo["date"])}</p>')
+    if "priority" in memo:
+        recommendations = memo["priority"]["recommendations"]
+        head += f'<p class="r-band">{_esc(phrase("page.priority_band", language))}</p></header>'
+        body = "".join(
+            f'<section class="slot"><p class="num">{rank}</p><h2>{_esc(item["headline"])}</h2>'
+            f'<p class="step"><strong>{_esc(phrase("page.first_step", language))}</strong> '
+            f'{_esc(item["first_step"])}</p></section>'
+            for rank, item in enumerate(recommendations, 1))
+        if questions := memo["priority"].get("questions"):
+            # The label is two phrases; at 72 mm it breaks at its middle dot, not mid-phrase.
+            label = _esc(phrase("page.questions", language)).replace(" · ", "<br>", 1)
+            body += (f'<section class="r-box questions"><h3>{label}</h3><ul>'
+                     + "".join(f"<li>{_esc(q)}</li>" for q in questions) + "</ul></section>")
+        advisor = recommendations[0]["advisor"]
+        body += (f'<blockquote><p>“{_esc(advisor["quote"])}”</p><p class="src">— '
+                 f'{_esc(phrase("page.advice_from", language))} {_esc(advisor["name"])}</p></blockquote>')
+    else:
+        head += "</header>"
+        body = (f'<section class="r-box unavailable"><h3>{_esc(phrase("page.could_not_source", language))}</h3><ul>'
+                + "".join(f"<li>{_esc(r)}</li>" for r in memo["could_not_source"]) + "</ul></section>")
     return (f'<!doctype html><html lang="{_esc(language)}"><head><meta charset="utf-8">'
             f"<title>{_esc(MASTHEAD)} · {_esc(memo['date'])}</title><style>{css}</style></head><body>"
-            f'<header class="r-head"><p class="r-the">{_esc(the)}</p><h1 class="r-masthead">{lines}</h1>'
-            f'<div class="r-rule"></div><p class="r-date">{_esc(memo["date"])}</p></header>'
-            f"{body}<footer>{_esc(cost_line(memo['run'], language))}</footer></body></html>")
+            f"{head}{body}<footer>{_esc(cost_line(memo['run'], language))}</footer></body></html>")
 
 
 def write_pdf(html_text, path):
