@@ -132,6 +132,14 @@ ENV AGENT_ID=thefoundertimes \
     AGENT_NAME="The Founder Times" \
     AGENT_BLURB="Your day's priorities, printed. Inspired by Mayfield's Patrick Salyer, it learns what you're working on from your Mac and prints what to focus on today, with sources, or sends a PDF to chat." \
     AGENT_RUNTIME="OpenClaw 2.0"
+# The tournament's priced writer and critic (boot refuses to start without them).
+# A cloud host injects no env of its own, so these are the image's; Compose's
+# plow-credentials overrides them. Prices are USD per million tokens:
+# input,output,cacheRead,cacheWrite.
+ENV MEMO_MODEL_WRITER=plow/anthropic/claude-opus-5 \
+    MEMO_MODEL_WRITER_PRICE=5,25,0.5,6.25 \
+    MEMO_MODEL_CRITIC=plow/openai/gpt-6-sol \
+    MEMO_MODEL_CRITIC_PRICE=1.25,10,0.125,1.25
 # The inherited healthcheck loads config and can race the boot state lock.
 HEALTHCHECK NONE
 USER node

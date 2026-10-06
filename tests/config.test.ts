@@ -110,7 +110,8 @@ for (const [label, env] of [["without", {}], ["with", {
 });
 
 test("a one-click install runs on Plow's Sol, with Plow's Luna as its fallback", () => {
-  const config = renderConfig(identity, "http://api:8000");
+  // No role models: the image's own MEMO_MODEL_* defaults stay out of this shape.
+  const config = renderConfig(identity, "http://api:8000", undefined, {});
   assert.deepEqual(config.agents.defaults.model, {
     primary: "plow/openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-luna"],
   });
@@ -127,7 +128,7 @@ test("a one-click install runs on Plow's Sol, with Plow's Luna as its fallback",
 });
 
 test("an OpenAI route falls back to Plow and runs on OpenClaw's own runtime", () => {
-  const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route);
+  const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route, {});
   assert.deepEqual(config.agents.defaults.model,
     { primary: "openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-sol", "plow/openai/gpt-6-luna"] });
   assert.deepEqual(config.agents.defaults.models, { "openai/*": { agentRuntime: { id: "openclaw" } } });
