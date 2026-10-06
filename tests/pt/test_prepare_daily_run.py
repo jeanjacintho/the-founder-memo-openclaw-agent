@@ -3,13 +3,13 @@ from datetime import datetime, timezone
 
 from conftest import load_module
 
-prepare = load_module("prepare_daily_run", "pt-shared/scripts/prepare_daily_run.py")
+prepare = load_module("prepare_daily_run", "memo-shared/scripts/prepare_daily_run.py")
 NOW = datetime(2026, 9, 20, 11, 7, 10, tzinfo=timezone.utc)
 
 
 def test_archives_only_prior_run_scratch_and_keeps_the_live_lock(tmp_path):
     run = tmp_path / "run"
-    for name in ("desk-priority", "desk-weather", "t_4cac", "2026-09-20",
+    for name in ("desk-priority", "desk-weather", "memo", "dossiers", "t_4cac", "2026-09-20",
                  "daily-2026-09-20", "daily2-2026-09-20"):
         path = run / name
         path.mkdir(parents=True, exist_ok=True)
@@ -22,7 +22,7 @@ def test_archives_only_prior_run_scratch_and_keeps_the_live_lock(tmp_path):
     archived = prepare.prepare(tmp_path, NOW)
 
     assert archived == tmp_path.parent / f".{tmp_path.name}-run-archives" / "run-20260920-110710"
-    for name in ("desk-priority", "desk-weather", "2026-09-20",
+    for name in ("desk-priority", "desk-weather", "memo", "dossiers", "2026-09-20",
                  "daily-2026-09-20", "daily2-2026-09-20",
                  "chat-status.json", "seal-session.json"):
         assert (archived / name).exists()

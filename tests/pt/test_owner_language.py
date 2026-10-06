@@ -10,7 +10,7 @@ import pytest
 
 from conftest import load_module
 
-lang = load_module("owner_language", "pt-shared/scripts/owner_language.py")
+lang = load_module("owner_language", "memo-shared/scripts/owner_language.py")
 
 
 @pytest.mark.parametrize("language, portuguese", [

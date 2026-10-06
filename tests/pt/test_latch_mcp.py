@@ -1,4 +1,4 @@
-"""latch_mcp.py: the one MCP session every pt-* script uses to reach the Mac."""
+"""latch_mcp.py: the one MCP session every memo-* script uses to reach the Mac."""
 from __future__ import annotations
 
 import pytest

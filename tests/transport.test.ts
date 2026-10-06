@@ -345,7 +345,7 @@ for (const failure of ["incomplete", "throws"] as const) test(`a turn that ${fai
       if (recovering && message.uid === "later") controller.abort();
       return "completed";
     });
-    assert.deepEqual([...calls].sort(), recovering ? [] : ["later", "other-reply", "unfinished"]);
+    assert.deepEqual([...calls].sort(), recovering ? ["unfinished"] : ["later", "other-reply", "unfinished"]);
     if (!recovering) assert.ok(calls.indexOf("unfinished") < calls.indexOf("later"));
     assert.deepEqual(priorCheckpoints, recovering ? [] : ["later"]);
     assert.equal(await checkpointUid(`${root}/plow-checkpoints/home`), "later");
@@ -914,7 +914,9 @@ test("email chats run concurrently and drain received work after socket close", 
   assert.deepEqual(completed.slice(0, 2).sort(), ["fast", "later"]);
   assert.equal(completed[2], "first");
   assert.notEqual(controller.signal.reason?.name, "TimeoutError");
-  assert.deepEqual(await fs.readdir(`${root}/plow-checkpoints`), []);
+  assert.deepEqual((await fs.readdir(`${root}/plow-checkpoints`)).sort(), ["fast-email", "slow-email"]);
+  assert.equal(await checkpointUid(root, "slow-email"), "later");
+  assert.equal(await checkpointUid(root, "fast-email"), "fast");
 });
 
 for (const listed of [false, true]) test(`empty and dot-segment chat IDs are rejected before checkpoint discovery; listed=${listed}`, async t => {

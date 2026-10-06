@@ -111,6 +111,7 @@ for (const trusted of [false, true]) for (const outcome of trusted ? ["delivered
     assert.deepEqual(texts, ["I'll follow up here.\n\nNote: I did not schedule a reminder in this turn, so this will not trigger automatically."]);
   }
   if (outcome === "delivered") assert.equal(observation, true);
+  if (outcome === "deferred") assert.ok(logs.some(text => text.startsWith("deferred chat=chat message=inbound")));
   if (outcome === "duplicate") assert.ok(logs.some(text => text.startsWith("turn incomplete")));
   assert.ok(context);
   assert.equal(context.sender.id, sender.provider_key);

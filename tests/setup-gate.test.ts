@@ -4,11 +4,6 @@ import { tmpdir } from "node:os";
 import { test } from "node:test";
 import entry from "../plugin/index.ts";
 import { gateContext, isOwnerDmTurn, parseGate, runGate } from "../plugin/setup-gate.ts";
-import { websocketFixture } from "./ws-fixture.ts";
-
-const self = { type: "agent" as const, relationship: "self", line: { uid: "line" } };
-const owner = { type: "member" as const, uid: "owner", role: "owner", display_name: "Owner", provider_key: "+15550000001" };
-const guest = { type: "member" as const, uid: "guest", role: "member", display_name: "Guest", provider_key: "+15550000003" };
 
 test("only the gate's own two shapes are passed on", () => {
   assert.equal(parseGate("SETUP_NEEDED\nDRAFT:none\nLANG:unrecorded\n"), "SETUP_NEEDED\nDRAFT:none\nLANG:unrecorded");
@@ -21,7 +16,7 @@ test("only the gate's own two shapes are passed on", () => {
 test("the gate runs with the venv first on PATH and a failure injects nothing", async () => {
   let seen: { file: string; args: string[]; path?: string } | undefined;
   assert.equal(await runGate(async (file, args, env) => { seen = { file, args, path: env.PATH }; return "READY\nLANG:English\n"; }), "READY\nLANG:English");
-  assert.equal(seen!.file, "/opt/plow/skills/pt-shared/scripts/setup_needed.py");
+  assert.equal(seen!.file, "/opt/plow/skills/memo-shared/scripts/setup_needed.py");
   assert.deepEqual(seen!.args, ["/var/lib/plow/pt/config.json"]);
   assert.ok(seen!.path!.startsWith("/opt/plow/pt-venv/bin:"));
   assert.equal(await runGate(async () => { throw new Error("ENOENT"); }), undefined);
@@ -52,11 +47,11 @@ for (const [label, ctx, injects] of [
   ["owner's DM", { channel: "plow", accountId: "chat", sessionKey: "agent:main:main", trigger: "user" }, true],
   ["heartbeat in the main session", { channel: "plow", accountId: "chat", sessionKey: "agent:main:main", trigger: "heartbeat" }, false],
   ["a group", { channel: "plow", accountId: "chat", sessionKey: "agent:main:plow:group:cht_group", trigger: "user" }, "listen"],
-  ["a scheduled job", { sessionKey: "cron:pt-daily-edition", trigger: "cron" }, false],
+  ["a scheduled job", { sessionKey: "cron:memo-nightly", trigger: "cron" }, false],
 ] as const) test(`outside dispatch, ${label} ${injects === "listen" ? "listens instead of" : injects ? "starts from" : "skips"} the real gate`, async t => {
   const home = await mkdtemp(`${tmpdir()}/pt-home-`);
   t.after(() => rm(home, { recursive: true }));
-  await writeFile(`${home}/config.json`, JSON.stringify({ owner: { timezone: "UTC", language: "English" }, delivery: { hour: "07:00" }, printer: { configured: false } }));
+  await writeFile(`${home}/config.json`, JSON.stringify({ owner: { timezone: "UTC", language: "English" }, memo: { start: "01:00", window_minutes: 240, max_usd: 100 }, printer: { configured: false } }));
   process.env.PT_HOME = home;
   process.env.PT_SKILLS = new URL("../skills", import.meta.url).pathname;
   t.after(() => { delete process.env.PT_HOME; delete process.env.PT_SKILLS; });

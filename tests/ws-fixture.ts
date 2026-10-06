@@ -26,7 +26,7 @@ export async function websocketFixture(t: TestContext) {
   return { root, server, apiBase: `http://127.0.0.1:${server.address().port}`, abortAfter };
 }
 
-export async function checkpointUid(path: string): Promise<string> {
-  const saved = await readFile(path, "utf8");
+export async function checkpointUid(path: string, chat?: string): Promise<string> {
+  const saved = await readFile(chat === undefined ? path : `${path}/plow-checkpoints/${chat}`, "utf8");
   return saved.startsWith("{") ? JSON.parse(saved).uid : saved;
 }

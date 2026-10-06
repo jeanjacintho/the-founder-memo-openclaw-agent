@@ -26,7 +26,7 @@ test("native routing isolates email threads, and gives each outside sender in a 
       } } }));
     }
   });
-  const sessions: string[] = [];
+  const sessions = new Map<string, string>();
   let channel: { gateway: { startAccount: (context: object) => Promise<void> } };
   entry.register({ registrationMode: "full", registerTool() {}, logger: { info() {} }, on() {},
     registerChannel(value: { plugin: typeof channel }) { channel = value.plugin; },
@@ -34,10 +34,10 @@ test("native routing isolates email threads, and gives each outside sender in a 
       routing: { resolveAgentRoute },
       inbound: {
         // Keyed by message: turns in different threads run concurrently, so arrival order is not fixed.
-        buildContext: async (context: { messageId: string; route: { routeSessionKey: string } }) => { sessions[Number(context.messageId)] = context.route.routeSessionKey; return {}; },
+        buildContext: async (context: { messageId: string; route: { routeSessionKey: string } }) => { sessions.set(context.messageId, context.route.routeSessionKey); return {}; },
         dispatch: async ({ replyOptions }: { replyOptions: { onAgentRunTerminalOutcome: (outcome: string) => void } }) => {
           replyOptions.onAgentRunTerminalOutcome("completed");
-          if (sessions.filter(Boolean).length === 3) controller.abort();
+          if (sessions.size === 3) controller.abort();
           return { dispatched: true, dispatchResult: { deliberateSilentTerminalReply: true } };
         },
       },
@@ -47,7 +47,7 @@ test("native routing isolates email threads, and gives each outside sender in a 
     account: { apiBase, accountId: "email", lineUid: "ln_probe", emailLineUid: "mail" },
     cfg: renderConfig(probeIdentity, apiBase), abortSignal: controller.signal,
   });
-  assert.equal(sessions.filter(Boolean).length, 3);
-  assert.notEqual(sessions[0], sessions[1], "one sender in different threads must have separate sessions");
-  assert.notEqual(sessions[0], sessions[2], "an outsider's mail must not share another sender's running session");
+  assert.equal(sessions.size, 3);
+  assert.notEqual(sessions.get("0"), sessions.get("1"), "one sender in different threads must have separate sessions");
+  assert.notEqual(sessions.get("0"), sessions.get("2"), "an outsider's mail must not share another sender's running session");
 });

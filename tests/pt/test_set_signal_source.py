@@ -9,11 +9,11 @@ import pytest
 
 from conftest import load_module
 
-switch = load_module("set_signal_source", "pt-shared/scripts/set_signal_source.py")
+switch = load_module("set_signal_source", "memo-shared/scripts/set_signal_source.py")
 
 READY = {
     "owner": {"timezone": "America/Sao_Paulo", "language": "Portuguese"},
-    "delivery": {"hour": "07:00", "lead_minutes": 150},
+    "memo": {"start": "01:00", "window_minutes": 240, "max_usd": 100},
     "printer": {"configured": False, "name": None},
     "priority": {"configured": True},
     "mail": {"configured": True},
@@ -63,8 +63,8 @@ def test_missing_config_is_refused(tmp_path, monkeypatch):
 
 
 def test_a_config_the_gate_refuses_is_left_alone(config):
-    config.write_text(json.dumps({**READY, "delivery": {"hour": "25:00"}}))
+    config.write_text(json.dumps({**READY, "memo": {"start": "25:00", "window_minutes": 240, "max_usd": 100}}))
     before = config.read_text()
     code, _, err = run("email", "on")
-    assert code == 1 and "delivery.hour" in err
+    assert code == 1 and "memo.start" in err
     assert config.read_text() == before

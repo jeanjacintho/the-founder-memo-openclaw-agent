@@ -11,7 +11,7 @@ import pytest
 from conftest import load_module
 from latch_mcp import LatchError
 
-scan = load_module("scan_private_signals", "pt-priority/scripts/scan_private_signals.py")
+scan = load_module("scan_private_signals", "memo-tournament/scripts/scan_private_signals.py")
 
 NOW = datetime(2026, 9, 24, 13, 0, tzinfo=timezone.utc)
 
@@ -184,7 +184,7 @@ def test_candidates_are_capped_newest_first(pt_home):
 
 def test_rescan_after_a_crash_does_not_duplicate_a_signal(pt_home):
     enable(pt_home, imessage=True)
-    intake = load_module("signal_intake", "pt-shared/scripts/signal_intake.py")
+    intake = load_module("signal_intake", "memo-shared/scripts/signal_intake.py")
     latch = FakeLatch(messages_result=messages(text(5, "+5511977776666", "Contrato até sexta?")))
     for _ in range(2):  # the run dies after intake, before commit, and runs again
         [candidate] = json.loads(run(latch, "scan")[1])["candidates"]

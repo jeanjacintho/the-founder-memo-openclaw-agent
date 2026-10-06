@@ -11,7 +11,6 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { on, once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 import WebSocket from "ws";
-import { isListeningGroup } from "./group-listen.ts";
 
 export type Member = { type: "member"; uid: string; display_name: string; role: string; provider_key: string };
 export type Agent = { type: "agent"; relationship: string; line: { uid: string; display_name?: string } };
@@ -21,7 +20,7 @@ export type Message = {
   attachments: { url: string; content_type: string; filename: string }[];
   reply_to?: Message;
 };
-export type TurnIngress = { abortSignal: AbortSignal; onSubmitted: () => void; onAdopted: () => Promise<void> };
+export type TurnIngress = { abortSignal: AbortSignal; onSubmitted: () => void; onAdopted: () => Promise<void>; onAbandoned: () => void };
 export type TurnOutcome = "completed" | "incomplete" | "deferred";
 export type Page<T> = { data: T[]; has_more: boolean };
 export type Account = { accountId: string; apiBase: string; lineUid: string; emailLineUid?: string; emailName?: string; threadTrust?: "ask" | "trusted" | "untrusted" };
@@ -153,12 +152,12 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
         unadopted.get(chat)?.delete(uid);
       }
       if (!unadopted.get(chat)?.size) while (handled.size > 512) handled.delete(handled.values().next().value!);
-      recent.set(chat, handled);
       // Later handled rows must not move recovery past an unfinished source.
-      const cursor = unadopted.get(chat)?.size ? checkpoints.get(chat)! : recoveryEnds.get(chat) ?? uid;
+      const cursor = !adopted ? uid : unadopted.get(chat)?.size ? checkpoints.get(chat)! : recoveryEnds.get(chat) ?? uid;
       await writeFile(`${dir}/${encodeURIComponent(chat)}.tmp`, JSON.stringify({ uid: cursor, recent: [...handled] }));
       await rename(`${dir}/${encodeURIComponent(chat)}.tmp`, `${dir}/${encodeURIComponent(chat)}`);
       checkpoints.set(chat, cursor);
+      recent.set(chat, handled);
     });
     checkpointWrites.set(chat, write.catch(() => {}));
     return write;
@@ -180,12 +179,12 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
   const dispatchTurn = async ({ chat, message }: Queued, onSubmitted: () => void) => {
     let acknowledged: Promise<void> | undefined;
     const acknowledge = (stage: string) => acknowledged ??= (async () => {
-      if (account.accountId === "chat") await ack(chat.uid, message.uid);
+      await ack(chat.uid, message.uid);
       pending.delete(message.uid);
       remember(message.uid);
       log(`acked chat=${chat.uid} message=${message.uid} stage=${stage}`);
     })();
-    const ingress = { abortSignal: signal, onSubmitted, onAdopted: () => acknowledge("adoption") };
+    const ingress = { abortSignal: signal, onSubmitted, onAdopted: () => acknowledge("adoption"), onAbandoned: () => { pending.delete(message.uid); } };
     const owner = findOwnerChat(account, [...discovered.values()]);
     let outcome: TurnOutcome = "incomplete";
     try {
@@ -224,6 +223,9 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
 
   const consume = async (chatUid: string, message: Message, recovering = false) => {
     if (signal.aborted || seen.has(message.uid) || checkpoints.get(chatUid) === message.uid || recent.get(chatUid)?.has(message.uid) || pending.has(message.uid)) return;
+    const checkpointUid = checkpoints.get(chatUid)?.replace(/^first:/, "");
+    if (!recovering && checkpointUid && checkpointUid !== message.uid &&
+      (await recover(account, chatUid, message.uid)).some(newer => newer.uid === checkpointUid)) return;
     const chat = await request<Chat>(account, `/chats/${chatUid}`);
     if (!accepts(account, chat)) return;
     discovered.set(chat.uid, chat);
@@ -231,16 +233,14 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
     if (!recovering) recoveryEnds.set(chatUid, message.uid);
     const sender = message.sender;
     if (message.direction !== "inbound" || !(sender.type === "member" || (account.accountId === "chat" && sender.relationship === "peer"))) {
-      if (account.accountId === "chat") await ack(chatUid, message.uid);
+      await ack(chatUid, message.uid);
       remember(message.uid);
       log(`acked chat=${chatUid} message=${message.uid}`);
       return;
     }
     const item = { chat, message };
-    if (account.accountId === "chat") {
-      if (!unadopted.has(chatUid)) unadopted.set(chatUid, new Set());
-      unadopted.get(chatUid)!.add(message.uid);
-    }
+    if (!unadopted.has(chatUid)) unadopted.set(chatUid, new Set());
+    unadopted.get(chatUid)!.add(message.uid);
     pending.add(message.uid);
     let onSubmitted!: () => void;
     const submitted = new Promise<void>(resolve => { onSubmitted = resolve; });
@@ -319,7 +319,7 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
       discovered.clear();
       for (const chat of chats) discovered.set(chat.uid, chat);
       const owner = findOwnerChat(account, chats);
-      if (account.accountId === "chat") {
+      {
         for (const chat of chats) {
           if (checkpoints.has(chat.uid)) continue;
           let checkpoint: string;
@@ -365,14 +365,12 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
         }
         recoveredChats.add(chatUid);
       };
-      if (account.accountId === "chat") {
-        for (const chat of chats) enqueue(chat.uid, () => replay(chat.uid));
-      }
+      for (const chat of chats) enqueue(chat.uid, () => replay(chat.uid));
       for await (const [raw] of frames) {
         const event = JSON.parse(raw.toString());
         if (event.event_type !== "message_received" || !validChatId(event.chat_id) || seen.has(event.data.message.uid) || replayed.has(event.data.message.uid)) continue;
         // Persist discovery before queueing: a dropped connection discards unstarted work.
-        if (account.accountId === "chat" && !checkpoints.has(event.chat_id)) {
+        if (!checkpoints.has(event.chat_id)) {
           let checkpoint: string;
           try { checkpoint = await readCheckpoint(event.chat_id); }
           catch (error) {
@@ -383,7 +381,7 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
           checkpoints.set(event.chat_id, checkpoint);
         }
         enqueue(event.chat_id, async () => {
-          if (account.accountId === "chat" && !recoveredChats.has(event.chat_id)) {
+          if (!recoveredChats.has(event.chat_id)) {
             await replay(event.chat_id);
           }
           if (!accepting || signal.aborted) return;

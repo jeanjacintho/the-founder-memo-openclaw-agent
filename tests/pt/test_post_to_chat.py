@@ -1,4 +1,4 @@
-"""post_to_chat.py -- PDF-only payload vs text fallback."""
+"""Immediate memo PDF delivery and duplicate-safe finalizer recovery."""
 from __future__ import annotations
 
 import json
@@ -13,8 +13,8 @@ import pytest
 
 from conftest import ROOT, load_module
 
-sys.path.insert(0, str(ROOT / "pt-shared" / "scripts"))
-post = load_module("post_to_chat", "pt-shared/scripts/post_to_chat.py")
+sys.path.insert(0, str(ROOT / "memo-shared" / "scripts"))
+post = load_module("post_to_chat", "memo-shared/scripts/post_to_chat.py")
 
 MORNING = datetime(2026, 9, 19, 6, 4, tzinfo=ZoneInfo("America/Sao_Paulo"))
 AFTERNOON = datetime(2026, 9, 19, 14, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
@@ -22,70 +22,14 @@ AFTERNOON = datetime(2026, 9, 19, 14, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 
 def owner_zone(monkeypatch, tmp_path, tz):
-    """--hold-until reads owner.timezone from PT_HOME's config.json."""
+    """Delivery timestamps use the owner's timezone."""
     home = tmp_path / "pt-home"
     home.mkdir(exist_ok=True)
     (home / "config.json").write_text(json.dumps({"owner": {"timezone": tz}}))
     monkeypatch.setenv("PT_HOME", str(home))
 
-class TestComposePayload:
-    @pytest.mark.parametrize("text", ["Mail summary", ""])
-    def test_pdf_body_carries_the_optional_companion(self, text):
-        assert post.compose_payload(text, "att_1") == {
-            "body": text, "attachment_uids": ["att_1"],
-        }
-
-    def test_attachment_filename_defaults_to_basename(self):
-        assert post.attachment_filename("/var/lib/plow/pt/run/edition.pdf") == (
-            "edition.pdf"
-        )
-
-    def test_attachment_filename_override_is_a_paper_name_not_a_path(self):
-        # Measured live: the chat showed the attachment as "edition.pdf"
-        # because declare used the run-dir basename. The owner asked for
-        # the newspaper, not a working-file name.
-        assert (
-            post.attachment_filename(
-                "/var/lib/plow/pt/run/edition.pdf",
-                "The-Founder-Times-2026-09-17.pdf",
-            )
-            == "The-Founder-Times-2026-09-17.pdf"
-        )
-        with pytest.raises(SystemExit, match="filename"):
-            post.attachment_filename("edition.pdf", "../secret.pdf")
-
-    def test_text_only_when_no_pdf(self):
-        payload = post.compose_payload("THE FOUNDER TIMES")
-        assert payload == {"body": "THE FOUNDER TIMES"}
-
-    def test_text_only_refuses_blank_stdin(self):
-        with pytest.raises(SystemExit, match="no edition text"):
-            post.compose_payload("")
 
 
-class TestTextFileFlag:
-    """`--text-file` exists so the text leg needs no shell redirect.
-
-    Measured live: told to "pass the chat text on stdin" with no command
-    shown, a run built `/bin/sh -c '... post_to_chat.py < .../edition.chat.txt'`
-    -- a shell operator, which is exactly what SOUL.md's gate flags. The owner
-    got an /approve prompt instead of their newspaper.
-    """
-
-    def test_reads_the_edition_text_from_a_file(self, tmp_path):
-        f = tmp_path / "edition.chat.txt"
-        f.write_text("THE FOUNDER TIMES\nfront page\n", encoding="utf-8")
-        assert post.read_text_file(str(f)) == "THE FOUNDER TIMES\nfront page"
-
-    def test_missing_file_is_refused_by_name(self, tmp_path):
-        with pytest.raises(SystemExit, match="text-file"):
-            post.read_text_file(str(tmp_path / "nope.txt"))
-
-    def test_blank_file_is_refused(self, tmp_path):
-        f = tmp_path / "empty.txt"
-        f.write_text("   \n", encoding="utf-8")
-        with pytest.raises(SystemExit, match="empty"):
-            post.read_text_file(str(f))
 
 
 def _exits(code, stderr="", stdout=""):
@@ -102,7 +46,6 @@ class TestMissedPrintIsReported:
 
     def _main(self, tmp_path, monkeypatch, argv, run=None, configured=True, language="English"):
         (tmp_path / "edition.json").write_text('{"date": "2026-09-22"}', encoding="utf-8")
-        (tmp_path / "edition.chat.txt").write_text("THE FOUNDER TIMES", encoding="utf-8")
         cfg = tmp_path / "config.json"
         cfg.write_text(json.dumps({"owner": {"language": language},
                                    "printer": {"configured": configured, "name": "JV"}}),
@@ -113,8 +56,7 @@ class TestMissedPrintIsReported:
         monkeypatch.setenv("PT_HOME", str(tmp_path / "pt"))
         monkeypatch.setattr(post, "resolve_chat", lambda: ("https://api.example", "cht_1", "tok"))
         monkeypatch.setattr(post, "declare_and_upload", lambda *a, **k: "att_1")
-        monkeypatch.setattr(post, "run_finalize_topics", lambda *a: "FINALIZED")
-        monkeypatch.setattr(post, "run_record_edition", lambda *a: "RECORDED")
+        monkeypatch.setattr(post, "run_record_memo", lambda *a: "RECORDED")
         if run:
             monkeypatch.setattr(subprocess, "run", run)
         bodies = []
@@ -140,20 +82,6 @@ class TestMissedPrintIsReported:
         (tmp_path / "edition.pdf").write_bytes(b"%PDF")
         assert self._main(tmp_path, monkeypatch, ["--pdf", "edition.pdf"], run) == notice
 
-    @pytest.mark.parametrize("configured, language, notice", [
-        (True, "English",
-         ["page not printed — no PDF to print at {pdf}; next scheduled run retries"]),
-        (True, "Português",
-         ["página não impressa — nenhum PDF para imprimir em {pdf}; "
-          "a próxima edição agendada tenta de novo"]),
-        (False, "English", []),
-    ])
-    def test_text_fallback_says_why_the_configured_printer_got_nothing(
-            self, tmp_path, monkeypatch, configured, language, notice):
-        # Real print_edition.py: the text leg runs when no PDF was rendered.
-        out = self._main(tmp_path, monkeypatch, ["--text-file", "edition.chat.txt"],
-                         configured=configured, language=language)
-        assert out == [n.format(pdf=tmp_path / "edition.pdf") for n in notice]
 
 
 class TestRunRecord:
@@ -161,11 +89,11 @@ class TestRunRecord:
 
     def test_a_hung_recorder_times_out_instead_of_blocking_the_run(self, monkeypatch):
         def fake_run(*args, **kwargs):
-            raise subprocess.TimeoutExpired(cmd="record_edition.py", timeout=kwargs.get("timeout"))
+            raise subprocess.TimeoutExpired(cmd="record_memo.py", timeout=kwargs.get("timeout"))
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        out = post.run_record_edition("run/1/edition.json", MORNING)
-        assert out == f"edition not recorded — timed out after {post.RECORD_TIMEOUT}s"
+        out = post.run_record_memo("run/1/edition.json", MORNING)
+        assert out == f"memo not recorded — timed out after {post.RECORD_TIMEOUT}s"
 
     def test_passes_the_delivered_at_it_was_given_as_the_now_flag(self, monkeypatch):
         # issue #48: this must be the timestamp captured right before the
@@ -174,61 +102,53 @@ class TestRunRecord:
         argv = []
         monkeypatch.setattr(subprocess, "run", lambda a, **k: argv.extend(a) or
                              types.SimpleNamespace(returncode=0, stdout="RECORDED x.md", stderr=""))
-        post.run_record_edition("run/1/edition.json", MORNING)
+        post.run_record_memo("run/1/edition.json", MORNING)
         assert argv[-2:] == ["--now", MORNING.isoformat()]
 
 
 class TestFinalizersRunIndependently:
     """The paper comes before the archive, and no finalizer's failure blocks
-    another's: finalize, print and record each run best-effort, in order."""
+    another's: print and record each run best-effort, in order."""
 
     def _mock_main(self, tmp_path, monkeypatch, pdf_arg=None, **overrides):
         pdf = tmp_path / "edition.pdf"
         pdf.write_bytes(b"%PDF")
         monkeypatch.setenv("PT_HOME", str(tmp_path / "pt"))
         monkeypatch.setattr(post, "resolve_chat", lambda: ("https://api.example", "cht_1", "tok"))
-        monkeypatch.setattr(post, "read_message", lambda: "")
         monkeypatch.setattr(post, "declare_and_upload", lambda *a, **k: "att_1")
         monkeypatch.setattr(post, "post_json", lambda *a, **k: None)
-        monkeypatch.setattr(
-            post, "run_finalize_topics",
-            overrides.get("run_finalize_topics", lambda *a, **k: "FINALIZED"),
-        )
         if "print_page" in overrides:
             monkeypatch.setattr(post, "print_page", overrides["print_page"])
-        if "run_record_edition" in overrides:
-            monkeypatch.setattr(post, "run_record_edition", overrides["run_record_edition"])
+        if "run_record_memo" in overrides:
+            monkeypatch.setattr(post, "run_record_memo", overrides["run_record_memo"])
         monkeypatch.setattr(sys, "argv", ["post_to_chat.py", "--pdf", pdf_arg or str(pdf)])
 
-    @pytest.mark.parametrize("topics, print_result, recorded, error", [
-        ("FINALIZED", None, "RECORDED", None),
-        ("FINALIZED", "page not printed — lp 1", "RECORDED", None),
-        ("topics not finalized — broken", None, "RECORDED",
-         r"topics.py finalize-edition <edition.json>.*do not repost"),
-        ("FINALIZED", None, "error: edition not recorded — broken",
-         r"record_edition.py <edition.json> --now \S+.*do not repost"),
-        ("topics not finalized — broken", None,
-         "error: edition not recorded — broken",
-         r"topics.py finalize-edition <edition.json>.*record_edition.py <edition.json> --now \S+.*do not repost"),
+    @pytest.mark.parametrize("print_result, recorded, error", [
+        (None, "RECORDED", None),
+        ("page not printed — lp 1", "RECORDED", None),
+        (None, "error: memo not recorded — broken",
+         r"record_memo.py <edition.json> --now \S+.*do not repost"),
+        ("page not printed — lp 1", "error: memo not recorded — broken",
+         r"record_memo.py <edition.json> --now \S+.*do not repost"),
     ])
     def test_finalizers_continue_in_order(self, tmp_path, monkeypatch,
-                                          topics, print_result, recorded, error):
+                                          print_result, recorded, error):
         order = []
         paths = []
         self._mock_main(
             tmp_path, monkeypatch,
-            run_finalize_topics=lambda path: paths.append(path) or order.append("finalize") or topics,
             print_page=lambda *a, **k: order.append("print") or print_result,
-            run_record_edition=lambda path, delivered_at: paths.append(path) or order.append("record") or recorded,
+            run_record_memo=lambda path, delivered_at: paths.append(path) or order.append("record") or recorded,
         )
         if error:
             with pytest.raises(SystemExit, match=error):
                 post.main()
         else:
             post.main()
-        assert order == ["finalize", "print", "record"]
-        expected = str(tmp_path / "edition.json")
-        assert paths == [expected, expected]
+        assert order == ["print", "record"]
+        assert paths == [str(tmp_path / "edition.json")]
+        # "print it again" (#92) gets the posted memo even when a finalizer failed.
+        assert (tmp_path / "pt" / "last-edition" / "edition.pdf").read_bytes() == b"%PDF"
 
     def test_a_print_failure_before_its_own_runner_still_records(self, tmp_path, monkeypatch):
         # print_page is real here: a pdf path subprocess cannot pass must
@@ -236,14 +156,14 @@ class TestFinalizersRunIndependently:
         order = []
         self._mock_main(
             tmp_path, monkeypatch, pdf_arg="bad\x00path",
-            run_record_edition=lambda *a, **k: order.append("record") or "RECORDED",
+            run_record_memo=lambda *a, **k: order.append("record") or "RECORDED",
         )
         post.main()
         assert order == ["record"]
 
     def test_record_gets_the_post_moment_not_a_clock_read_after_the_slow_print_step(
             self, tmp_path, monkeypatch):
-        # issue #48: the print step can poll for minutes; record_edition.py's
+        # issue #48: the print step can poll for minutes; record_memo.py's
         # own now must not be sampled after it, or a fast-printing edition
         # could out-race an already-recorded one that posted first but
         # printed slower.
@@ -258,7 +178,7 @@ class TestFinalizersRunIndependently:
         self._mock_main(
             tmp_path, monkeypatch,
             print_page=fake_print_page,
-            run_record_edition=lambda path, at: seen.append(at) or "RECORDED",
+            run_record_memo=lambda path, at: seen.append(at) or "RECORDED",
         )
         post.main()
         assert seen == [MORNING]
@@ -286,41 +206,6 @@ class TestFinalizersRunIndependently:
         assert sent == []
 
 
-class TestHoldUntil:
-    """Scheduled papers start early; chat must wait for delivery.hour.
-
-    Measured live: lead_minutes alone started research at hour−lead, then
-    post_to_chat sent the PDF the moment the recipe finished — not at the
-    hour the owner named. --hold-until is the send clock. If that hour has
-    already passed, send now; never sleep until tomorrow.
-    """
-
-    @pytest.mark.parametrize("tz, now, hour, expected", [
-        ("America/Sao_Paulo", datetime(2026, 9, 20, 6, 20), "07:00", 40 * 60),
-        # 2026-11-01 01:30 in New York is EDT and 02:00 is EST, so the wall
-        # clock spans 30 minutes but the hold is 2.5 real hours.
-        ("America/New_York", datetime(2026, 11, 1, 1, 30), "03:00", 2.5 * 3600),
-        ("UTC", datetime(2026, 9, 20, 7, 1), "07:00", 0),  # past: now, never tomorrow
-    ])
-    def test_seconds_until_hour(self, monkeypatch, tmp_path, tz, now, hour, expected):
-        owner_zone(monkeypatch, tmp_path, tz)
-        assert post.seconds_until_hhmm(hour, now=now.replace(tzinfo=ZoneInfo(tz))) == expected
-
-    def test_nothing_sleeps_inside_the_session_any_more(self):
-        # A session sleeping until the hour is killed (synchronous exec, 30-min
-        # ceiling); the send clock is the outbox's, see TestOutboxDelivery.
-        assert not hasattr(post, "hold_until")
-        assert "time.sleep" not in (ROOT / "pt-shared" / "scripts" / "post_to_chat.py").read_text()
-
-    def test_the_owner_zone_wins_over_the_container_tz(self, monkeypatch, tmp_path):
-        owner_zone(monkeypatch, tmp_path, "America/Sao_Paulo")
-        monkeypatch.setenv("TZ", "Asia/Tokyo")
-        now = datetime(2026, 9, 20, 6, 20, tzinfo=ZoneInfo("America/Sao_Paulo"))
-        assert post.seconds_until_hhmm("07:00", now=now) == 40 * 60
-
-    def test_bad_clock_is_refused(self):
-        with pytest.raises(SystemExit, match="hold-until"):
-            post.seconds_until_hhmm("7:00")
 
 
 class TestPrintMissInTheOwnersLanguage:
@@ -331,7 +216,7 @@ class TestPrintMissInTheOwnersLanguage:
           "print.timeout": "结果未知：{seconds}秒后仍在运行", "print.no_pdf": "{path} 没有可打印的 PDF"}
 
     def _write_phrases(self, tmp_path, language):
-        phrases = load_module("owner_phrases", "pt-shared/scripts/owner_phrases.py")
+        phrases = load_module("owner_phrases", "memo-shared/scripts/owner_phrases.py")
         table = {**{k: "ZH " + v for k, v in phrases.SOURCE.items()}, **self.ZH}
         home = tmp_path / "pt"
         home.mkdir(exist_ok=True)
@@ -351,45 +236,31 @@ class TestPrintMissInTheOwnersLanguage:
         assert self._miss(tmp_path, monkeypatch) == ["page not printed — lp 1: no such printer; next scheduled run retries"]
 
 
-class TestOutboxDelivery:
-    """A scheduled paper starts hours before its delivery hour. Sleeping inside
-    the session until then dies (OpenClaw's exec is synchronous with a 30-min
-    ceiling), so the paper is staged in pt/outbox and the no-agent pt-deliver
-    job posts it once its hour has come."""
 
-    ZONE = ZoneInfo("America/Sao_Paulo")
 
-    def _setup(self, tmp_path, monkeypatch, deliver_runs=True):
-        home = tmp_path / "pt"
-        (home / "run" / "daily-2026-09-25").mkdir(parents=True)
-        (home / "config.json").write_text(json.dumps({"owner": {"timezone": "America/Sao_Paulo"}}))
-        monkeypatch.setenv("PT_HOME", str(home))
-        run = home / "run" / "daily-2026-09-25"
-        (run / "edition.pdf").write_bytes(b"%PDF edition")
-        (run / "edition.companion.txt").write_text("companion")
-        (run / "edition.json").write_text(json.dumps({"date": "2026-09-25", "sections": [
-            {"kind": "section", "topic_id": "t_9f2a", "desk": "news", "title": "IA", "body": "b"}]}))
-        (home / "run" / "t_9f2a").mkdir()
-        (home / "run" / "t_9f2a" / "notes.json").write_text(json.dumps({"notes": [{"claim": "c", "url": "https://x.example"}]}))
-        posts, finalized = [], []
-        monkeypatch.setattr(post, "resolve_chat", lambda: ("https://api.example", "cht_1", "tok"))
-        monkeypatch.setattr(post, "declare_and_upload", lambda base, uid, token, pdf, filename=None: f"att:{Path(pdf).read_bytes().decode()}")
-        monkeypatch.setattr(post, "post_json", lambda *a: posts.append(a[-1]))
-        monkeypatch.setattr(post, "run_finalize_topics", lambda path: finalized.append(("finalize", path)) or "FINALIZED")
-        monkeypatch.setattr(post, "print_page", lambda pdf: finalized.append(("print", pdf)) and None)
-        monkeypatch.setattr(post, "run_record_edition", lambda path, at: finalized.append(("record", path)) or "RECORDED")
-        monkeypatch.setattr(post, "deliver_job_runs", lambda: deliver_runs)
-        return home, run, posts, finalized
+class TestAttachmentFilenames:
+    def test_attachment_filename_defaults_to_basename(self):
+        assert post.attachment_filename("/var/lib/plow/pt/run/edition.pdf") == (
+            "edition.pdf"
+        )
 
-    def _at(self, monkeypatch, hh, mm, day=25):
-        instant = datetime(2026, 9, day, hh, mm, tzinfo=self.ZONE)
-        monkeypatch.setattr(post, "_now", lambda: instant)
 
-    def _hold(self, monkeypatch, run, hhmm="09:30"):
-        monkeypatch.setattr(sys, "argv", ["post_to_chat.py", "--pdf", str(run / "edition.pdf"),
-                                          "--text-file", str(run / "edition.companion.txt"), "--hold-until", hhmm])
-        post.main()
+    def test_attachment_filename_override_is_a_paper_name_not_a_path(self):
+        # Measured live: the chat showed the attachment as "edition.pdf"
+        # because declare used the run-dir basename. The owner asked for
+        # the newspaper, not a working-file name.
+        assert (
+            post.attachment_filename(
+                "/var/lib/plow/pt/run/edition.pdf",
+                "The-Founder-Times-2026-09-17.pdf",
+            )
+            == "The-Founder-Times-2026-09-17.pdf"
+        )
+        with pytest.raises(SystemExit, match="filename"):
+            post.attachment_filename("edition.pdf", "../secret.pdf")
 
+
+class TestPostedDeliveryRecovery:
     def test_flush_recovers_persisted_post_without_reposting(self, tmp_path, monkeypatch):
         home = tmp_path / "pt"
         recovery = home / "delivery-recovery" / "posted-1"
@@ -402,19 +273,20 @@ class TestOutboxDelivery:
             "edition_json": "edition.json",
             "pdf": "edition.pdf",
             "print_path": "edition.pdf",
-            "finalizers_pending": ["topics", "print", "record"],
+            "finalizers_pending": ["print", "record"],
         }))
         monkeypatch.setenv("PT_HOME", str(home))
         order, posts = [], []
-        monkeypatch.setattr(post, "run_finalize_topics", lambda path: order.append(("topics", Path(path).name)) or "FINALIZED")
         monkeypatch.setattr(post, "print_page", lambda path: order.append(("print", Path(path).name)) or None)
-        monkeypatch.setattr(post, "run_record_edition", lambda path, at: order.append(("record", Path(path).name)) or "RECORDED")
+        monkeypatch.setattr(post, "run_record_memo", lambda path, at: order.append(("record", Path(path).name)) or "RECORDED")
         monkeypatch.setattr(post, "post_json", lambda *args, **kwargs: posts.append(args))
 
-        assert post.main_flush() == 0
-        assert order == [("topics", "edition.json"), ("print", "edition.pdf"), ("record", "edition.json")]
+        assert post.main_recover() == 0
+        assert order == [("print", "edition.pdf"), ("record", "edition.json")]
         assert posts == [], "recovery must not repost the already delivered edition"
         assert not recovery.exists(), "completed recovery state is removed"
+        assert not (home / "last-edition").exists(), "a late recovery must not replace the last posted memo"
+
 
     def test_ticket_removed_while_waiting_for_lock_is_already_complete(self, tmp_path, monkeypatch):
         recovery = tmp_path / "delivery-recovery" / "posted-1"
@@ -430,6 +302,7 @@ class TestOutboxDelivery:
         monkeypatch.setattr(post.fcntl, "flock", remove_before_lock)
         assert post.recover_delivery(ticket) == []
 
+
     def test_flush_skips_a_ticket_locked_by_another_process(self, tmp_path):
         import fcntl
         recovery = tmp_path / "delivery-recovery" / "posted-1"
@@ -440,19 +313,21 @@ class TestOutboxDelivery:
             fcntl.flock(held, fcntl.LOCK_EX)
             assert post.recover_delivery(ticket, wait=False) == []
 
+
     def test_flush_ignores_hidden_building_recovery_ticket(self, tmp_path, monkeypatch, capsys):
         home = tmp_path / "pt"
         building = home / "delivery-recovery" / ".building-posted-1-123"
         building.mkdir(parents=True)
         ticket = building / "delivery.json"
-        content = '{"finalizers_pending": ["topics"]}\n'
+        content = '{"finalizers_pending": ["print"]}\n'
         ticket.write_text(content)
         monkeypatch.setenv("PT_HOME", str(home))
 
-        assert post.main_flush() == 0
+        assert post.main_recover() == 0
         assert ticket.exists()
         assert ticket.read_text() == content
         assert "pending finalizers" not in capsys.readouterr().err
+
 
     def test_flush_isolates_malformed_recovery_ticket(self, tmp_path, monkeypatch):
         home = tmp_path / "pt"
@@ -460,10 +335,11 @@ class TestOutboxDelivery:
         recovery.mkdir(parents=True)
         (recovery / "delivery.json").write_text(json.dumps({
             "edition_json": "edition.json", "delivered_at": "not-a-timestamp",
-            "finalizers_pending": ["topics"],
+            "finalizers_pending": ["print"],
         }))
         monkeypatch.setenv("PT_HOME", str(home))
-        assert post.main_flush() == 1
+        assert post.main_recover() == 1
+
 
     def test_finalizer_stops_retrying_after_five_failures(self, tmp_path, monkeypatch):
         recovery = tmp_path / "delivery-recovery" / "posted-1"
@@ -475,13 +351,14 @@ class TestOutboxDelivery:
             "finalizers_pending": ["record"], "attempts": {},
         }))
         calls = []
-        monkeypatch.setattr(post, "run_record_edition", lambda *args: calls.append(args) or "edition not recorded — broken")
+        monkeypatch.setattr(post, "run_record_memo", lambda *args: calls.append(args) or "memo not recorded — broken")
         for _ in range(post.MAX_FINALIZER_ATTEMPTS):
             assert post.recover_delivery(ticket) == ["record"]
         assert post.recover_delivery(ticket) == ["record retry limit reached"]
         assert len(calls) == post.MAX_FINALIZER_ATTEMPTS
 
-    def test_outbox_ticket_is_removed_before_recovery_persistence_and_failure_runs_inline(
+
+    def test_post_is_confirmed_before_recovery_persistence_and_failure_runs_inline(
             self, tmp_path, monkeypatch, capsys):
         run = tmp_path / "run"
         run.mkdir()
@@ -495,81 +372,47 @@ class TestOutboxDelivery:
         monkeypatch.setattr(post, "post_json", lambda *a: order.append("post"))
         monkeypatch.setattr(post, "persist_posted_delivery",
                             lambda *a: order.append("persist") or (_ for _ in ()).throw(OSError("disk full")))
-        monkeypatch.setattr(post, "run_finalize_topics", lambda *a: order.append("topics") or "FINALIZED")
         monkeypatch.setattr(post, "print_page", lambda *a: order.append("print") or None)
-        monkeypatch.setattr(post, "run_record_edition", lambda *a: order.append("record") or "RECORDED")
+        monkeypatch.setattr(post, "run_record_memo", lambda *a: order.append("record") or "RECORDED")
         post.deliver("https://api.example", "chat", "token", pdf=str(pdf),
-                     on_posted=lambda: order.append("clear outbox"))
-        assert order == ["post", "clear outbox", "persist", "topics", "print", "record"]
+                     on_posted=lambda: order.append("clear attempts"))
+        assert order == ["post", "clear attempts", "persist", "print", "record"]
         assert "running finalizers inline" in capsys.readouterr().err
 
-    def test_an_hour_already_passed_posts_now_and_leaves_no_outbox(self, tmp_path, monkeypatch):
-        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
-        self._at(monkeypatch, 9, 45)
-        self._hold(monkeypatch, run)
-        assert len(posts) == 1 and not (home / "outbox").exists()
 
-    @pytest.mark.parametrize("state", ["missing or disabled"])
-    def test_without_a_running_deliver_job_it_posts_now(self, tmp_path, monkeypatch, state):
-        home, run, posts, _ = self._setup(tmp_path, monkeypatch, deliver_runs=False)
-        self._at(monkeypatch, 8, 0)
-        self._hold(monkeypatch, run)
-        assert len(posts) == 1 and not (home / "outbox").exists()
+class TestConfirmedPostAttempts:
+    @pytest.mark.parametrize("clear", [True, False])
+    def test_only_a_confirmed_post_clears_attempts_when_requested(self, tmp_path, monkeypatch, capsys, clear):
+        home = tmp_path / "pt"
+        home.mkdir()
+        monkeypatch.setenv("PT_HOME", str(home))
+        pdf = tmp_path / "edition.pdf"
+        pdf.write_bytes(b"%PDF")
+        monkeypatch.setattr(post, "resolve_chat", lambda: ("https://api.example", "chat", "token"))
+        monkeypatch.setattr(post, "declare_and_upload", lambda *a, **k: "att_1")
+        posts = []
+        monkeypatch.setattr(post, "post_json", lambda *a: posts.append(a[-1]))
+        monkeypatch.setattr(post, "print_page", lambda *a: None)
+        monkeypatch.setattr(post, "run_record_memo", lambda *a: "RECORDED")
+        for _ in range(post.run_attempts.MAX_ATTEMPTS):
+            post.run_attempts.begin()
+        capsys.readouterr()
+        monkeypatch.setattr(sys, "argv", ["post_to_chat.py", "--pdf", str(pdf), *(["--clear-attempts"] if clear else [])])
+        post.main()
+        assert posts == [{"body": "", "attachment_uids": ["att_1"]}]
+        capsys.readouterr()
+        post.run_attempts.begin()
+        assert (capsys.readouterr().out.strip() == "proceed") is clear
 
-    def test_an_hour_ahead_is_staged_as_copies_and_posted_once_when_due(self, tmp_path, monkeypatch, capsys):
-        import shutil
-        home, run, posts, finalized = self._setup(tmp_path, monkeypatch)
-        self._at(monkeypatch, 8, 0)
-        self._hold(monkeypatch, run)
-        assert posts == [] and "held for 09:30" in capsys.readouterr().out
-        [entry] = [p for p in (home / "outbox").iterdir() if not p.name.startswith(".")]
-        assert (entry / "delivery.json").exists() and (entry / "edition.json").exists()
-        # The next paper archives run/: the outbox must not need it.
-        shutil.rmtree(home / "run")
-        self._at(monkeypatch, 9, 29)
-        assert post.main_flush() == 0 and posts == []
-        self._at(monkeypatch, 9, 31)
-        assert post.main_flush() == 0
-        assert post.main_flush() == 0
-        assert len(posts) == 1 and posts[0]["body"] == "companion" and posts[0]["attachment_uids"] == ["att:%PDF edition"]
-        assert [step for step, _ in finalized] == ["finalize", "print", "record"]
-        assert not entry.exists(), "a delivered entry is removed"
-
-    def test_a_day_old_entry_is_a_late_catch_up(self, tmp_path, monkeypatch):
-        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
-        self._at(monkeypatch, 8, 0)
-        self._hold(monkeypatch, run)
-        self._at(monkeypatch, 9, 31, day=26)
-        post.main_flush()
-        assert len(posts) == 1
-
-    def test_the_notes_travel_with_the_entry_so_the_record_keeps_them(self, tmp_path, monkeypatch):
-        home, run, posts, finalized = self._setup(tmp_path, monkeypatch)
-        self._at(monkeypatch, 8, 0)
-        self._hold(monkeypatch, run)
-        [entry] = [p for p in (home / "outbox").iterdir() if not p.name.startswith(".")]
-        assert json.loads((entry / "t_9f2a" / "notes.json").read_text())["notes"][0]["url"] == "https://x.example"
-
-    def test_a_failed_post_leaves_the_entry_pending(self, tmp_path, monkeypatch):
-        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
-        self._at(monkeypatch, 8, 0)
-        self._hold(monkeypatch, run)
-        def refuse(*a):
-            raise SystemExit("error: Plow Chat returned HTTP 503")
-        monkeypatch.setattr(post, "post_json", refuse)
-        self._at(monkeypatch, 9, 31)
-        assert post.main_flush() == 1
-        [entry] = [p for p in (home / "outbox").iterdir() if not p.name.startswith(".")]
-        assert (entry / "delivery.json").exists(), "still pending for the next minute"
-
-    def test_a_flush_already_running_leaves_the_entry_to_it(self, tmp_path, monkeypatch):
-        import fcntl
-        home, run, posts, _ = self._setup(tmp_path, monkeypatch)
-        self._at(monkeypatch, 8, 0)
-        self._hold(monkeypatch, run)
-        self._at(monkeypatch, 9, 31)
-        with open(home / "outbox" / ".flush.lock", "a") as held:
-            fcntl.flock(held, fcntl.LOCK_EX)
-            assert post.main_flush() == 0 and posts == [], "an overlapping run does nothing"
-        post.main_flush()
-        assert len(posts) == 1
+    def test_failed_post_never_clears_attempts_or_starts_finalizers(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PT_HOME", str(tmp_path / "pt"))
+        monkeypatch.setattr(post, "owner_now", lambda: MORNING)
+        monkeypatch.setattr(post, "declare_and_upload", lambda *a, **k: "att_1")
+        def fail(*a):
+            raise SystemExit("HTTP 503")
+        monkeypatch.setattr(post, "post_json", fail)
+        called = []
+        monkeypatch.setattr(post, "persist_posted_delivery", lambda *a: called.append("persist"))
+        with pytest.raises(SystemExit, match="HTTP 503"):
+            post.deliver("https://api.example", "chat", "token", pdf="edition.pdf", on_posted=lambda: called.append("clear"))
+        assert called == []

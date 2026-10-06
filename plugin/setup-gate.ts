@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
 
-// The newspaper's first-run gate, run by the channel before the owner's own
+// The memo's first-run gate, run by the channel before the owner's own
 // DM turn so the model starts from its answer instead of having to remember
 // to ask. The prompt keeps "run the gate first" as the fallback: nothing is
 // injected when the gate cannot run, and the model then runs it itself.
 // PT_SKILLS and PT_HOME override the image paths, as they do for pt_paths.py.
-export const gateScript = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/pt-shared/scripts/setup_needed.py`;
+export const gateScript = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/memo-shared/scripts/setup_needed.py`;
 export const gateConfig = () => `${process.env.PT_HOME || "/var/lib/plow/pt"}/config.json`;
 const VENV_BIN = "/opt/plow/pt-venv/bin";
 
@@ -48,7 +48,7 @@ export async function runGate(run: GateRunner = runScript): Promise<string | und
 
 export function gateContext(output: string): string {
   return [
-    "Newspaper setup gate, already run by the Plow channel for this turn:",
+    "Memo setup gate, already run by the Plow channel for this turn:",
     "```text", output, "```",
     `This is the output of \`${gateScript()} ${gateConfig()}\`: your first action for this turn is done; do not run it again.`,
   ].join("\n");

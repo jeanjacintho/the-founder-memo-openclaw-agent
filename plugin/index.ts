@@ -24,6 +24,11 @@ const groupInbox = (shared.plowGroupInbox ??= new GroupInbox());
 // back as its no-reply fallback, which on email means there is nothing for the owner.
 const NO_REPLY_FALLBACK = "⚠️ OpenClaw couldn't produce or deliver a reply.";
 
+function ownerDmRequester(context: OpenClawPluginToolContext): boolean {
+  return context.senderIsOwner === true && context.messageChannel === "plow"
+    && context.agentAccountId === "chat" && context.sessionKey === "agent:main:main";
+}
+
 function normalizedHandle(handle: string): string {
   const compact = handle.trim().replace(/[\s().-]/g, "");
   return /^\+\d{10,15}$/.test(compact) ? compact : handle.trim().toLowerCase();
@@ -184,6 +189,9 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
   });
   let failure: unknown;
   let observedReplyDelivery = false;
+  let finishGroup!: () => void;
+  const groupFinished = new Promise<void>(resolve => { finishGroup = resolve; });
+  ingress.abortSignal.addEventListener("abort", finishGroup, { once: true });
   // An email turn completes by delivering its final to the owner, or by choosing silence.
   let deliveredToOwner = false;
   let silent = false;
@@ -196,7 +204,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
     cfg, channel: "plow", accountId: account.accountId, route, ctxPayload,
     dispatcherOptions: replyPipeline,
     replyOptions: {
-      turnAdoptionLifecycle: ingress,
+      turnAdoptionLifecycle: { ...ingress, onAbandoned: () => { ingress.onAbandoned(); finishGroup(); } },
       onModelSelected,
       onAgentRunStart: runId => {
         finishRun();
@@ -210,7 +218,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
       ...(!senderIsOwner && (email || (!listening && !chat.trusted)) ? { disableTools: true } : {}),
       sourceReplyDeliveryMode: command && !senderIsOwner && chat.trusted ? "message_tool_only" : "automatic",
       onObservedReplyDelivery: () => { observedReplyDelivery = true; },
-      onAgentRunTerminalOutcome: outcome => { if (outcome === "failed") failure = new Error("Agent turn failed"); },
+      onAgentRunTerminalOutcome: outcome => { if (outcome === "failed") failure = new Error("Agent turn failed"); finishGroup(); },
     },
     delivery: {
       durable: email ? false : { to: chat.uid, replyToId: null },
@@ -250,7 +258,7 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
             return recorded && accepts(phone, recorded) && (recorded.trusted || findOwnerChat(phone, [recorded]) === recorded) ? recorded
               : await ownerChat(phone);
           };
-          // Nothing has been sent yet, so a failed lookup is safe to retry; the email listener has no replay.
+          // Nothing has been sent yet, so a failed lookup is safe to retry.
           let target!: Chat;
           for (let attempt = 1; ; attempt++) {
             try { target = await resolveTarget(); break; }
@@ -277,8 +285,12 @@ async function receive(account: Account, cfg: OpenClawConfig, chat: Chat, messag
   // submitted only after this run has recorded its signal; elsewhere collection stays immediate.
   if (!listening) ingress.onSubmitted();
   let result;
-  try { result = await dispatched; }
+  try {
+    result = await dispatched;
+    if (listening && result.dispatched && result.dispatchResult.deferredToActiveRun && !ingress.abortSignal.aborted) await groupFinished;
+  }
   finally {
+    ingress.abortSignal.removeEventListener("abort", finishGroup);
     finishRun();
     if (listening) {
       groupInbox.forget(chat.uid, message.uid);
@@ -338,7 +350,7 @@ export default defineChannelPluginEntry({
       try { await notifyFailedPaperRun(event, ctx); }
       catch (error) { api.logger.warn(`paper cron failure notice failed: ${(error as Error).name}`); }
     });
-    // The owner's own phone DM starts from the newspaper's setup gate.
+    // The owner's own phone DM starts from the memo's setup gate.
     api.on("before_prompt_build", async (_event, ctx) => {
       // A group only ever listens: it gets the listening rules, never setup.
       if (isGroupTurn(ctx)) return { prependContext: await listeningContext() };
@@ -382,7 +394,7 @@ export default defineChannelPluginEntry({
         properties: {
           members: { type: "array", minItems: 1, items: { type: "string", pattern: "^\\+[1-9][0-9]{1,14}$" }, description: "Recipient phone numbers in E.164 format. The owner is included automatically." },
           body: { type: "string", minLength: 1, description: "The first message to send." },
-          trusted: { type: "boolean", description: "The Plow trust flag, required in ask mode. Preset modes enforce their configured choice. Neither value changes this newspaper's listen-only group policy." },
+          trusted: { type: "boolean", description: "The Plow trust flag, required in ask mode. Preset modes enforce their configured choice. Neither value changes this memo's listen-only group policy." },
         },
       },
       async execute(_id, args: { members: string[]; body: string; trusted?: boolean }) {
@@ -413,12 +425,12 @@ export default defineChannelPluginEntry({
     }));
     api.registerTool(context => ({
       name: "plow_set_thread_trust", label: "Set Plow group trust",
-      description: "From the owner's main Plow DM, set an existing group's Plow trust flag. In this newspaper every phone group remains listen-only with only plow_record_signal, regardless of the flag. Use only when the owner asks to change that group's trust.",
+      description: "From the owner's main Plow DM, set an existing group's Plow trust flag. In this memo every phone group remains listen-only with only plow_record_signal, regardless of the flag. Use only when the owner asks to change that group's trust.",
       parameters: {
         type: "object", required: ["chat_uid", "trusted"], additionalProperties: false,
         properties: {
           chat_uid: { type: "string", pattern: "^cht_[A-Za-z0-9_-]+$", description: "The existing Plow group chat uid." },
-          trusted: { type: "boolean", description: "The Plow trust flag; neither value changes the newspaper group listening policy." },
+          trusted: { type: "boolean", description: "The Plow trust flag; neither value changes the memo group listening policy." },
         },
       },
       async execute(_id, args: { chat_uid: string; trusted: boolean }) {

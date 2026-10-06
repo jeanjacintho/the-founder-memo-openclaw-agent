@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import entry from "../plugin/index.ts";
-import { websocketFixture } from "./ws-fixture.ts";
+import { websocketFixture, checkpointUid } from "./ws-fixture.ts";
 
 test("a checkpointed outbound opener seeds ordered submissions despite slow preparation", async t => {
   const { server, apiBase, abortAfter } = await websocketFixture(t);

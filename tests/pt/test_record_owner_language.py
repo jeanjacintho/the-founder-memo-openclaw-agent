@@ -6,17 +6,17 @@ import stat
 
 from conftest import ROOT, load_module
 
-rec = load_module("record_owner_language", "pt-shared/scripts/record_owner_language.py")
+rec = load_module("record_owner_language", "memo-shared/scripts/record_owner_language.py")
 
 READY = {
     "owner": {"timezone": "America/Sao_Paulo", "language": "Portuguese"},
-    "delivery": {"hour": "07:00"},
+    "memo": {"start": "01:00", "window_minutes": 240, "max_usd": 100},
     "printer": {"configured": False, "name": None},
 }
 
 
 def test_script_is_executable():
-    path = ROOT / "pt-shared" / "scripts" / "record_owner_language.py"
+    path = ROOT / "memo-shared" / "scripts" / "record_owner_language.py"
     assert path.stat().st_mode & stat.S_IXUSR
 
 

@@ -1,11 +1,11 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import JSON5 from "json5";
-import { PLOW_ROUTE, type LlmRoute } from "./llm.ts";
+import { memoRoles, PLOW_ROUTE, type LlmRoute } from "./llm.ts";
 
 export type Participant =
   | { type: "member"; uid: string; role: string }
-  | { type: "agent"; relationship: string; line: { uid: string } };
+  | { type: "agent"; relationship: string; line: { uid: string; provider_type?: string } };
 export type Identity = {
   agent?: { name?: string | null; web_url?: string | null };
   line: { uid: string };
@@ -14,12 +14,26 @@ export type Identity = {
   mcp_url?: string | null;
 };
 
-export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, threadTrust = process.env.PLOW_THREAD_TRUST ?? "ask") {
-  if (threadTrust !== "ask" && threadTrust !== "trusted" && threadTrust !== "untrusted") {
-    throw new Error("PLOW_THREAD_TRUST must be ask, trusted, or untrusted");
-  }
+type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
+
+export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
+  const threadTrust = env.PLOW_THREAD_TRUST ?? "ask";
+  if (!["ask", "trusted", "untrusted"].includes(threadTrust)) throw new Error("PLOW_THREAD_TRUST must be ask, trusted, or untrusted");
   const name = identity.agent?.name;
   if (typeof name !== "string" || !name.trim()) throw new Error(`Identity has no usable agent.name: ${JSON.stringify(name)}`);
+  // Plow serves Sol with a 1,050,000-token window and publishes no price for it.
+  const plowModels: PlowModel[] = [
+    { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
+    { id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
+      cost: { input: 0.10, output: 0.50 } },
+  ];
+  // The memo's writer and critic run at the price the install names, listed or not.
+  const roles = memoRoles(env);
+  for (const role of roles ? [roles.writer, roles.critic] : []) {
+    const listed = plowModels.find(m => m.id === role.id);
+    if (listed) listed.cost = role.cost;
+    else plowModels.push({ id: role.id, name: role.id, input: ["text"], cost: role.cost });
+  }
   return {
     meta: {},
     gateway: {
@@ -34,12 +48,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     models: { providers: { plow: {
       baseUrl: `${apiBase}/v1`, apiKey: "${PLOW_AGENT_TOKEN}", api: "openai-completions", authHeader: true,
       request: { allowPrivateNetwork: true },
-      // Plow serves Sol with a 1,050,000-token window and publishes no price for it.
-      models: [
-        { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
-        { id: "openai/gpt-6-luna", name: "GPT-6 Luna", input: ["text", "image"], contextWindow: 1050000,
-          cost: { input: 0.10, output: 0.50 } },
-      ],
+      models: plowModels,
     } } },
     agents: { entries: { main: { identity: { name } } }, defaults: {
       workspace: "/var/lib/plow/workspace", skipBootstrap: true,
@@ -57,15 +66,16 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       ...(llm.provider === "openai" ? {
         models: { "openai/*": { agentRuntime: { id: "openclaw" } } }, modelPolicy: { allow: [] },
       } : {}),
-      // The advisor tournament spawns up to six critics at once; children never spawn.
+      // The current tournament directly spawns up to six leaf critics.
+      // Raise depth and width when the phase-coordinator engine lands (issue #59 Task 9).
       // Delegation stays a suggestion so owner chat turns are not pushed into sub-agents.
-      subagents: { maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest" },
+      subagents: { maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest" },
     } },
     mcp: { sessionIdleTtlMs: 300_000, ...(identity.mcp_url ? { servers: { plow: {
       url: "http://127.0.0.1:18790/mcp", transport: "streamable-http",
       // Browser reads and plow_get_result waits on the Mac outlast the 60s default.
       requestTimeoutMs: 300_000,
-      // Keep the newspaper's Latch surface explicit. MCP tools are filtered by
+      // Keep the memo's Latch surface explicit. MCP tools are filtered by
       // server-local names before the session tool profile is applied.
       toolFilter: { include: [
         "plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file",
@@ -73,7 +83,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       ] },
       headers: { Authorization: "Bearer ${PLOW_MCP_BRIDGE_TOKEN}" },
     } } } : {}) },
-    // The channel runs the newspaper setup gate in a before_prompt_build hook; OpenClaw
+    // The channel runs the memo's setup gate in a before_prompt_build hook; OpenClaw
     // registers conversation hooks of a non-bundled plugin only with this opt-in.
     plugins: { load: { paths: ["/opt/plow/plugin"] }, entries: { plow: { enabled: true, hooks: { allowConversationAccess: true } } } },
     messages: { visibleReplies: "automatic", queue: { mode: "collect" } },
@@ -109,7 +119,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
       ], deny: ["ask_user", "secrets"],
-      // The newspaper scripts' python3 is the image's 3.13 venv, never the system 3.11.
+      // The memo-* scripts' python3 is the image's 3.13 venv, never the system 3.11.
       exec: { pathPrepend: ["/opt/plow/pt-venv/bin"] },
     },
   };

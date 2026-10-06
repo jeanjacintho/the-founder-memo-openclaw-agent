@@ -9,7 +9,7 @@ import pytest
 
 from conftest import load_module
 
-cmid = load_module("chat_message_id", "pt-shared/scripts/chat_message_id.py")
+cmid = load_module("chat_message_id", "memo-shared/scripts/chat_message_id.py")
 
 OWNER = {"type": "member", "uid": "mem_owner", "role": "owner", "display_name": "Owner"}
 GUEST = {"type": "member", "uid": "mem_guest", "role": "member", "display_name": "Guest"}
