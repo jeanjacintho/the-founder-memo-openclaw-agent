@@ -87,19 +87,16 @@ class TestHomeChannel:
 class TestOwnerName:
     """The printed receipt's name line: the owner's Plow display name, or nothing."""
 
-    def named(self, monkeypatch, name, guest_name="Guest"):
+    @pytest.mark.parametrize("raw, expected", [
+        ("  Ana   Lima ", "Ana Lima"), ("+1 (555) 010-2030", None),
+        ("ana@example.com", None), ("", None), (None, None),
+    ])
+    def test_the_owners_display_name_never_a_guests_number_or_address(self, monkeypatch, raw, expected):
         monkeypatch.setenv("PLOW_API_BASE", "https://plow.test")
         monkeypatch.setenv("PLOW_AGENT_TOKEN", "tok")
-        doc = identity(chat("cht_dm", SELF, {**GUEST, "display_name": guest_name}, {**OWNER, "display_name": name}))
+        doc = identity(chat("cht_dm", SELF, {**GUEST, "display_name": "Guest"}, {**OWNER, "display_name": raw}))
         monkeypatch.setattr(owner_chat, "fetch_identity", lambda base, token: doc)
-        return owner_chat.owner_name()
-
-    def test_the_owners_display_name_not_a_guests(self, monkeypatch):
-        assert self.named(monkeypatch, "  Ana   Lima ") == "Ana Lima"
-
-    def test_a_phone_number_an_address_or_no_name_prints_nothing(self, monkeypatch):
-        for raw in ("+1 (555) 010-2030", "ana@example.com", "", None):
-            assert self.named(monkeypatch, raw) is None
+        assert owner_chat.owner_name() == expected
 
     def test_plow_unreachable_or_no_token_prints_nothing_instead_of_failing(self, monkeypatch):
         monkeypatch.delenv("PLOW_AGENT_TOKEN", raising=False)
