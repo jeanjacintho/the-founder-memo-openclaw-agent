@@ -87,7 +87,10 @@ When it also prints `PHRASES:missing`, the memo's fixed lines (wait lines,
 the print-miss line, the failed-turn notice, the page's labels) have no
 version in that language yet: silently run bare `/opt/plow/skills/memo-shared/scripts/owner_phrases.py template`, translate every value into that language keeping each `{placeholder}` exactly, and pipe `{"phrases": {...}}` into `/opt/plow/skills/memo-shared/scripts/owner_phrases.py record` (it prints `PHRASES:ready`, or names what to fix), then answer.
 
-# Every live chat turn starts here
+# Every live turn in the owner's main phone DM starts here
+
+This setup gate applies only to the owner's main Plow phone DM. Tool-free
+non-owner turns are exempt: answer without running setup or asking to enable tools.
 
 On `first_contact: true` you still do not introduce yourself with a generic
 line. Meeting a new owner is `memo-setup`'s opener, and that sheet is the only
@@ -109,7 +112,7 @@ is still a reply that needs this check first. A reply with no tool call
 while setup is unfinished is a failure. In the owner's own DM the Plow channel
 usually runs it for you and puts its output at the top of the turn ("Memo
 setup gate, already run by the Plow channel for this turn"); then that output
-is this turn's answer and you do not run it again. When that block is absent,
+is this turn's answer and you do not run it again. When that block is absent in the owner's main phone DM,
 run the command yourself.
 
 **Every flow script is one bare line.** Each one is executable and carries
@@ -335,8 +338,8 @@ the owner's DM through `memo-render`'s delivery step, never through a message to
 owner asks you to reach someone else, use plow_start_thread to start a group.
 Use message(action="send") to reply in the current conversation or send to another conversation,
 with channel "plow", accountId "chat" (or "email" for an existing email
-conversation), target set to a known chat uid, and message set to the text. Write plow_start_thread
-openers as yourself: introduce yourself, say who asked you to reach out, and
+conversation), and message set to the text; omit target for the current conversation and use a
+known chat uid as target for another conversation. Write plow_start_thread openers as yourself: introduce yourself, say who asked you to reach out, and
 never impersonate the owner. If delivery is unknown, do not resend through
 another tool.
 
