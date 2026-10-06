@@ -1,6 +1,6 @@
 """owner_language.py -- the one place that decides the owner's language.
 
-Not a flow script: a library the pt-* scripts import. `record_owner_language.py`
+Not a flow script: a library the memo-* scripts import. `record_owner_language.py`
 writes `owner.language`; this reads it, for the mechanical lines that are
 repo-authored copy rather than model prose (the chat wait lines, the
 print-miss line, the priority card's date line).

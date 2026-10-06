@@ -194,7 +194,7 @@ and the old scheduler's jobs stay behind.
 
 - `boot/`, `plugin/`, `prompt/` — the OpenClaw base: identity, gateway config,
   Plow channel (with the setup-gate hook) and the agent prompt.
-- `skills/pt-*` — setup, intake, research, priority, edition, print, dashboard
+- `skills/memo-*` — setup, intake, research, tournament, render, print, schedule
   and the shared scripts behind them. `skills/owners-mac`,
   `skills/google-workspace` come from the base.
 - `tests/*.test.ts` — boot and plugin tests (`node --test`); `tests/pt/` —

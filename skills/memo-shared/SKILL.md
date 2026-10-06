@@ -57,7 +57,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 - `scripts/owner_language.py` — `is_portuguese(language)`, the one place that
   reads `owner.language` for repo-authored copy (the chat wait lines, the
   print-miss line and the priority card's "Advice from" line). A library, not a flow
-  script: nothing invokes it, the pt-* scripts import it.
+  script: nothing invokes it, the memo-* scripts import it.
 - `scripts/wiki.py` — the paper's pages in the owner's wiki (`~/Plow/wiki`, plow-wiki):
   the root `projects/thefoundertimes` (writer `thefoundertimes`), the shared
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`

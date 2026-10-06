@@ -788,10 +788,10 @@ class TestNoProfile:
 
 
 class TestSkills:
-    def test_every_pt_dir_carries_a_skill_manifest(self):
-        for d in sorted(ROOT.glob("pt-*")):
-            if not d.is_dir():
-                continue
+    def test_every_memo_dir_carries_a_skill_manifest(self):
+        directories = sorted(d for d in ROOT.glob("memo-*") if d.is_dir())
+        assert directories, "no skill directories found -- test is vacuous"
+        for d in directories:
             skill = d / "SKILL.md"
             assert skill.is_file(), f"{d.name} has no SKILL.md"
             head = skill.read_text()
