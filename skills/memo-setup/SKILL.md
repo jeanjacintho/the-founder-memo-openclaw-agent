@@ -130,8 +130,10 @@ provider and send the new link, nothing else.
 **close** — skip step 1 (location): the zone is the event's. Step 2 is the bare
 `finalize_setup.py /var/lib/plow/pt/config.json` without `--owner-tz`; it queues
 the first memo now instead of the bootstrap (`queued: memo-now`). The gate, crons
-and `--done` after it are as usual. Instead of the "All set" line, tell the owner
-in one line that their first memo is running and will print at the event's printer.
+and `--done` after it are as usual. Instead of the "All set" line, send exactly this
+one line, in their language, and nothing about a nightly hour or schedule:
+
+> 📰 Your first memo is running now; it prints at the event's printer in a few minutes.
 
 ## The questions, in order
 

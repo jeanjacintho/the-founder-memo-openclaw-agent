@@ -96,7 +96,7 @@ def test_send_to_url_posts_the_receipt_with_the_event_key_and_names_a_refusal(tm
     import owner_chat
     monkeypatch.setenv("PLOW_API_BASE", "https://api.example")
     monkeypatch.setenv("PLOW_AGENT_TOKEN", "tok")
-    monkeypatch.setattr(owner_chat, "fetch_identity", lambda base, token: {"uid": "agent-1", "line": {"uid": "ln_x"}})
+    monkeypatch.setattr(owner_chat, "fetch_identity", lambda base, token: {"agent": {"uid": "agent-1"}, "line": {"uid": "ln_p7"}})
     pdf = tmp_path / "receipt.pdf"
     pdf.write_bytes(b"%PDF-1.7 receipt")
     seen = []

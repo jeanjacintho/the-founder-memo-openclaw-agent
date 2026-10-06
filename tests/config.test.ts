@@ -367,3 +367,10 @@ test("an event install's MCP server is the local wiki stand-in, never the owner'
   const servers = (renderConfig(event, "http://api:8000") as { mcp: { servers: Record<string, { url: string }> } }).mcp.servers;
   assert.deepEqual(Object.values(servers).map(s => s.url), ["http://127.0.0.1:18790/mcp"]);
 });
+
+test("an event install's wake turns stay internal: no heartbeat notice reaches an attendee", () => {
+  const event = renderConfig(identity, "http://api:8000", undefined, { MEMO_EVENT: "EV-PLOW" }) as { agents: { entries: { main: { heartbeat: object } } } };
+  assert.deepEqual(event.agents.entries.main.heartbeat, { every: "0m", target: "none" });
+  const owner = renderConfig(identity, "http://api:8000", undefined, {}) as { agents: { entries: { main: { heartbeat: object } } } };
+  assert.deepEqual(owner.agents.entries.main.heartbeat, { every: "0m" });
+});

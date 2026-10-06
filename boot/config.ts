@@ -57,8 +57,10 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       request: { allowPrivateNetwork: true },
       models: plowModels,
     } } },
-    // Editions are cron-driven; idle main-session heartbeats do no useful work.
-    agents: { entries: { main: { identity: { name }, heartbeat: { every: "0m" } } }, defaults: {
+    // Editions are cron-driven; idle main-session heartbeats do no useful work. An event
+    // install keeps its wake turns (connectors.changed) internal too: OpenClaw's
+    // "First heartbeat alert" notice must never reach an attendee.
+    agents: { entries: { main: { identity: { name }, heartbeat: { every: "0m", ...(env.MEMO_EVENT ? { target: "none" } : {}) } } }, defaults: {
       workspace: "/var/lib/plow/workspace", skipBootstrap: true,
       // The paper's AGENTS.md plus up to 8,000 characters of Latch instructions is
       // past OpenClaw's 20,000-character default; truncation drops its last rules.
