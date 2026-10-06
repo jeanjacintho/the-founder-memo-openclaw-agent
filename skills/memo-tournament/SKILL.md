@@ -143,7 +143,7 @@ scan's output out of the wiki.
 ### Read, then the agenda
 
 Read all named advisor files, `qa.md`, `resources.md`, goals (`entities/owner/goals.md`), and
-`pt/advisor.md`. Run `/opt/plow/skills/memo-tournament/scripts/memo_history.py recent` once and keep its
+`pt/advisor.md`. Run `/opt/plow/skills/memo-tournament/scripts/history.py recent` once and keep its
 compact JSON; do not reopen or dump the memo archive. The newest delivered recommendations are
 generation zero. With no history, seed candidates from the named advisors' “Questions that change
 the advice.” Preserve the last fully criticized champion set as the rollback checkpoint. A memo
@@ -206,7 +206,7 @@ Gather runs once. One spawn set (split at ten) of:
 
 - **One investigator per key name**, per `/opt/plow/skills/memo-shared/references/investigate.md`.
   Each one owns its entity's page for this run: it merges its dossier with
-  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --kind people|orgs --slug <slug> --title <name> --dossier -`
+  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier -`
   and returns the dossier and the merge's exit. A non-zero merge fails that investigator loudly;
   the coordinator re-runs it, and never hand-writes the page.
 - **Customer Investigator.** The same charter with the entity “the owner's customers and users”:

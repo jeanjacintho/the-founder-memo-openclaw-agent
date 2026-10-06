@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """render_memo.py -- the night's memo in, one printed page out.
 
-    render_memo.py <memo.json> [--tournament <tournament.json>] --pdf OUT [--html OUT]
+    render_memo.py <edition.json> [--tournament <tournament.json>] --pdf OUT [--html OUT]
 
-The model fills `memo.json`; this script -- fixed code over a fixed
+The model fills `edition.json`; this script -- fixed code over a fixed
 `template.html` -- turns it into the printable HTML and the PDF. The model
 never writes HTML. Every string is HTML-escaped here, once, in code: the
 evidence came from the owner's mail and the web, and the page renders on the
 owner's Mac.
 
-memo.json is one of two shapes, both with
+edition.json is one of two shapes, both with
 `"date": "YYYY-MM-DD"`, `"language": "<owner.language>"` and
 `"run": {"usd": <float or null>, "minutes": <int>}`:
 
@@ -41,7 +41,7 @@ from datetime import date
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "memo-shared" / "scripts"))
 from owner_phrases import phrase  # noqa: E402
 
-TEMPLATE = pathlib.Path(__file__).resolve().parent.parent / "memo-template.html"
+TEMPLATE = pathlib.Path(__file__).resolve().parent.parent / "template.html"
 ADVISORS = pathlib.Path(__file__).resolve().parents[2] / "memo-setup" / "assets" / "advisors"
 MASTHEAD = "The Founder Memo"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -178,7 +178,7 @@ def _page_rules(recommendations, questions):
 
 def memo_problems(memo):
     if not isinstance(memo, dict):
-        return ["memo.json is not a JSON object"]
+        return ["edition.json is not a JSON object"]
     failures = []
     if not _real_date(memo.get("date")):
         failures.append("date is not a real YYYY-MM-DD date")

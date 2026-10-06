@@ -92,9 +92,9 @@ class TestNightlyJob:
         assert nightly[nightly.index("--session") + 1] == "isolated"
         assert "--no-deliver" in nightly and "--exact" in nightly
 
-    def test_defaults_are_one_am_and_four_hours(self, tmp_path):
+    def test_legacy_hour_is_preserved_without_restarting_setup(self, tmp_path):
         path = write_config(tmp_path, {k: v for k, v in CONFIG.items() if k != "memo"})
-        assert crons.load_memo(path) == ("01:00", 240)
+        assert crons.load_memo(path) == ("07:00", 240)
 
     def test_the_run_budget_covers_the_window_and_the_publish(self):
         job = crons.nightly_job("23:30", 240, TZ)
@@ -242,7 +242,7 @@ class TestMain:
 
     def test_foreign_jobs_are_never_touched(self, tmp_path, monkeypatch):
         sched = FakeScheduler(registered_like_spec() + [row("heartbeat-main", expr="*/30 * * * *"),
-                                                         row("pt-daily-edition", expr="0 7 * * *")])
+                                                         row("pt-unrelated", expr="0 7 * * *")])
         run_main(tmp_path, monkeypatch, sched)
         assert sched.writes == []
 
@@ -348,3 +348,44 @@ def test_jobs_follow_the_model_boot_exports(monkeypatch):
 def test_without_pt_model_jobs_stay_on_plow(monkeypatch):
     monkeypatch.delenv("PT_MODEL", raising=False)
     assert load_module("cron_backend_default", "memo-schedule/scripts/cron_backend.py").MODEL == "plow/openai/gpt-6-sol"
+
+
+@pytest.mark.parametrize("legacy", ["pt-daily-edition", "pt-daily-edition-2", "pt-daily-edition-12", "pt-daily-edition-now", "pt-deliver"])
+def test_legacy_jobs_retire_only_after_replacements_exist(tmp_path, monkeypatch, legacy):
+    sched = FakeScheduler([row(legacy, jid="legacy")])
+    assert run_main(tmp_path, monkeypatch, sched) == 0
+    assert sched.writes[-1] == ["rm", "legacy", "--json"]
+    assert [w[0] for w in sched.writes[:-1]] == ["add", "add"]
+
+
+@pytest.mark.parametrize("disabled,failed", [(True, False), (False, True)])
+def test_legacy_jobs_survive_a_failed_or_disabled_replacement(tmp_path, monkeypatch, disabled, failed):
+    sched = FakeScheduler(registered_like_spec(enabled=not disabled) + [row("pt-daily-edition", jid="legacy")],
+                          fail=lambda argv: int(failed))
+    with pytest.raises(SystemExit):
+        run_main(tmp_path, monkeypatch, sched, config={**CONFIG, "memo": {"start": "02:00", "window_minutes": 240}})
+    assert not any(w[0] == "rm" for w in sched.writes)
+
+
+def test_priority_opt_out_registers_no_nightly_and_queues_no_manual_run(tmp_path, monkeypatch):
+    sched = FakeScheduler()
+    with pytest.raises(SystemExit, match="priority.configured is false"):
+        run_main(tmp_path, monkeypatch, sched, argv=["--now"], config={**CONFIG, "priority": {"configured": False}})
+    assert [w[w.index("--name") + 1] for w in sched.writes if w[0] == "add"] == [crons.DELIVER_NAME]
+
+
+def test_legacy_config_migration_preserves_preferences_and_research_start(tmp_path):
+    config = {k: v for k, v in CONFIG.items() if k != "memo"}
+    config.update(delivery={"hour": "07:30", "lead_minutes": 150}, signals={"email": True}, priority={"configured": False})
+    path = write_config(tmp_path, config)
+    assert crons.load_memo(path) == ("05:00", 240)
+    assert json.loads(path.read_text()) == {**config, "memo": {"start": "05:00", "window_minutes": 240, "max_usd": 100}}
+
+
+def test_running_legacy_job_refuses_cutover_before_any_scheduler_write(tmp_path, monkeypatch):
+    legacy = row("pt-daily-edition", jid="legacy")
+    legacy["state"] = {"runningAtMs": 1790620326000}
+    sched = FakeScheduler([legacy])
+    with pytest.raises(SystemExit, match="running legacy job"):
+        run_main(tmp_path, monkeypatch, sched)
+    assert sched.writes == []

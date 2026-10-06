@@ -1,6 +1,6 @@
 ---
 name: memo-setup
-description: First-run interview over chat — settle the morning delivery hour, ask about a printer and probe it once through Latch, ask whether today's mail should join as a letters desk, then resolve the owner's timezone from Latch location. Use on the owner's first DM, including greetings (oi, oi de novo, hi, hello, hey), while pt/config.json is missing owner.timezone, delivery.hour or printer.configured. Never ask their timezone, name, or a personal profile. Never in a group, never in someone else's DM, and never to change one already-stored setting.
+description: First-run interview over chat — settle the nightly research start hour, ask about a printer and probe it once through Latch, ask whether today's mail should join as a letters desk, then resolve the owner's timezone from Latch location. Use on the owner's first DM, including greetings (oi, oi de novo, hi, hello, hey), while pt/config.json is missing owner.timezone, memo.start or printer.configured (existing delivery.hour configurations are migrated by registration). Never ask their timezone, name, or a personal profile. Never in a group, never in someone else's DM, and never to change one already-stored setting.
 ---
 
 # memo-setup — the first conversation
@@ -9,7 +9,7 @@ This is a conversation, not a form. `/var/lib/plow/pt/config.json` and
 `/var/lib/plow/pt/.setup-draft.json` are the **only** record of how far
 it got — not the Plow Chat thread. Older messages about a printer or
 letters after a wiped session are leftover; if the draft is missing,
-start at the delivery hour. Do **not** ask their timezone — Latch location
+start at the research start hour. Do **not** ask their timezone — Latch location
 at the end supplies `owner.timezone`. (`mail.configured` is asked in this
 interview too, but a missing mail key is a valid older install — treat it
 as false, do not restart setup for it.) Never re-ask something the draft
@@ -71,11 +71,11 @@ chat.
 **Opener — send this, then stop and wait.** Copy it. Match the owner's language.
 Portuguese:
 
-> 📰 Oi! Eu sou o The Founder Times (inspired by Mayfield), o seu jornal. A que horas você quer ele de manhã? Se não disser nada, mando às 7h.
+> 📰 Oi! Eu sou o The Founder Times (inspired by Mayfield), o seu jornal. A que horas começo a pesquisa do memo? Se não disser nada, começo à 1h.
 
 English:
 
-> 📰 Hi — I'm The Founder Times (inspired by Mayfield), your newspaper. What time should it land each morning? If you don't say, I'll send it at 7:00.
+> 📰 Hi — I'm The Founder Times (inspired by Mayfield), your newspaper. What time should I start researching your memo? If you don't say, I'll start at 1:00.
 
 **Changing one setting later** is not this skill: a different start hour
 (`memo.start`, the owner's own clock — never ask the zone again), **turning the letters desk
@@ -107,7 +107,7 @@ answer you just recorded says which of these you are on. Never infer it
 from the draft's shape yourself, and never from what the chat thread
 already discussed.
 
-**1a. Ask the delivery hour, nothing else** — but only if the message
+**1a. Ask the research start hour, nothing else** — but only if the message
 you are answering right now is a bare greeting ("oi", "hi", "hello")
 with nothing else in it. **If it already reads like an hour answer
 (see 1b's list), skip straight to 1b — do not send this question
@@ -117,18 +117,18 @@ only this, then stop.
 
 Portuguese:
 
-> 🕖 A que horas você quer o jornal de manhã? Se não disser nada, mando às 7h.
+> 🕖 A que horas começo a pesquisa do memo? Se não disser nada, começo à 1h.
 
 English:
 
-> 🕖 What time should the morning paper land? If you don't say, I'll send it at 7:00.
+> 🕖 What time should I start researching the memo? If you don't say, I'll start at 1:00.
 
 **1b. On their next message**, treat any of "yes", "y", "sim", "ok",
-"okay", "that", "default", "7", "7h", "7:00", "07:00", "pode", "isso", or
-a skip as accepting 07:00; a clock time they name ("8:30", "08:30") is
+"okay", "that", "default", "1", "1h", "1:00", "01:00", "pode", "isso", or
+a skip as accepting 01:00; a clock time they name ("8:30", "08:30") is
 that time. Record it and read the next question:
 
-    record_setup.py /var/lib/plow/pt/config.json local_hour=07:00 owner.language=English
+    record_setup.py /var/lib/plow/pt/config.json local_hour=01:00 owner.language=English
 
 **Record `owner.language` in this same call**, as a plain-English name
 ("English", "Portuguese", "Mandarin Chinese"), read from what the owner
@@ -418,9 +418,10 @@ Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
        /opt/plow/skills/memo-setup/scripts/finalize_setup.py /var/lib/plow/pt/config.json --owner-tz <IANA zone from step 1>
 
    It reads the draft, stores the hour as the owner named it (in their
-   own zone; the scheduler fires every job in that zone),
+   own zone, as `memo.start`, with a four-hour window and $100 ceiling;
+   the scheduler fires in that zone),
    validates against the gate **before** anything lands, and prints
-   `CONFIG:written` plus the delivery line. On failure it prints why and
+   `CONFIG:written` plus the start line. On failure it prints why and
    writes nothing: an unfinished interview, an unknown zone, or a gate
    failure. That refusal is the answer — do not hand-write the file
    around it.
@@ -443,10 +444,10 @@ Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
 Say the result in CHAT_VOICE, using the hour they named, never the
 container's zone or `TZ`. Portuguese:
 
-> 📰 Pronto — seu jornal chega todo dia às 7h.
+> 📰 Pronto — começo a pesquisa toda noite à 1h e mando o memo quando terminar.
 
 English:
 
-> 📰 All set — your paper lands every morning at 7:00.
+> 📰 All set — I start researching every night at 1:00 and send the memo when it is ready.
 
 Swap in the hour they chose.

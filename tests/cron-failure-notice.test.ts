@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { notifyFailedPaperRun } from "../plugin/cron-failure-notice.ts";
 
-test("a UUID paper cron ending NO_REPLY sends one owner notice, even on success", async t => {
+for (const name of ["memo-now", "memo-nightly"]) test(`a UUID ${name} cron ending NO_REPLY sends one owner notice, even on success`, async t => {
   const home = await mkdtemp(join(tmpdir(), "pt-cron-notice-"));
   await writeFile(join(home, "config.json"), JSON.stringify({ owner: { language: "Português" } }));
   const previous = { PT_HOME: process.env.PT_HOME, PLOW_API_BASE: process.env.PLOW_API_BASE,
@@ -27,8 +27,8 @@ test("a UUID paper cron ending NO_REPLY sends one owner notice, even on success"
     return Response.json({ uid: "notice" });
   });
   const jobId = "234701df-102e-46e0-9126-19944320159d";
-  const event = { runId: "run-paper-no-delivery", success: true, messages: [
-    { role: "user", content: [{ type: "text", text: `[cron:${jobId} memo-now] Run the daily edition now.` }] },
+  const event = { runId: `run-${name}-no-delivery`, success: true, messages: [
+    { role: "user", content: [{ type: "text", text: `[cron:${jobId} ${name}] Run the memo now.` }] },
     { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
   ] };
   const context = { jobId };
@@ -74,34 +74,6 @@ test("a run that already messaged the owner does not send a second notice", asyn
   }] }, { jobId });
 });
 
-test("paper job names in the real cron envelope include numbered daily editions", async t => {
-  const home = await mkdtemp(join(tmpdir(), "pt-cron-notice-"));
-  await writeFile(join(home, "config.json"), JSON.stringify({ owner: { language: "Português" } }));
-  const previous = { PT_HOME: process.env.PT_HOME, PLOW_API_BASE: process.env.PLOW_API_BASE,
-    PLOW_HOME_CHANNEL: process.env.PLOW_HOME_CHANNEL, PLOW_AGENT_TOKEN: process.env.PLOW_AGENT_TOKEN };
-  process.env.PT_HOME = home;
-  process.env.PLOW_API_BASE = "https://plow.example";
-  process.env.PLOW_HOME_CHANNEL = "cht_owner";
-  process.env.PLOW_AGENT_TOKEN = "fixture-token";
-  t.after(async () => {
-    for (const [key, value] of Object.entries(previous)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
-    await rm(home, { recursive: true, force: true });
-  });
-
-  const sent: string[] = [];
-  t.mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
-    sent.push(String(url));
-    return Response.json({ uid: "notice" });
-  });
-  const jobId = "c98f042a-6834-4a56-a5f0-e4306a4540bd";
-  await notifyFailedPaperRun({ runId: "run-extra-paper", success: true, messages: [
-    { role: "user", content: [{ type: "text", text: `[cron:${jobId} memo-nightly] Run the daily edition.` }] },
-    { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
-  ] }, { jobId });
-  assert.equal(sent.length, 1);
-});
 
 const jobId = "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11";
 const spentDay = (callId: string, resultId: string, resultRole = "toolResult", text = "stop\n", subcommand = "begin") => ({ runId: `run-${callId}-${resultId}-${resultRole}-${subcommand}-${text.trim()}`, success: true, messages: [

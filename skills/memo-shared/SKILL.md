@@ -113,7 +113,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `post_to_chat.py --hold-until`.
 - `memo-tournament/scripts/history.py recent` — the cards the memo printed on the 7 nights before
   today, read from the wiki's memo pages, `[{"date", "desk"}]`.
-- `memo-render/scripts/record_memo.py <memo.json>` — the delivered memo onto its night's page
+- `memo-render/scripts/record_memo.py <edition.json>` — the delivered memo onto its night's page
   (`memos/<date>.md`) in the wiki, then `wiki validate` + `wiki index`.
 - `scripts/run_lock.py` — one exclusive run per name with stale takeover, so
   two daily-paper runs can never race and deliver a hollow edition.

@@ -53,7 +53,7 @@ class TestSoul:
 
     def test_setup_opener_does_not_ask_timezone(self):
         text = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "A que horas você quer o jornal de manhã?" in text
+        assert "A que horas começo a pesquisa do memo?" in text
         assert "Qual seu fuso" not in text
 
     def test_soul_setup_gate_is_a_bare_script_not_python_dash_c(self):
@@ -691,7 +691,7 @@ class TestSoul:
         # before. memo-setup/SKILL.md is the one place that rule lives.
         assert "record_setup.py" in soul and "NEXT_QUESTION" in soul
         assert '"yes"' in setup and '"sim"' in setup
-        assert "local_hour=07:00" in setup
+        assert "local_hour=01:00" in setup
 
     def test_setup_writes_the_draft_only_through_record_setup(self):
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()

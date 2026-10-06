@@ -143,7 +143,7 @@ def gate(config):
     # 2. delivery.hour is a real "HH:MM". See _DELIVERY_HOUR_RE for why any
     #    minute is accepted, not just :00.
     hour = _index(_index(config, "delivery"), "hour")
-    if not (isinstance(hour, str) and _DELIVERY_HOUR_RE.fullmatch(hour)):
+    if ("memo" not in config or "delivery" in config) and not (isinstance(hour, str) and _DELIVERY_HOUR_RE.fullmatch(hour)):
         failures.append('delivery.hour is not "HH:MM"')
 
     # 3. printer.configured is a boolean, unambiguously.
@@ -216,8 +216,7 @@ def gate(config):
                 elif not isinstance(switch, bool):
                     failures.append(f"signals.{source} is not a boolean")
 
-    # Optional future nightly-run settings. Existing delivery schedules remain active
-    # until the engine integration switches their consumer to these fields.
+    # Nightly memo settings; delivery-only installs remain valid until registration migrates them.
     memo = _index(config, "memo")
     if memo is not None:
         if not isinstance(memo, dict):

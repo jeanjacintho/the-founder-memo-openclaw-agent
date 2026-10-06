@@ -89,3 +89,14 @@ again.
 A memo delivered unattended at least once is the bar: confirm the PDF in the
 chat, not just that the cron fired — a run that completes with no memo is the
 failure this whole skill exists to surface.
+
+## Cutover from the previous paper scheduler
+
+Setup records `memo.start`, a four-hour window and $100 ceiling. Existing
+`delivery.*` configs migrate once, preserving owner, printer, signals and
+priority preferences; the start is the old delivery hour minus its lead,
+clamped at midnight. `priority.configured=false` registers no nightly memo.
+Only after every replacement is registered, reconciled and enabled are the
+exact legacy `pt-daily-edition`, numbered editions, `pt-daily-edition-now` and
+`pt-deliver` jobs retired by id. Other `pt-*` jobs are untouched. A failed or
+disabled replacement leaves legacy jobs in place.

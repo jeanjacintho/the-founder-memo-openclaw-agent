@@ -1,6 +1,6 @@
 ---
 name: memo-render
-description: The night's Publish step — write memo.json from the accepted checkpoint (or the reason there is none), render the Letter PDF with render_memo.py, and post it with post_to_chat.py, which prints and records it. Runs in the night's session after Freshness; never on its own.
+description: The night's Publish step — write edition.json from the accepted checkpoint (or the reason there is none), render the Letter PDF with render_memo.py, and post it with post_to_chat.py, which prints and records it. Runs in the night's session after Freshness; never on its own.
 ---
 
 # memo-render — the checkpoint becomes the printed memo
@@ -9,7 +9,7 @@ The memo is the product: three priorities, the questions that would change
 them, and one line saying what tonight's research cost. Nothing in it is a
 guess, and the layout is code.
 
-## Write `memo.json`, never the layout
+## Write `edition.json`, never the layout
 
 **Never write HTML.** Write `/var/lib/plow/pt/run/memo/edition.json` (the name
 `post_to_chat.py` looks for beside the PDF it posts) with the run's numbers from
@@ -68,7 +68,7 @@ instead, in the owner's language, and has no `priority` key:
      quote that is not verbatim in its advisor's file, two recommendations on
      the same quoted line, a page rule (below), or a card that is not its
      checkpoint. Fix the named field in the checkpoint's candidate (memo-tournament
-     § Cull) or in `memo.json`, never the rest of the copy, and re-run; never
+     § Cull) or in `edition.json`, never the rest of the copy, and re-run; never
      hand-assemble a page to route around the gate.
    - **Only** when stderr says *weasyprint is not installed* is the PDF
      genuinely impossible: say so in the one owner notice and stop.
@@ -99,7 +99,7 @@ run publishes here like any other night.
 
 ## Repo note — the memo gate
 
-The renderer validates `memo.json` before emitting anything (the same
+The renderer validates `edition.json` before emitting anything (the same
 discipline `pt_config_gate.py` holds for the config): a bad shape exits
 non-zero with the failing field named. Page rules then refuse the card's own
 words — every headline, body, FIRST STEP and question — when they name a file

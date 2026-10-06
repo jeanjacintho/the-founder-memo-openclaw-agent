@@ -13,7 +13,7 @@ from conftest import load_module
 ep = load_module("entity_page", "memo-shared/scripts/entity_page.py")
 wiki = load_module("wiki", "memo-shared/scripts/wiki.py")
 
-D = {"description": "Partner at Acme Ventures; owes a term sheet.",
+D = {"entity": "Jane Doe", "kind": "people", "slug": "jane-doe", "description": "Partner at Acme Ventures; owes a term sheet.",
      "now": "Waiting on Acme's term sheet; ball: them.",
      "timeline": [{"date": "2026-09-30", "fact": "Said the sheet comes Friday", "item": "gmail:me:t1"}],
      "sources": [{"resource": "gmail:me:t1"}], "tags": ["investor"]}
@@ -70,8 +70,7 @@ def test_cli_writes_then_validates_on_the_mac(mac, tmp_path):
     mac.wiki("init", "~/Plow/wiki")  # plow-wiki seeds wiki.toml with the shared entity roots
     f = tmp_path / "d.json"
     f.write_text(json.dumps(D))
-    code = ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe",
-                    "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool)
+    code = ep.main(["merge", "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool)
     assert code == 0
     assert (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
 
@@ -85,8 +84,7 @@ def test_a_page_the_wiki_refuses_fails_the_run(mac, tmp_path, capsys):
     original = page.read_text()
     f = tmp_path / "d.json"
     f.write_text(json.dumps(D))
-    code = ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe",
-                    "--dossier", str(f), "--today", "2026-10-02"], call_tool=mac.call_tool)
+    code = ep.main(["merge", "--dossier", str(f), "--today", "2026-10-02"], call_tool=mac.call_tool)
     assert code == 1
     assert "entities/people/jane-doe.md" in capsys.readouterr().err
     assert page.read_text() == original
@@ -96,16 +94,16 @@ def test_a_page_the_wiki_refuses_fails_the_run(mac, tmp_path, capsys):
 def test_invalid_slug_never_calls_latch(slug, tmp_path):
     def forbidden(*args):
         pytest.fail("invalid slug reached Latch")
-    assert ep.main(["merge", "--kind", "people", "--slug", slug, "--title", "Jane",
-                    "--dossier", str(tmp_path / "missing")], call_tool=forbidden) == 1
+    f = tmp_path / "invalid.json"
+    f.write_text(json.dumps({**D, "slug": slug}))
+    assert ep.main(["merge", "--dossier", str(f)], call_tool=forbidden) == 1
 
 
 def test_rejected_new_page_is_removed(mac, tmp_path, capsys):
     mac.wiki("init", "~/Plow/wiki")
     f = tmp_path / "d.json"
     f.write_text(json.dumps({**D, "sources": [{"resource": ""}]}))
-    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
-                    "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 1
+    assert ep.main(["merge", "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 1
     assert "wiki validate" in capsys.readouterr().err
     assert not (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
 
@@ -115,8 +113,7 @@ def test_bare_cli_uses_owner_day(mac, tmp_path, monkeypatch):
     monkeypatch.setattr(ep, "owner_today", lambda: date(2026, 10, 2))
     f = tmp_path / "d.json"
     f.write_text(json.dumps(D))
-    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
-                    "--dossier", str(f)], call_tool=mac.call_tool) == 0
+    assert ep.main(["merge", "--dossier", str(f)], call_tool=mac.call_tool) == 0
     meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
     assert meta["created"] == meta["updated"] == "2026-10-02"
 
@@ -147,7 +144,7 @@ def test_overlapping_updates_preserve_successful_page(mac, tmp_path, reject_seco
     page = mac.home / "Plow/wiki/entities/people/jane-doe.md"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(ep.merge(None, {**D, "timeline": []}, "people", "Jane", "2026-10-01"))
-    argv = ["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane", "--today", "2026-10-02", "--dossier"]
+    argv = ["merge", "--today", "2026-10-02", "--dossier"]
     with ThreadPoolExecutor(2) as pool:
         one = pool.submit(ep.main, [*argv, str(first)], call(1))
         try:
@@ -161,3 +158,13 @@ def test_overlapping_updates_preserve_successful_page(mac, tmp_path, reject_seco
     text = page.read_text()
     assert "{gmail:me:t1}" in text
     assert ("{gmail:me:t2}" in text) is not reject_second
+
+
+def test_external_name_is_dossier_data_on_stdin(mac, monkeypatch):
+    import io
+    mac.wiki("init", "~/Plow/wiki")
+    name = "Jane; $(touch /tmp/should-not-run)"
+    monkeypatch.setattr(ep.sys, "stdin", io.StringIO(json.dumps({**D, "entity": name})))
+    assert ep.main(["merge", "--dossier", "-", "--today", "2026-10-02"], call_tool=mac.call_tool) == 0
+    meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
+    assert meta["title"] == name

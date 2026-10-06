@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """record_memo.py -- put a delivered memo into the owner's wiki.
 
-usage: record_memo.py <memo.json> [--now <ISO-8601>]
+usage: record_memo.py <edition.json> [--now <ISO-8601>]
 
 Run once the chat leg is out (post_to_chat.py runs it as a finalizer), never
 before: the wiki records what the owner received. The page is
@@ -18,7 +18,7 @@ from research and Obsidian renders the page on the owner's Mac, so each is
 written through `_md()` (inline syntax and line starts made inert) and each
 link through `_url()` (http(s) only).
 
-A memo already recorded (the same memo.json, by hash) is not appended again,
+A memo already recorded (the same edition.json, by hash) is not appended again,
 but the wiki is still validated and indexed, so a retry finishes an earlier
 check that failed after the write landed. Prints `RECORDED <page>` or
 `SKIPPED: <why>`; a failure exits non-zero with `error: memo not recorded —

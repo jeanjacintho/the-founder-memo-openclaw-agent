@@ -1,52 +1,30 @@
-# The Founder Times (inspired by Mayfield)
+# The Founder Memo
 
-Your morning paper, printed. It researches on your Mac and puts a sourced page
-in the tray — PDF in chat if you'd rather.
+Three researched priorities for your company, printed on your Mac and delivered
+as the same PDF in chat, in the language you write. An
+[OpenClaw](https://github.com/openclaw/openclaw) agent on [Plow Chat](https://howto.plow.co/).
 
-An [OpenClaw](https://github.com/openclaw/openclaw) agent on
-[Plow Chat](https://howto.plow.co/). You text it like a newspaper, not like a
-chatbot. It is one person's paper: the sections you asked for, at the hour you
-named, in the language you write.
+## What it does
 
-## What it is
+The nightly run reads your mail, messages, meetings, calendar and named web
+sources through [Latch](https://howto.plow.co/latch). It gathers dossiers on the
+people and companies behind your decisions, then challenges recommendations
+through at least three generations with independent facts and strategy critics.
+Before publishing, it checks the decisive facts again. The compact Letter memo
+contains three ranked priorities, the questions that could change them, and the
+run's cost and duration. Failed reads stay unknown; claims carry sources.
 
-The product is a **compact Letter paper**. It can open with **what Patrick
-Salyer would tell you** after watching your last day, learned from your Mac,
-then weather, one calendar rail, and up to three stories you told it to cover.
-The longest story leads; the other two sit side by side. A dense edition may
-continue onto a second sheet. It goes to a printer on your Mac when one is
-there, and the same edition lands as a PDF in chat. Mail and sports stay in
-the chat edition and research context; they do not compete for printed space.
+Setup asks when research should start (default 01:00), probes the printer, and
+keeps your advisor and signal preferences. The Mac supplies your timezone.
+`memo.start` controls the start, `memo.window_minutes` defaults to four hours,
+and `memo.max_usd` defaults to $100. Delivery happens when research finishes.
+Existing installs retain their research start (old delivery hour minus lead,
+clamped at midnight), printer, signals and priority opt-out. An opt-out disables
+the nightly memo until you turn it on in chat.
 
-You do not fill a profile. The first message is the paper: what time it should
-arrive. It learns your timezone from where the Mac is.
-
-Research runs on **your** browser, through [Latch](https://howto.plow.co/latch).
-If a page cannot be read, the paper says so — it does not invent the paragraph.
-
-What it prints goes into your wiki at `~/Plow/wiki` (Latch's Obsidian-style
-wiki): a page for each paper that carried the advisor's card or one of your own
-sections, with its sources (never your mail, calendar or weather), your goals,
-and the advisor's notes. Open it in Obsidian; edit anything.
-
-It reports. It does not act on what it finds: no purchases, no bookings, no
-logins, no downloads.
-
-## What goes in the paper
-
-- **Printed desks** at the front: the advisor's desk (three ranked, sourced
-  recommendations challenged by independent critics, using your mail,
-  messages, calendar and the sources you name), weather, and one calendar
-  rail. Mail and sports stay chat-only. Set `delivery.lead_minutes` for the
-  advisor's overnight window; each paper starts no earlier than midnight of its
-  delivery day and the PDF waits for the delivery hour before posting.
-- **Sections** you named ("esportes", "the dollar", a beat of your own),
-  including a different paper at a different hour if you ask for one.
-- **One day's assignment** ("put the iPhone price in tomorrow's paper").
-- **A one-off** you want once, on a short budget.
-
-Ask in the chat. The edition comes back as its own delivery, on the clock you
-set — "send it now" included — never as a live essay in the same turn.
+Your wiki at `~/Plow/wiki` holds the sourced entity pages, goals, Q&A and delivered
+memos. Open it in Obsidian and edit anything. Chat is for corrections, answers and
+requests to run the memo now. It reports: no purchases, bookings, logins or downloads.
 
 ## Install (local)
 
@@ -63,8 +41,7 @@ docker compose up --build -d
 docker compose logs -f agent      # wait for: plow-boot: identity resolved … and [gateway] ready
 ```
 
-Text the line you minted. The first message is the paper's hour, not a profile
-interview.
+Text the line you minted. Setup begins with the nightly research start hour.
 
 ```sh
 docker compose down          # stop, keep the paper, sessions and schedule
@@ -109,7 +86,7 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
   its answer; groups get answers, never setup questions.
 - **Schedule.** Every paper is an OpenClaw scheduler job
   (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
-  from your topics: an isolated turn on the chat's own model, in **your**
+  from your memo settings: an isolated turn on the chat's own model, in **your**
   timezone (`--tz`), with no automatic delivery — the paper posts itself as a
   PDF. Jobs live in the state volume and survive restarts and
   `docker compose up --build`; on a fresh volume, setup (or any schedule
@@ -165,11 +142,9 @@ MEMO_MODEL_CRITIC_PRICE=<input>,<output>
 ```
 
 The prices register the role models for OpenClaw's usage accounting. The
-`run_cost.py` helper converts listed input and output tokens to USD and checks
-whether another generation fits; tournament integration lands in later steps of
-issue #59, so the nightly workflow does not yet enforce a spending limit.
-The current tournament still directly spawns leaf
-workers; phase coordinators and depth-2 execution also land later.
+nightly conductor checks `run_cost.py` before another generation, using
+`memo.max_usd` (default $100); an unknown cost stays unknown. Phase coordinators
+can spawn up to ten leaf workers at depth two.
 Boot refuses one without the other, a missing or
 malformed price, and a critic from the writer's provider. With neither set,
 every child runs on the chat's model.
@@ -213,11 +188,3 @@ The OpenClaw runtime is pinned to `2026.9.6` by image digest, as in the base.
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Draft engine integration
-
-This branch preserves the engine split out of #80. It is not ready to merge:
-the setup/config migration, priority opt-out, exact legacy cron retirement,
-entity-name command transport and product documentation cutover remain open
-review findings. The approved #59 generation floor and two critics are retained;
-changing those rules requires a product decision supported by real runs.

@@ -26,8 +26,8 @@ memo reaches chat through post_to_chat.py.
 
 This script CREATES missing jobs, RECONCILES drift (schedule, zone, prompt,
 model or run budget) in place with `cron edit`, and REMOVES a registered
-memo-* job the spec no longer names. It never touches a job whose name does
-not start with memo-: OpenClaw keeps its own jobs in the same list. Never
+memo-* job the spec no longer names. After replacements are enabled, it
+retires the exact legacy paper/delivery jobs; unrelated jobs are untouched. Never
 remove-then-create a drifted job: if create failed after remove, the night
 had no job until someone reran the script.
 
@@ -52,6 +52,8 @@ from zoneinfo import ZoneInfo
 
 _SKILLS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(_SKILLS, "memo-shared", "scripts"))
+import pt_config_gate as _gate
+from record_owner_language import _write_json
 from pt_paths import config_file, skills  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
@@ -145,7 +147,27 @@ def load_owner_zone(config_path=CONFIG_FILE):
 def load_memo(config_path=CONFIG_FILE):
     """(memo.start, memo.window_minutes) with their defaults, or refuse a bad value."""
     path, config = _config(config_path)
-    memo = config.get("memo") or {}
+    memo = config.get("memo")
+    if memo is None:
+        delivery = config.get("delivery") or {}
+        hour = delivery.get("hour")
+        lead = delivery.get("lead_minutes", 0)
+        if not isinstance(hour, str) or not _START_RE.fullmatch(hour):
+            raise SystemExit(f"refusing to register: {path} has no valid memo.start or legacy delivery.hour.")
+        if isinstance(lead, bool) or not isinstance(lead, int) or lead < 0:
+            raise SystemExit("refusing to register: delivery.lead_minutes must be a non-negative integer.")
+        h, m = map(int, hour.split(":"))
+        minutes = max(0, h * 60 + m - lead)
+        memo = {"start": f"{minutes // 60:02d}:{minutes % 60:02d}",
+                "window_minutes": DEFAULT_WINDOW_MINUTES, "max_usd": 100}
+        config["memo"] = memo
+        try:
+            failures = _gate.gate(config)
+        except _gate.GateError as exc:
+            raise SystemExit(f"refusing to migrate: {exc}") from exc
+        if failures:
+            raise SystemExit(f"refusing to migrate: {failures}")
+        _write_json(path, config)
     if not isinstance(memo, dict):
         raise SystemExit(f"refusing to register: {path} has memo={memo!r}; it must be an object.")
     start = memo.get("start", DEFAULT_START)
@@ -257,8 +279,13 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
     owner_tz = load_owner_zone(config_path)
     start, window = load_memo(config_path)
     listing = backend.list()
+    for job in listing:
+        if (job.name in ("pt-daily-edition", "pt-daily-edition-now", "pt-deliver") or re.fullmatch(r"pt-daily-edition-(?:[2-9]|[1-9]\d+)", job.name)) and job.running:
+            raise SystemExit(f"refusing to retire running legacy job {job.name}; retry after it finishes")
     registered = registered_jobs(listing)
-    desired = desired_jobs(start, window, owner_tz)
+    _, config = _config(config_path)
+    enabled = (config.get("priority") or {}).get("configured", True)
+    desired = desired_jobs(start, window, owner_tz) if enabled else [deliver_job()]
     paused = []
 
     for job in desired:
@@ -279,19 +306,27 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
         _check(backend.edit(current.id, job), f"could not update drifted job {job['name']}")
         print(f"updated: {job['name']} ({job['schedule'] or 'every ' + job['every']})")
 
+    # Do not retire any working legacy schedule if a replacement is disabled.
+    if paused:
+        raise SystemExit(f"replacement jobs are DISABLED: {', '.join(paused)}; enable them before cutover")
+
     wanted = {job["name"] for job in desired}
     for name, job in registered.items():
         if name not in wanted:
             _check(backend.remove(job.id), f"could not remove stale job {name}")
             print(f"removed stale job: {name}")
 
+    # Exact legacy paper jobs only; unrelated pt-* automations belong to their owners.
+    for job in listing:
+        if job.name in ("pt-daily-edition", "pt-daily-edition-now", "pt-deliver") or re.fullmatch(r"pt-daily-edition-(?:[2-9]|[1-9]\d+)", job.name):
+            _check(backend.remove(job.id), f"could not retire legacy job {job.name}")
+            print(f"retired legacy job: {job.name}")
+
+    if args.now and not enabled:
+        raise SystemExit("not queued: priority.configured is false; enable the memo first")
     if args.now:
         queue_now(backend, listing, window, owner_tz)
 
-    if paused:
-        raise SystemExit(
-            f"registered what was missing, but {len(paused)} job(s) are DISABLED and will "
-            f"never fire: {', '.join(paused)} -- {' '.join(OPENCLAW)} cron enable <id>")
     return 0
 
 

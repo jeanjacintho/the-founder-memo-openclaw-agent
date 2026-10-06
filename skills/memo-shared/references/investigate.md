@@ -25,7 +25,7 @@ the owner's Mac decides which sources exist, so nothing here names a channel's q
 
 **Write the page.** Merge the dossier into the entity's page — never write the page yourself:
 
-    /opt/plow/skills/memo-shared/scripts/entity_page.py merge --kind people|orgs --slug <first-last or name> --title <name> --dossier -
+    /opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier -
 
 with the dossier JSON on stdin. A non-zero exit names the problem; fix the dossier and merge
 again, or return the failure.

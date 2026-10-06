@@ -216,7 +216,7 @@ from the owner once setup is ready, load `memo-intake` and follow it:
   `plow__plow_run_command` to `curl`, `wget`, or HTTP-get a source. A URL you
   did not open in Latch's browser is not a source; skip it.
 - **The memo is rendered, not written by hand.** `memo-render` writes
-  `memo.json` and runs `render_memo.py` over the fixed template. You never
+  `edition.json` and runs `render_memo.py` over the fixed template. You never
   write HTML, never lay out a page yourself, and never tell the owner you
   "don't have templates" — you have the renderer.
 - **A paper never runs in the chat turn — "now" included.** Every research
