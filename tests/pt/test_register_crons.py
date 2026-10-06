@@ -312,17 +312,55 @@ class TestNow:
             run_main(tmp_path, monkeypatch, sched, argv=["--now"])
             assert [w[:2] for w in sched.writes] == [["add", "--name"], ["rm", "old123"]]
 
-    @pytest.mark.parametrize("name", [crons.NOW_NAME, crons.NIGHTLY_NAME])
-    def test_nothing_is_queued_behind_a_running_night(self, tmp_path, monkeypatch, capsys, name):
+    @pytest.mark.parametrize("name, prefix", [
+        (crons.NIGHTLY_NAME, "already running"),
+        (crons.NOW_NAME, "already running"),
+        (crons.BOOTSTRAP_NAME, "not queued"),  # holds the workspace, delivers no memo
+    ])
+    def test_a_running_owner_keeps_its_lock_and_nothing_is_queued(self, tmp_path, monkeypatch, capsys, name, prefix):
+        lock = tmp_path / "pt" / "run" / f"{crons.WORKSPACE_LOCK}.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text("2026-10-06T07:00:01+00:00")
         listing = registered_like_spec()
-        if name == crons.NOW_NAME:
+        if name != crons.NIGHTLY_NAME:
             listing.append(row(name, jid="live123", at=FUTURE))
-        (running,) = [r for r in listing if r["name"] == name]
-        running["state"] = {"runningAtMs": 1790620326000}
+        next(r for r in listing if r["name"] == name)["state"] = {"runningAtMs": 1790620326000}
         sched = FakeScheduler(listing)
         assert run_main(tmp_path, monkeypatch, sched, argv=["--now"]) == 0
+        assert sched.writes == [] and lock.exists()
+        assert f"{prefix}: {name}" in capsys.readouterr().out
+
+
+    def test_now_releases_a_dead_runs_workspace_lock(self, tmp_path, monkeypatch, capsys):
+        # Measured live (#91): a run died on a provider error holding the lock, and two
+        # --now copies then read 'held' and ended NO_REPLY behind "queued".
+        lock = tmp_path / "pt" / "run" / f"{crons.WORKSPACE_LOCK}.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text("2026-10-06T05:02:27+00:00")
+        assert run_main(tmp_path, monkeypatch, FakeScheduler(registered_like_spec()), argv=["--now"]) == 0
+        assert not lock.exists()
+        assert "released: paper-workspace" in capsys.readouterr().out
+
+    def test_a_copy_that_starts_after_mains_listing_is_neither_cancelled_nor_unlocked(self, tmp_path, monkeypatch, capsys):
+        # main lists once before reconciling; the pending copy can start and take the
+        # lock before queue_now decides. queue_now re-lists under the acquirers' guard.
+        lock = tmp_path / "pt" / "run" / f"{crons.WORKSPACE_LOCK}.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text("2026-10-06T06:00:01+00:00")
+        pending = row(crons.NOW_NAME, jid="pend1", at=FUTURE)
+
+        class StartsMidway(FakeScheduler):
+            def __call__(self, argv):
+                if argv[3] == "list" and any(c[3] == "list" for c in self.calls):
+                    pending["state"] = {"runningAtMs": 1790650201000}
+                return super().__call__(argv)
+
+        sched = StartsMidway(registered_like_spec() + [pending])
+        assert run_main(tmp_path, monkeypatch, sched, argv=["--now"]) == 0
         assert sched.writes == []
-        assert f"already running: {name}" in capsys.readouterr().out
+        assert lock.exists()
+        assert "already running: memo-now" in capsys.readouterr().out
+
 
 
 class TestCliPassesItsArguments:
