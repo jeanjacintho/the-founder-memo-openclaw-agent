@@ -147,6 +147,8 @@ class TestFinalizersRunIndependently:
             post.main()
         assert order == ["print", "record"]
         assert paths == [str(tmp_path / "edition.json")]
+        # "print it again" (#92) gets the posted memo even when a finalizer failed.
+        assert (tmp_path / "pt" / "last-edition" / "edition.pdf").read_bytes() == b"%PDF"
 
     def test_a_print_failure_before_its_own_runner_still_records(self, tmp_path, monkeypatch):
         # print_page is real here: a pdf path subprocess cannot pass must
@@ -283,6 +285,7 @@ class TestPostedDeliveryRecovery:
         assert order == [("print", "edition.pdf"), ("record", "edition.json")]
         assert posts == [], "recovery must not repost the already delivered edition"
         assert not recovery.exists(), "completed recovery state is removed"
+        assert not (home / "last-edition").exists(), "a late recovery must not replace the last posted memo"
 
 
     def test_ticket_removed_while_waiting_for_lock_is_already_complete(self, tmp_path, monkeypatch):

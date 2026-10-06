@@ -51,6 +51,23 @@ def delivery_recovery_dir():
     return pt_home() / "delivery-recovery"
 
 
+def last_edition_dir():
+    return pt_home() / "last-edition"
+
+
+def keep_last_edition(folder):
+    """The posted memo's PDF and json, for "print it again" (#92): the owner gets
+    a page with no research and no model call. Each delivery replaces it."""
+    building = pt_home() / f".last-edition-{os.getpid()}"
+    shutil.rmtree(building, ignore_errors=True)
+    building.mkdir(parents=True)
+    for name in ("edition.json", "edition.pdf"):
+        if (folder / name).is_file():
+            shutil.copyfile(folder / name, building / name)
+    shutil.rmtree(last_edition_dir(), ignore_errors=True)
+    os.replace(building, last_edition_dir())
+
+
 def _write_delivery_state(ticket, state):
     temporary = ticket.with_name(f".{ticket.name}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
@@ -343,6 +360,13 @@ def deliver(base, uid, token, *, pdf, filename=None, on_posted=None):
         fcntl.flock(lock_file, fcntl.LOCK_EX)
         delivered_at = owner_now()
         post_json(base, f"/v1/chats/{uid}/messages", token, "Plow Chat", body)
+        # Still under the POST lock, before any finalizer: the kept copy is the last
+        # memo posted, whatever its finalizers do later (#92). It is posted, so a
+        # failed copy costs only "print it again", never this delivery.
+        try:
+            keep_last_edition(Path(pdf).parent)
+        except Exception as exc:
+            print(f"last memo not kept for reprint: {exc}", file=sys.stderr)
     edition_json = str(Path(pdf).parent / "edition.json")
     if on_posted:
         on_posted()
