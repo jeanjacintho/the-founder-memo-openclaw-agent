@@ -48,7 +48,8 @@ def test_prints_separate_draft_without_touching_source_or_last_delivery(tmp_path
     assert "calendar unavailable" in rendered[0]
     assert "72mm" in rendered[0]
     assert calls[0][0][0] == str(tmp_path / "run" / "draft" / "draft.pdf")
-    assert calls[0][1] == {"draft": True}
+    assert calls[0][0][2].endswith("-draft")
+    assert calls[0][1] == {}
     assert source.read_bytes() == original
     assert final.read_bytes() == b"last delivered"
     assert not (tmp_path / "paper-attempts-grant").exists()

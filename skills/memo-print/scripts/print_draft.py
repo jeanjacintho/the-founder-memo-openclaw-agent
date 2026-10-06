@@ -68,8 +68,8 @@ def main(argv=None):
             print(f"draft sent to the event printer (queue position {queued.get('position', '?')})")
         else:
             options = ["-o", f"media={print_edition.RECEIPT_MEDIA}"] if roll else []
-            print_edition.ship(str(target), printer, owner_today().isoformat(),
-                               print_edition.connect().call_tool, options, draft=True)
+            print_edition.ship(str(target), printer, f"{owner_today().isoformat()}-draft",
+                               print_edition.connect().call_tool, options)
             print(f"draft printed on {printer}")
         return 0
     except (OSError, ValueError, ImportError, print_edition.LatchError) as exc:

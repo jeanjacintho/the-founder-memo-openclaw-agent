@@ -191,9 +191,9 @@ def require_exit_zero(call_tool, result, step):
         sys.exit(f"error: {step} {result['exit_code']}: {output}")
 
 
-def ship(pdf_path, printer, date, call_tool, lp_options=(), *, draft=False):
+def ship(pdf_path, printer, date, call_tool, lp_options=()):
     pdf = read_pdf(pdf_path)
-    dest_b64 = mac_b64_path(f"{date}-draft" if draft else date)
+    dest_b64 = mac_b64_path(date)
 
     wrote = call_tool(
         "plow_write_file",

@@ -157,3 +157,15 @@ def test_pre_memo_pack_keeps_active_labels_and_requires_missing_translations(pt_
         assert "missing: page.cost" in phrases.problems(old)
     # Existing packs are readable; writing a replacement uses the current key set.
     assert run(["record"], json.dumps({"phrases": old}))[0] == 1
+
+
+def test_pre_draft_pack_keeps_existing_notices_until_new_labels_are_translated(pt_home):
+    configure(pt_home, "Mandarin Chinese")
+    old = {k: v for k, v in translated().items() if not k.startswith("draft.")}
+    path = pt_home / "owner-phrases.json"
+    raw = json.dumps({"language": "Mandarin Chinese", "phrases": old})
+    path.write_text(raw)
+    assert phrases.status() == "missing"
+    for key in ("chat.busy", "edition.failed", "attempts.spent_on_demand", "print.ready"):
+        assert phrases.phrase(key) == old[key]
+    assert path.read_text() == raw

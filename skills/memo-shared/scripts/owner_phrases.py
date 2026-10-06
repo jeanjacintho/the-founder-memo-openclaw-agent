@@ -128,7 +128,8 @@ def table(language=None):
     language = current_language() if language is None else language
     stored = _stored()
     if stored and language and stored.get("language") == language and not problems(
-            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown", "edition.failed", "print.ready")):
+            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown", "edition.failed", "print.ready",
+                                            "draft.unverified", "draft.problems", "draft.content")):
         # Old packs keep their existing translations; status() still requires
         # a complete replacement before using the newly introduced labels.
         return stored["phrases"]
