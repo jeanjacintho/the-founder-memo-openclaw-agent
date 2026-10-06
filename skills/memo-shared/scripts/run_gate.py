@@ -50,11 +50,12 @@ def wait(call_tool, started, window_minutes, sleep=time.sleep, now=_now, max_wai
         remaining = window_minutes * 60 - (now() - started).total_seconds()
         if remaining <= 0:
             return 2
-        if reachable(call_tool):
-            return 0
+        answered = reachable(call_tool)
         remaining = window_minutes * 60 - (now() - started).total_seconds()
         if remaining <= 0:
             return 2
+        if answered:
+            return 0
         if max_wait_seconds is not None and (now() - called).total_seconds() + INTERVAL_SECONDS > max_wait_seconds:
             return 3
         sleep(min(INTERVAL_SECONDS, remaining))
