@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 import json
+import pathlib
+import re
 import sys
+import urllib.parse
+import urllib.request
+
+import pytest
 
 from conftest import ROOT, load_module
 from test_render_memo import memo, render
@@ -17,6 +23,21 @@ def test_the_receipt_has_all_three_priorities_questions_and_cost_at_72mm():
     assert page.index("Priority 1:") < page.index("Priority 2:") < page.index("Priority 3:")
     assert "size: 72mm" in page and "The Founder Memo" in page and "2026-10-02" in page
     assert "Q1 — Is Acme" in page and "$87.40" in page and "3h 56m" in page
+    assert "QUESTIONS FOR YOU<br>TEXT" in page
+
+
+def test_the_receipt_embeds_its_fonts_and_renders_one_72mm_page():
+    page = render.receipt_html(memo())
+    fonts = re.findall(r'url\("(file:[^"]+)"\)', page)
+    assert len(fonts) == 4
+    assert all(pathlib.Path(urllib.request.url2pathname(urllib.parse.urlparse(u).path)).is_file() for u in fonts)
+    weasyprint = pytest.importorskip("weasyprint")  # in the image; `test:py` runs without it
+    document = weasyprint.HTML(string=page).render()
+    assert len(document.pages) == 1 and round(document.pages[0].width * 25.4 / 96) == 72
+    # Every glyph comes from the shipped fonts: no fallback to whatever the machine has.
+    embedded = re.findall(rb"/BaseFont\s*/[A-Z]{6}\+([\w-]+)", document.write_pdf(uncompressed_pdf=True))
+    assert {name.rsplit(b"-", 1)[0] for name in embedded} == {
+        b"Memo-Display-Heavy", b"Memo-Text", b"Memo-Text-Bold", b"Memo-Text-Italic"}
 
 
 def test_a_night_with_no_checkpoint_prints_its_reason_on_the_roll():
