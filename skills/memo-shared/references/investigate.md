@@ -26,7 +26,7 @@ the owner's Mac decides which sources exist, so nothing here names a channel's q
 
 **The sources the owner may have**, each a `coverage` row whether or not it holds anything:
 
-- **Mail and calendar** — the `google-workspace` skill (`plow-gog`). When this run's note says the owner's Mac (Latch) is not connected, Google goes through Plow: pass the same argv to `plow_google` without the leading `"plow-gog"`, plus `timezone` = `owner.timezone` from `pt/config.json` for calendar reads.
+- **Mail and calendar** — the `google-workspace` skill (`plow-gog`).
 - **iMessage** — `plow__plow_read_skill` with `name` = `imessage` (`plow-messages`), full history.
 - **WhatsApp** — the `whatsapp-history` skill, the Mac's full local store.
 - **Contacts** — the contacts skill, to resolve a name to its handles before searching.

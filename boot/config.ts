@@ -117,8 +117,6 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
         "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
         "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
-        // Google and Slack through Plow; each call first checks the owner's Mac
-        // (plugin/connectors.ts) and steps aside while Latch answers.
         "plow_google", "plow_slack", "plow_connect",
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",

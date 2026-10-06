@@ -198,7 +198,7 @@ Q&A, and the senders of the unverified signals.
 Read tools from their installed documentation before using them, subject to Source choices. Permitted mail uses the
 `google-workspace` skill; Messages uses `plow__plow_read_skill` with `name` = `imessage`;
 calendar uses `plow-gog calendar events`; public and authenticated pages use the installed browser
-skill. Mac not connected? When this run's note says the owner's Mac (Latch) is not connected, pass the same argv to `plow_google` without the leading `"plow-gog"`, plus `timezone` = `owner.timezone` from `pt/config.json` for calendar reads. Do not assume audit or tool-call history exists. Current source content outranks remembered
+skill. Do not assume audit or tool-call history exists. Current source content outranks remembered
 history.
 
 ### Signals are unverified evidence
@@ -209,8 +209,7 @@ never an accepted fact, and never an Answered entry in Q&A. Its item is its `ref
 (`signal:<file>`, which re-opens `/var/lib/plow/pt/signals/<file>` while the file exists); a
 claim resting on a signal is **unsupported** until a writer or critic re-opens the original
 source or finds independent evidence: a mail signal's `item` `gmail:<account>:<thread id>@<date>`
-re-opens with `plow-gog gmail thread get <thread id> --account <account> --sanitize-content --json`
-(without the Mac, the same argv minus `plow-gog` through `plow_google`);
+re-opens with `plow-gog gmail thread get <thread id> --account <account> --sanitize-content --json`;
 an iMessage signal's `item` `imessage:<rowid>` with `plow-messages search --after-rowid <rowid - 1>
 --limit 1 --order asc` (read_paths `~/Library/Messages`); a group chat signal's file is the
 message itself, and the sender's say-so is all it proves. A recommendation that rests only on

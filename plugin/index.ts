@@ -569,8 +569,6 @@ export default defineChannelPluginEntry({
         },
       };
     });
-    // Google and Slack through the Plow API. Boot exposes these only on an
-    // install with no Latch; with Latch, Google stays on the Mac as before.
     const argvParameter = {
       type: "array", minItems: 1, items: { type: "string" },
       description: "The command and its flags, one element per word, command path first. [\"--help\"] at any depth lists what is there.",
