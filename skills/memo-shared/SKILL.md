@@ -70,10 +70,11 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
   `wiki validate --writer shared`. Exit 1 names the problem on stderr; nothing is half-merged.
 - `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints
-  `{"usd": <float|null>, "sessions": n, "unpriced": m}` (tokens times each model's configured
-  price; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
+  `{"usd": <float|null>, "sessions": n, "unpriced": m}` (every transcript call priced with its model's configured rates; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
   --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not
-  or spend is unknown. Any token-bearing session without a price makes the total unknown.
+  or spend is unknown. Any call with unknown usage or missing input/output/cache prices makes the total unknown.
+  The SQLite reads are local and read-only; the shipped Agent Index client decodes compressed
+  events and their timestamps. Resumed sessions retain every call in the minute window.
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
   the Mac has none, copies an existing `projects/thefoundertimes` root's indexed

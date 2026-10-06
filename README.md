@@ -165,7 +165,7 @@ MEMO_MODEL_CRITIC_PRICE=<input>,<output>
 ```
 
 The prices register the role models for OpenClaw's usage accounting. The
-`run_cost.py` helper converts listed input and output tokens to USD and checks
+`run_cost.py` helper prices each transcript usage call in its minute window and checks
 whether another generation fits; tournament integration lands in later steps of
 issue #59, so the nightly workflow does not yet enforce a spending limit.
 The current tournament still directly spawns leaf

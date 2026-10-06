@@ -1,83 +1,104 @@
 #!/usr/bin/env python3
-"""run_cost.py -- what tonight's run has spent, and whether another generation fits.
+"""The memo's time-bounded spend from OpenClaw transcript usage events.
 
     run_cost.py total --since-minutes N
     run_cost.py can-start --spent <usd|null> --longest <usd> --max <usd>
 
-`total` lists the sessions OpenClaw updated in the last N minutes
-(`openclaw sessions --json --limit all --active N`) and prices each one by its
-own model: input and output tokens times the USD-per-million price the install
-gave that model (boot writes it into the plow provider's config, which this
-reads). OpenClaw's listing carries tokens, not dollars. It prints
-{"usd": <float or null>, "sessions": n, "unpriced": m}: null when no session
-ran on a priced model or any token-bearing session is unpriced -- unknown,
-never $0.00 -- and `unpriced` counts those unpriced sessions. A truncated
-listing is refused rather than summed short.
-
-Each session's tokens are its latest run's, so a session that ran more than
-once (a coordinator resumed after sessions_yield) counts only its last run.
-
-`can-start` exits 0 when one more generation as costly as the costliest so far
-still fits under the ceiling, 1 when it does not. An unknown spend cannot
-approve another generation; the caller proceeds to Freshness and Publish.
+Reads the local stores read-only, including every call in a resumed session.
+The pinned Agent Index client already shipped in the image owns compressed-event
+decoding and timestamp interpretation; this adapter prices its events for the
+memo's minute window, without running the reporter or contacting the Index.
+Unknown prices or token counts never become a smaller numeric total. Cached
+usage requires an explicit cache price too. Unknown spend refuses another
+generation; the caller proceeds to Freshness and Publish.
 """
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
+import importlib.util
 import json
-import subprocess
+import math
+import os
+from pathlib import Path
+import sqlite3
 import sys
+import time
 
-OPENCLAW = ["node", "/app/openclaw.mjs"]
 PROVIDER_CONFIG = "/etc/plow/openclaw/plow-provider.json5"
+TOKEN_FIELDS = ("input", "output", "cacheRead", "cacheWrite")
 
 
-def sessions(listing):
-    """The listing's rows; a truncated or unexpected listing raises."""
-    rows = listing.get("sessions") if isinstance(listing, dict) else None
-    if not isinstance(rows, list):
-        raise ValueError("not an `openclaw sessions --json` listing")
-    if listing.get("hasMore"):
-        raise ValueError("the session listing is truncated (hasMore)")
+def _client():
+    spec = importlib.util.spec_from_file_location("memo_usage_decoder", "/opt/plow/agent-index-client.py")
+    client = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(client)
+    return client
+
+
+def events(since, until):
+    """Every usage call in the window, deduplicated across checkpoint copies."""
+    root = Path(os.environ["OPENCLAW_STATE_DIR"])
+    stores = sorted(root.glob("agents/*/agent/openclaw-agent.sqlite"))
+    if not stores:
+        raise ValueError(f"no OpenClaw transcript store under {root}")
+    client, rows, seen = _client(), [], set()
+    for store in stores:
+        with closing(sqlite3.connect(store.as_uri() + "?mode=ro", uri=True)) as db:
+            columns = {r[1] for r in db.execute("PRAGMA table_info(transcript_events)")}
+            payload = "event_json, event_zstd, event_utf8_bytes" if {"event_zstd", "event_utf8_bytes"} <= columns else "event_json, NULL, NULL"
+            for session, raw, blob, size, created in db.execute(f"SELECT session_id, {payload}, created_at FROM transcript_events"):
+                event = json.loads(client._event_json(raw, blob, size))
+                stamp = client._stamp_ms(event.get("timestamp"), created)
+                if not since <= stamp <= until:
+                    continue
+                message = event.get("message") or {}
+                usage = message.get("usage")
+                if not isinstance(usage, dict):
+                    continue
+                response = message.get("responseId")
+                if response is not None:
+                    if response in seen:
+                        continue
+                    seen.add(response)
+                rows.append({"session": (str(store), session), "model": message.get("model"),
+                             "provider": message.get("provider"), "usage": usage})
     return rows
 
 
 def prices(provider):
-    """{model id: (input, output) USD per million tokens} for the priced Plow models."""
-    return {m["id"]: (float(m["cost"]["input"]), float(m["cost"]["output"]))
-            for m in provider.get("models", []) if isinstance(m.get("cost"), dict)}
+    return {m["id"]: m["cost"] for m in provider.get("models", []) if isinstance(m.get("cost"), dict)}
 
 
 def cost(row, table):
-    """One session's USD, or None when its model has no price or it reported no tokens."""
-    price = table.get(row.get("model")) if row.get("modelProvider") == "plow" else None
-    tokens = (row.get("inputTokens"), row.get("outputTokens"))
-    if price is None or not all(isinstance(t, (int, float)) for t in tokens):
+    price = table.get(row.get("model")) if row.get("provider") == "plow" else None
+    if price is None:
         return None
-    return (tokens[0] * price[0] + tokens[1] * price[1]) / 1_000_000
+    amount = 0
+    for field in TOKEN_FIELDS:
+        tokens = row["usage"].get(field, 0 if field.startswith("cache") else None)
+        rate = price.get(field)
+        if not isinstance(tokens, (int, float)) or not math.isfinite(tokens) or tokens < 0:
+            return None
+        if tokens:
+            if not isinstance(rate, (int, float)) or not math.isfinite(rate) or rate < 0:
+                return None
+            amount += tokens * rate / 1_000_000
+    return amount
 
 
-def total(rows, table):
-    if unpriced(rows, table):
-        return None
-    priced = [c for c in (cost(r, table) for r in rows) if c is not None]
-    return round(sum(priced), 4) if priced else None
-
-
-def unpriced(rows, table):
-    """Sessions that used tokens on a model with no price."""
-    return sum(1 for r in rows if cost(r, table) is None and (r.get("inputTokens") or r.get("outputTokens")))
+def summary(rows, table):
+    amounts = [cost(row, table) for row in rows]
+    unknown = {row["session"] for row, amount in zip(rows, amounts) if amount is None}
+    return {"usd": sum(amounts) if amounts and not unknown else None,
+            "sessions": len({r["session"] for r in rows}), "unpriced": len(unknown)}
 
 
 def can_start(spent, longest_generation_usd, max_usd):
     return spent is not None and spent + longest_generation_usd <= max_usd
 
 
-def _listing(argv):
-    return subprocess.run(argv, check=True, capture_output=True, text=True).stdout
-
-
-def main(argv=None, run=_listing):
+def main(argv=None):
     p = argparse.ArgumentParser(prog="run_cost.py")
     sub = p.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("total")
@@ -89,14 +110,16 @@ def main(argv=None, run=_listing):
     if a.cmd == "can-start":
         return 0 if can_start(a.spent, a.longest, a.max) else 1
     try:
+        if a.since_minutes <= 0:
+            raise ValueError("--since-minutes must be positive")
         with open(PROVIDER_CONFIG, encoding="utf-8") as f:
             table = prices(json.load(f))
-        rows = sessions(json.loads(run([*OPENCLAW, "sessions", "--json", "--limit", "all",
-                                        "--active", str(a.since_minutes)])))
-    except (OSError, ValueError, KeyError, TypeError, subprocess.CalledProcessError) as exc:
+        until = int(time.time() * 1000)
+        out = summary(events(until - a.since_minutes * 60_000, until), table)
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, sqlite3.Error) as exc:
         print(f"run_cost: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps({"usd": total(rows, table), "sessions": len(rows), "unpriced": unpriced(rows, table)}))
+    print(json.dumps(out))
     return 0
 
 

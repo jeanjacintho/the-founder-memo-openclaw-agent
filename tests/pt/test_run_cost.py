@@ -1,78 +1,103 @@
-"""run_cost.py -- what tonight's run has spent, priced from the install's own config."""
-from __future__ import annotations
-
+"""The memo prices every transcript usage call, including resumed sessions."""
 import json
-import pathlib
+from datetime import datetime, timezone
+import sqlite3
+from types import SimpleNamespace
 
 import pytest
-
 from conftest import load_module
 
 rc = load_module("run_cost", "memo-shared/scripts/run_cost.py")
-FIX = json.loads((pathlib.Path(__file__).parent / "fixtures/openclaw-sessions.json").read_text())
-# The plow provider block boot writes to /etc/plow/openclaw/plow-provider.json5 (Sol unpriced).
-PROVIDER = {"models": [
-    {"id": "openai/gpt-6-sol", "name": "GPT-6 Sol", "input": ["text", "image"], "contextWindow": 1050000},
-    {"id": "openai/gpt-6-luna", "name": "GPT-6 Luna", "input": ["text", "image"], "contextWindow": 1050000,
-     "cost": {"input": 0.10, "output": 0.50}},
-    {"id": "anthropic/claude-opus-5-5", "name": "anthropic/claude-opus-5-5", "input": ["text"],
-     "cost": {"input": 5, "output": 25}},
-]}
+PROVIDER = {"models": [{"id": "writer", "cost": {"input": 5, "output": 25}}]}
 
 
-def test_total_prices_each_session_by_its_own_model():
-    prices = rc.prices(PROVIDER)
-    # writers: (900k + 700k) in, 70k out at 5/25; one critic: 500k in, 20k out at 0.10/0.50
-    expected = (1_600_000 * 5 + 70_000 * 25 + 500_000 * 0.10 + 20_000 * 0.50) / 1_000_000
-    rows = [r for r in rc.sessions(FIX) if r.get("model") != "openai/gpt-6-sol"]
-    assert rc.total(rows, prices) == pytest.approx(expected)
+def event(response, stamp=100_000, **usage):
+    return {"timestamp": datetime.fromtimestamp(stamp / 1000, timezone.utc).isoformat(), "message": {"role": "assistant", "responseId": response,
+            "provider": "plow", "model": "writer", "usage": {"input": 1_000_000, "output": 0, **usage}}}
 
 
-def test_unpriced_sessions_are_counted_not_guessed():
-    rows = rc.sessions(FIX)
-    assert rc.unpriced(rows, rc.prices(PROVIDER)) == 2  # the conductor and the coordinator, on Sol
-    assert rc.total(rows, rc.prices(PROVIDER)) is None
+@pytest.fixture
+def stores(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENCLAW_STATE_DIR", str(tmp_path))
+    # The real pinned decoder is exercised in the built-image Node test.
+    monkeypatch.setattr(rc, "_client", lambda: SimpleNamespace(
+        _event_json=lambda raw, blob, size: raw,
+        _stamp_ms=lambda stamp, created: datetime.fromisoformat(stamp).timestamp() * 1000 if stamp else created))
+    config = tmp_path / "provider.json"
+    config.write_text(json.dumps(PROVIDER))
+    monkeypatch.setattr(rc, "PROVIDER_CONFIG", str(config))
+    monkeypatch.setattr(rc.time, "time", lambda: 120)
+
+    def write(entries, agent="main", compressed=False):
+        path = tmp_path / "agents" / agent / "agent" / "openclaw-agent.sqlite"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(path) as db:
+            extra = ", event_zstd BLOB, event_utf8_bytes INTEGER" if compressed else ""
+            db.execute(f"CREATE TABLE transcript_events (session_id TEXT, event_json TEXT, created_at INTEGER{extra})")
+            db.executemany("INSERT INTO transcript_events (session_id, event_json, created_at) VALUES (?, ?, ?)",
+                           [(session, json.dumps(e), 110_000) for session, e in entries])
+        return path
+    return write
 
 
-def test_no_priced_session_is_unknown_not_zero():
-    assert rc.total([{"key": "a", "modelProvider": "plow", "model": "openai/gpt-6-sol",
-                      "inputTokens": 10, "outputTokens": 1}], rc.prices(PROVIDER)) is None
-    assert rc.total([], rc.prices(PROVIDER)) is None
+def test_resumed_session_includes_every_call_and_stops_generation(stores, capsys):
+    stores([("coordinator", event("generation-1")), ("coordinator", event("generation-2", input=2_000_000))])
+    assert rc.main(["total", "--since-minutes", "1"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {"usd": 15, "sessions": 1, "unpriced": 0}
+    assert rc.main(["can-start", "--spent", str(result["usd"]), "--longest", "5", "--max", "19"]) == 1
 
 
-def test_a_truncated_listing_is_refused():
-    with pytest.raises(ValueError, match="truncated"):
-        rc.sessions({**FIX, "hasMore": True})
-    with pytest.raises(ValueError):
-        rc.sessions({"nope": []})
+def test_minute_window_filters_event_time_and_checkpoint_copies(stores):
+    stores([("same", event("old", stamp=10_000)), ("same", event("included")),
+            ("same", event("future", stamp=150_000))])
+    stores([("copy", event("included"))], agent="fork", compressed=True)
+    assert rc.summary(rc.events(60_000, 120_000), rc.prices(PROVIDER)) == {"usd": 5, "sessions": 1, "unpriced": 0}
 
 
-@pytest.mark.parametrize("spent, longest, ok", [(10, 20, True), (80, 20, True), (85, 20, False), (None, 20, False)])
-def test_can_start_respects_the_ceiling(spent, longest, ok):
-    assert rc.can_start(spent, longest, 100) is ok
-
-
-def test_cli_total_reads_the_listing_and_the_provider_config(tmp_path, capsys, monkeypatch):
-    provider = tmp_path / "plow-provider.json5"
-    provider.write_text(json.dumps(PROVIDER))
-    monkeypatch.setattr(rc, "PROVIDER_CONFIG", str(provider))
-    calls = []
-
-    def listing(argv):
-        calls.append(argv)
-        return json.dumps(FIX)
-
-    assert rc.main(["total", "--since-minutes", "240"], run=listing) == 0
-    out = json.loads(capsys.readouterr().out)
-    assert out["usd"] is None
-    assert out["unpriced"] == 2
-    assert calls == [["node", "/app/openclaw.mjs", "sessions", "--json", "--limit", "all", "--active", "240"]]
-
-
-@pytest.mark.parametrize("argv, code", [
-    (["--spent", "10", "--longest", "20", "--max", "100"], 0),
-    (["--spent", "90", "--longest", "20", "--max", "100"], 1),
-    (["--spent", "null", "--longest", "20", "--max", "100"], 1),
+@pytest.mark.parametrize("change", [
+    {"model": "unpriced"}, {"provider": "another-provider"},
+    {"usage": {"input": 10}}, {"usage": {"input": 10, "output": 0, "cacheRead": 100}},
 ])
-def test_cli_can_start_exits_on_the_ceiling(argv, code):
-    assert rc.main(["can-start", *argv]) == code
+def test_partial_or_unpriced_usage_never_reports_a_smaller_total(stores, change):
+    unknown = event("unknown")
+    unknown["message"].update(change)
+    stores([("priced", event("priced")), ("unknown", unknown)])
+    assert rc.summary(rc.events(0, 120_000), rc.prices(PROVIDER)) == {"usd": None, "sessions": 2, "unpriced": 1}
+
+
+def test_cached_tokens_use_their_explicit_model_prices(stores):
+    stores([("cached", event("cached", cacheRead=1_000_000, cacheWrite=100_000))])
+    provider = {"models": [{"id": "writer", "cost": {"input": 5, "output": 25, "cacheRead": 1, "cacheWrite": 6.25}}]}
+    assert rc.summary(rc.events(0, 120_000), rc.prices(provider))["usd"] == pytest.approx(6.625)
+
+
+def test_empty_store_is_unknown(stores, capsys):
+    stores([])
+    assert rc.main(["total", "--since-minutes", "1"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"usd": None, "sessions": 0, "unpriced": 0}
+
+
+@pytest.mark.parametrize("failure", ["missing", "corrupt-json", "corrupt-db", "decode"])
+def test_unreadable_usage_fails_without_a_partial_total(stores, capsys, monkeypatch, failure):
+    if failure != "missing":
+        path = stores([("s", event("r"))])
+        if failure == "corrupt-db":
+            path.write_text("not sqlite")
+        elif failure == "corrupt-json":
+            with sqlite3.connect(path) as db:
+                db.execute("UPDATE transcript_events SET event_json = '{'")
+        else:
+            def refuse(*args):
+                raise RuntimeError("cannot decode compressed usage")
+            monkeypatch.setattr(rc, "_client", lambda: SimpleNamespace(_event_json=refuse))
+    assert rc.main(["total", "--since-minutes", "1"]) == 1
+    captured = capsys.readouterr()
+    assert not captured.out and "run_cost:" in captured.err
+
+
+@pytest.mark.parametrize("spent, longest, maximum, code", [
+    (10, 20, 100, 0), (80, 20, 100, 0), (85, 20, 100, 1), ("null", 20, 100, 1),
+])
+def test_cli_can_start_respects_the_ceiling(spent, longest, maximum, code):
+    assert rc.main(["can-start", "--spent", str(spent), "--longest", str(longest), "--max", str(maximum)]) == code

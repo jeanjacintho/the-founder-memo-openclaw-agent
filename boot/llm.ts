@@ -57,7 +57,7 @@ export function llmRoute(env: NodeJS.ProcessEnv = process.env, marker = readLlmM
 // The memo tournament's writer and critic, passed per child at spawn time.
 // Both or neither: without them every child runs on the chat's own model. Each
 // is a Plow model carrying its USD-per-million-token price, so run_cost can price
-// each child's listed tokens and check the nightly dollar ceiling; a critic
+// each child's transcript usage calls and check the nightly dollar ceiling; a critic
 // from the writer's own provider would share the writer's blind spots.
 export type RoleModel = { ref: string; id: string; cost: { input: number; output: number } };
 export type MemoRoles = { writer: RoleModel; critic: RoleModel };

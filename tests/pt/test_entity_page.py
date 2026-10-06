@@ -24,6 +24,17 @@ def local_state(tmp_path, monkeypatch):
     monkeypatch.setenv("PT_HOME", str(tmp_path / "state"))
 
 
+@pytest.fixture
+def merge_cli(mac, tmp_path):
+    mac.wiki("init", "~/Plow/wiki")
+    def run(dossier=D, today="2026-10-01"):
+        f = tmp_path / "d.json"
+        f.write_text(json.dumps(dossier))
+        argv = ["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe", "--dossier", str(f)]
+        return ep.main(argv + (["--today", today] if today else []), call_tool=mac.call_tool)
+    return run
+
+
 def test_new_page_is_valid_okf_with_now_and_timeline():
     meta, body = wiki.split_page(ep.merge(None, D, "people", "Jane Doe", "2026-10-01"))
     assert meta["type"] == "Person" and meta["category"] == "entities"
@@ -89,28 +100,18 @@ def test_malformed_dossier_fails_loudly(bad):
         ep.merge(None, bad, "people", "Jane Doe", "2026-10-01")
 
 
-def test_cli_writes_then_validates_on_the_mac(mac, tmp_path):
-    mac.wiki("init", "~/Plow/wiki")  # plow-wiki seeds wiki.toml with the shared entity roots
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps(D))
-    code = ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe",
-                    "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool)
-    assert code == 0
+def test_cli_writes_then_validates_on_the_mac(mac, merge_cli):
+    assert merge_cli() == 0
     assert (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
 
 
-def test_a_page_the_wiki_refuses_fails_the_run(mac, tmp_path, capsys):
-    mac.wiki("init", "~/Plow/wiki")
+def test_a_page_the_wiki_refuses_fails_the_run(mac, merge_cli, capsys):
     page = mac.home / "Plow/wiki/entities/people/jane-doe.md"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(ep.merge(None, D, "people", "Jane Doe", "2026-10-01").replace(
         "category: entities", "category: entities\norg: not a link"))
     original = page.read_text()
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps(D))
-    code = ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe",
-                    "--dossier", str(f), "--today", "2026-10-02"], call_tool=mac.call_tool)
-    assert code == 1
+    assert merge_cli(today="2026-10-02") == 1
     assert "entities/people/jane-doe.md" in capsys.readouterr().err
     assert page.read_text() == original
 
@@ -123,23 +124,15 @@ def test_invalid_slug_never_calls_latch(slug, tmp_path):
                     "--dossier", str(tmp_path / "missing")], call_tool=forbidden) == 1
 
 
-def test_rejected_new_page_is_removed(mac, tmp_path, capsys):
-    mac.wiki("init", "~/Plow/wiki")
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps({**D, "sources": [{"resource": ""}]}))
-    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
-                    "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 1
+def test_rejected_new_page_is_removed(mac, merge_cli, capsys):
+    assert merge_cli({**D, "sources": [{"resource": ""}]}) == 1
     assert "wiki validate" in capsys.readouterr().err
     assert not (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
 
 
-def test_bare_cli_uses_owner_day(mac, tmp_path, monkeypatch):
-    mac.wiki("init", "~/Plow/wiki")
+def test_bare_cli_uses_owner_day(mac, merge_cli, monkeypatch):
     monkeypatch.setattr(ep, "owner_today", lambda: date(2026, 10, 2))
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps(D))
-    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
-                    "--dossier", str(f)], call_tool=mac.call_tool) == 0
+    assert merge_cli(today=None) == 0
     meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
     assert meta["created"] == meta["updated"] == "2026-10-02"
 
