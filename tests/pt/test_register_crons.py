@@ -361,6 +361,20 @@ class TestNow:
         assert "already running: memo-now" in capsys.readouterr().out
 
 
+    def test_a_running_bootstrap_keeps_its_lock_and_queues_nothing(self, tmp_path, monkeypatch, capsys):
+        # Review of #94: setup queues memo-bootstrap, which takes the workspace through
+        # Start; it delivers no memo, so "already running" would be a false promise.
+        lock = tmp_path / "pt" / "run" / f"{crons.WORKSPACE_LOCK}.lock"
+        lock.parent.mkdir(parents=True)
+        lock.write_text("2026-10-06T07:00:01+00:00")
+        boot = row(crons.BOOTSTRAP_NAME, jid="boot1", at=FUTURE)
+        boot["state"] = {"runningAtMs": 1790650201000}
+        sched = FakeScheduler(registered_like_spec() + [boot])
+        assert run_main(tmp_path, monkeypatch, sched, argv=["--now"]) == 0
+        assert sched.writes == [] and lock.exists()
+        assert "not queued: memo-bootstrap" in capsys.readouterr().out
+
+
 class TestCliPassesItsArguments:
     def test_module_entry_point_forwards_sys_argv(self):
         source = (ROOT / "memo-schedule" / "scripts" / "register_crons.py").read_text()

@@ -293,14 +293,20 @@ def queue_now(backend, window_minutes, owner_tz, clock=None):
     with run_lock.guarded(lock.parent):
         listing = backend.list()
         running = [j for j in listing if j.name in (NIGHTLY_NAME, NOW_NAME) and j.running]
+        # The bootstrap holds the workspace too, but delivers no memo.
+        bootstrapping = [j for j in listing if j.name == BOOTSTRAP_NAME and j.running]
         # No run in flight: the lock was kept by a run that died (a provider error, say)
         # for its stale-lock window, and this copy would read 'held' and end NO_REPLY
         # behind the owner's "queued".
-        if not running and lock.exists():
+        if not (running or bootstrapping) and lock.exists():
             lock.unlink()
             print(f"released: {WORKSPACE_LOCK}, left by a run that is no longer running")
     if running:
         print(f"already running: {running[0].name} ({running[0].id}) -- its memo is on the way")
+        return
+    if bootstrapping:
+        print(f"not queued: {BOOTSTRAP_NAME} is still taking its first read of the company -- "
+              "ask again once it finishes")
         return
     at = (clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
     job = {"name": NOW_NAME, "schedule": at.isoformat(timespec="seconds"), "tz": None,

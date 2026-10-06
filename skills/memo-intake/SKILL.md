@@ -55,7 +55,9 @@ is on its way; name anything else the output reports failing (a paused
 job, say) in one more line, and say the run takes up to its window
 (`memo.window_minutes`). An `already running:` line means a run is in flight
 and no second one was queued: say in one ⏳ line that the memo already in
-progress is on its way. With neither line, say it could not be queued. Never
+progress is on its way. A `not queued:` line says why (the first read after
+setup is still running): relay it in one line. With none of these, say it
+could not be queued. Never
 research or render it in this turn, and never fire a job with `openclaw cron
 run`.
 
