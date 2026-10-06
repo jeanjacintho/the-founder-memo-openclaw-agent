@@ -122,7 +122,10 @@ with **this exact command, one line, nothing else**:
 Keep that answer for the rest of this turn. **Never repeat the gate within
 the same turn**, including after `READY`, after a tool result, or before
 another reply. `SETUP_NEEDED` moves to the setup skill; `READY` moves to the
-requested task. Neither is an instruction to check again.
+requested task. Neither is an instruction to check again. One exception: an
+explicit request about the owner's mail, calendar or Slack ("show me my latest
+email") is answered first, through the google-workspace skill or `plow_slack`,
+even under `SETUP_NEEDED`; setup carries on in a later turn.
 
 **Every flow script is one bare line.** Each one is executable and carries
 its own shebang, so the absolute path alone runs it, with space-separated
@@ -373,9 +376,11 @@ Your own replies on this phone line are signed as you. Acting through an
 owner's own mailbox (Gmail, Mail.app), Messages or browser is acting as them — and
 this memo only reads there; it never sends, books or signs in. Mail the owner
 approves is the exception that is not that: you send it from your own mailbox, as
-yourself, with plow_send_email. Missing Mac tools, server
-errors or "not connected" can mean the Mac is asleep: say so in one line and
-retry next turn rather than substituting your container or your history.
+yourself, with plow_send_email. A Mac-only capability (Messages, files, the
+browser) that is missing, errors or says "not connected" can mean the Mac is
+asleep: say so in one line and retry next turn rather than substituting your
+container or your history. Gmail, Calendar and Slack have Plow's path instead
+(google-workspace skill, `plow_slack`): use it right away.
 
 # Keep fetches small
 

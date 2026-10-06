@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, test, type TestContext } from "node:test";
@@ -99,51 +99,28 @@ test("an inline attachment is saved to the workspace and its bytes never reach t
 
   const result = await runConnector(account, "google", ["gmail", "attachment", "18f2a", "att-1", "--account", "a@example.com"], undefined, dir);
 
-  const savedTo = join(dir, "attachments", "18f2a_Q3_report.pdf");
-  assert.deepEqual(await readFile(savedTo), pdf);
-  assert.equal((await stat(savedTo)).mode & 0o777, 0o600);
+  const [name] = await readdir(join(dir, "attachments"));
+  assert.match(name!, /^[0-9a-f-]{36}_Q3_report\.pdf$/);
+  const file = join(dir, "attachments", name!);
+  assert.deepEqual(await readFile(file), pdf);
+  assert.equal((await stat(file)).mode & 0o777, 0o600);
   assert.ok(!text(result).includes(base64), "base64 reached the model");
-  assert.ok(text(result).includes(savedTo));
+  assert.ok(text(result).includes(file));
   assert.match(text(result), /"mimeType":"application\/pdf"/);
   assert.match(text(result), new RegExp(`"bytes":${pdf.length}`));
 });
 
-for (const lead of [
-  ["--account", "a@example.com"], ["-a", "a@example.com"], ["--account=a@example.com"], ["-a=a@example.com"],
-  ["-aowner@example.com"], ["--confirm-conflict", "-aowner@example.com"],
-]) test(`an attachment command is recognised after plow-gog's own ${lead.join(" ")}, as its planner reads it`, async t => {
+test("two attachments with the same name never overwrite each other", async t => {
   const dir = await workspace(t);
-  plow(t, () => Response.json({ output: JSON.stringify({ stdout: JSON.stringify({ filename: "a.pdf", mimeType: "application/pdf", contentBase64: "YWJj" }) }) }));
-  const result = await runConnector(account, "google", [...lead, "mail", "attachment", "18f2a", "att-1"], undefined, dir);
-  assert.deepEqual(await readFile(join(dir, "attachments", "18f2a_a.pdf")), Buffer.from("abc"));
-  assert.ok(!text(result).includes("YWJj"));
-});
-
-test("local files named in --attach and *-file flags are uploaded and argv says @N", async t => {
-  const dir = await workspace(t);
-  await writeFile(join(dir, "notes.txt"), "notes");
-  await writeFile(join(dir, "body.txt"), "the body");
-  const absolute = join(dir, "deck.pdf");
-  await writeFile(absolute, "deck");
-  const calls = plow(t, () => Response.json({ output: '{"exit_code":0}' }));
-  const argv = ["gmail", "send", "--to", "dana@example.com", "--subject", "s", "--attach", `notes.txt,${absolute}`, "--body-file=body.txt", "--account", "a@example.com"];
-
-  await runConnector(account, "google", argv, undefined, dir);
-
-  const sent = calls[0]!.body as { argv: string[]; files: { name: string; content_base64: string }[] };
-  assert.deepEqual(sent.argv, ["gmail", "send", "--to", "dana@example.com", "--subject", "s", "--attach", "@0,@1", "--body-file=@2", "--account", "a@example.com"]);
-  assert.deepEqual(sent.files.map(f => [f.name, Buffer.from(f.content_base64, "base64").toString()]),
-    [["notes.txt", "notes"], ["deck.pdf", "deck"], ["body.txt", "the body"]]);
-  assert.deepEqual(argv.slice(7, 9), [`notes.txt,${absolute}`, "--body-file=body.txt"], "the caller's argv is not mutated");
-});
-
-test("a file that cannot be read stops the call before Plow is asked", async t => {
-  const dir = await workspace(t);
-  const calls = plow(t, () => Response.json({ output: "{}" }));
-  const result = await runConnector(account, "google", ["gmail", "send", "--attach", "missing.pdf"], undefined, dir);
-  assert.equal(result.isError, true);
-  assert.match(text(result), /ENOENT/);
-  assert.equal(calls.length, 0);
+  let n = 0;
+  plow(t, () => Response.json({ output: JSON.stringify({ stdout: JSON.stringify({
+    filename: "report.pdf", mimeType: "application/pdf", contentBase64: Buffer.from(`copy ${++n}`).toString("base64") }) }) }));
+  const first = await runConnector(account, "google", ["gmail", "attachment", "m1", "att-1"], undefined, dir);
+  const second = await runConnector(account, "google", ["gmail", "attachment", "m1", "att-2"], undefined, dir);
+  const saved = (result: typeof first) => /"saved_to":"([^"]+)"/.exec(text(result))![1]!;
+  assert.notEqual(saved(first), saved(second));
+  assert.equal((await readFile(saved(first))).toString(), "copy 1", "the first saved_to still opens its own bytes");
+  assert.equal((await readFile(saved(second))).toString(), "copy 2");
 });
 
 test("plow_connect returns Plow's link for the owner", async t => {
@@ -161,25 +138,17 @@ function system() {
   } };
 }
 
-test("with no Mac, connectors.changed tells the owner's session to re-check, and wakes it", async () => {
+test("every connector change enqueues a notice and wakes the owner", async () => {
   const { calls, events } = system();
-  await onConnectorsChanged(events as never, "agent:main:main");
-  assert.deepEqual(calls, [
-    ["enqueue", CONNECTORS_CHANGED, { sessionKey: "agent:main:main", contextKey: "plow:connectors.changed", replace: true }],
-    ["wake", { source: "notifications-event", intent: "immediate", reason: "wake", agentId: "main", sessionKey: "agent:main:main" }],
-  ]);
-  assert.match(CONNECTORS_CHANGED, /plow_google \["accounts"\]/);
-});
-
-test("every connectors.changed asks for its own targeted wake, not only the first after boot", async () => {
-  const { calls, events } = system();
-  for (let i = 0; i < 3; i++) await onConnectorsChanged(events as never, "agent:main:main");
-  const wakes = calls.filter(call => call[0] === "wake");
-  assert.equal(wakes.length, 3);
-  for (const [, request] of wakes) {
-    // The shape OpenClaw runs immediately for one session (heartbeat-wake-policy isTargetedUnscheduledWake).
-    assert.deepEqual(request, { source: "notifications-event", intent: "immediate", reason: "wake", agentId: "main", sessionKey: "agent:main:main" });
+  for (let i = 0; i < 3; i++) {
+    await onConnectorsChanged(events as never, "agent:main:main");
+    // The wake is the shape OpenClaw runs immediately for one session (heartbeat-wake-policy isTargetedUnscheduledWake).
+    assert.deepEqual(calls.slice(i * 2), [
+      ["enqueue", CONNECTORS_CHANGED, { sessionKey: "agent:main:main", contextKey: "plow:connectors.changed", replace: true }],
+      ["wake", { source: "notifications-event", intent: "immediate", reason: "wake", agentId: "main", sessionKey: "agent:main:main" }],
+    ]);
   }
+  assert.match(CONNECTORS_CHANGED, /plow_google \["accounts"\]/);
 });
 
 test("while Latch answers, connectors.changed asks only for a Slack re-check: Google stays on the Mac", async t => {

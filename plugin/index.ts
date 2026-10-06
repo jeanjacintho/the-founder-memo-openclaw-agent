@@ -587,8 +587,7 @@ export default defineChannelPluginEntry({
       "[\"accounts\"] lists the connected accounts and the default. Reads fan out across every account; anything that changes mail or the calendar " +
       "runs on one account and needs --account when more than one is connected. Read threads with --sanitize-content. Before a timed calendar create, " +
       "a conflict refusal lists the busy times: tell the owner, and only re-send with --confirm-conflict when they say to. " +
-      "Files: name local files in --attach or *-file flags as usual; they are uploaded. `gmail attachment MSG ATT` saves the file to your workspace " +
-      "and returns saved_to. Pass timezone (IANA, e.g. America/Los_Angeles) for calendar day bounds. If Google is not connected, call plow_connect.",
+      "`gmail attachment MSG ATT` saves the file to your workspace and returns saved_to. Pass timezone (IANA, e.g. America/Los_Angeles) for calendar day bounds. If Google is not connected, call plow_connect.",
       { timezone: { type: "string", description: "The owner's IANA time zone, for calendar day bounds. UTC when omitted." } });
     connector("slack",
       "Your owner's Slack workspaces, run by Plow with their connected Slack accounts. Pass argv without a leading command name; " +

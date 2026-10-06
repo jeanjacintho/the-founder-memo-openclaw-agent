@@ -79,8 +79,8 @@ plow-agents login                 # text the printed code
 plow-agents lines                 # pick a free line
 plow-agents mint LINE_UID         # writes ./plow-credentials before the first up
 
-# Before the first up, add the required role models and prices (see Model below).
-# Edit ./plow-credentials with the values for your install.
+# The image sets the role models and their prices (see Model below);
+# ./plow-credentials only needs them to use different ones.
 docker compose up --build -d
 docker compose logs -f agent      # wait for: plow-boot: identity resolved … and [gateway] ready
 ```
@@ -174,9 +174,9 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 
 ## Model
 
-Every install runs on Plow's GPT-6 Sol (`plow/openai/gpt-6-sol`). A
-one-click install must also supply the [required role models and prices](#model)
-before boot; without them the agent stays parked. The memo's
+Every install runs on Plow's GPT-6 Sol (`plow/openai/gpt-6-sol`). The image
+sets the memo's writer and critic role models and their prices, so a one-click
+install needs nothing more. The memo's
 research runs are long tool loops: on Luna they gave up before research, on
 Sol they finish.
 
@@ -204,9 +204,11 @@ environment instead and outrank the marker; OpenAI then takes
 `OPENAI_API_KEY` or the sign-in, and OpenRouter `OPENROUTER_API_KEY`. After
 changing them, restart and run `plow-llm sync` to move the scheduled jobs.
 
-The nightly tournament requires priced writer and critic models from different
-providers. Set both before starting the agent, each with its USD price per
-million tokens (`input,output,cacheRead,cacheWrite`), in `plow-credentials`:
+The nightly tournament needs priced writer and critic models from different
+providers. The image sets both (writer `plow/anthropic/claude-opus-5`, critic
+`plow/openai/gpt-6-sol`, with their prices). To use others, set both, each with
+its USD price per million tokens (`input,output,cacheRead,cacheWrite`), in
+`plow-credentials`:
 
 ```sh
 MEMO_MODEL_WRITER=plow/<provider>/<model>

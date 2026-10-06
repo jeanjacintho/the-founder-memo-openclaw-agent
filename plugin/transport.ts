@@ -27,7 +27,8 @@ export type Account = { accountId: string; apiBase: string; lineUid: string; ema
 
 export class HttpError extends Error {
   status: number;
-  constructor(status: number) { super(`Plow HTTP ${status}`); this.status = status; }
+  detail?: string;
+  constructor(status: number, detail?: string) { super(`Plow HTTP ${status}`); this.status = status; this.detail = detail; }
 }
 
 export class DeliveryUnknownError extends Error {
@@ -43,7 +44,11 @@ export async function request<T>(account: Pick<Account, "apiBase">, path: string
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: signal ?? AbortSignal.timeout(40_000),
   });
-  if (!response.ok) throw new HttpError(response.status);
+  if (!response.ok) {
+    // Plow's refusals name the rule and never quote the caller, so the detail can be shown as-is.
+    const refusal = await response.json().catch(() => ({})) as { detail?: unknown };
+    throw new HttpError(response.status, typeof refusal.detail === "string" ? refusal.detail : undefined);
+  }
   return await response.json() as T;
 }
 
