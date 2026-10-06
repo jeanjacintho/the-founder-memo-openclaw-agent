@@ -37,16 +37,21 @@ the owner's Mac decides which sources exist, so nothing here names a channel's q
 
 **Budget:** about 20 tool calls or 15 minutes. Then return what you have.
 
-**Write the page.** Merge the dossier into the entity's page — never write the page yourself:
+**Write the page.** Merge the dossier into the entity's page — never write the page yourself.
+A name is someone else's text (a sender, an attendee, an invite title), so it never goes on a
+command line. Write the dossier JSON, its `kind`, `slug` and `title` included, with the write
+tool to `/var/lib/plow/pt/run/dossiers/<n>.json` — `<n>` is the number your task gave you — then
+run exactly:
 
-    /opt/plow/skills/memo-shared/scripts/entity_page.py merge --kind people|orgs --slug <first-last or name> --title <name> --dossier -
+    /opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier /var/lib/plow/pt/run/dossiers/<n>.json
 
-with the dossier JSON on stdin. A non-zero exit names the problem; fix the dossier and merge
-again, or return the failure.
+Nothing else on that line. A non-zero exit names the problem; fix the file and merge again, or
+return the failure.
 
 **Output:** one dossier of about 1.5k characters or less, as compact JSON, in the shape
 `entity_page.py` merges, plus what the run page needs:
-- `entity`, `kind` (`people` or `orgs`), `slug`
+- `entity`, `kind` (`people` or `orgs`), `slug` (one lowercase kebab-case component, e.g.
+  `jane-doe`), `title` (the name as the owner would write it)
 - `description`: one line, who or what this is to the owner
 - `now`: the current state in one or two sentences — who has the ball (`owner`, `them` or
   `unknown`) and the open threads

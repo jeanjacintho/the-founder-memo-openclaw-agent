@@ -24,6 +24,13 @@ def local_state(tmp_path, monkeypatch):
     monkeypatch.setenv("PT_HOME", str(tmp_path / "state"))
 
 
+def dossier_file(tmp_path, dossier=D, name="d.json", **who):
+    """A dossier as the investigator writes it: the entity's names inside the file."""
+    f = tmp_path / name
+    f.write_text(json.dumps({"kind": "people", "slug": "jane-doe", "title": "Jane Doe", **who, **dossier}))
+    return f
+
+
 def test_new_page_is_valid_okf_with_now_and_timeline():
     meta, body = wiki.split_page(ep.merge(None, D, "people", "Jane Doe", "2026-10-01"))
     assert meta["type"] == "Person" and meta["category"] == "entities"
@@ -68,10 +75,8 @@ def test_malformed_dossier_fails_loudly(bad):
 
 def test_cli_writes_then_validates_on_the_mac(mac, tmp_path):
     mac.wiki("init", "~/Plow/wiki")  # plow-wiki seeds wiki.toml with the shared entity roots
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps(D))
-    code = ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe",
-                    "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool)
+    f = dossier_file(tmp_path)
+    code = ep.main(["merge", "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool)
     assert code == 0
     assert (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
 
@@ -83,10 +88,8 @@ def test_a_page_the_wiki_refuses_fails_the_run(mac, tmp_path, capsys):
     page.write_text(ep.merge(None, D, "people", "Jane Doe", "2026-10-01").replace(
         "category: entities", "category: entities\norg: not a link"))
     original = page.read_text()
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps(D))
-    code = ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane Doe",
-                    "--dossier", str(f), "--today", "2026-10-02"], call_tool=mac.call_tool)
+    f = dossier_file(tmp_path)
+    code = ep.main(["merge", "--dossier", str(f), "--today", "2026-10-02"], call_tool=mac.call_tool)
     assert code == 1
     assert "entities/people/jane-doe.md" in capsys.readouterr().err
     assert page.read_text() == original
@@ -96,16 +99,43 @@ def test_a_page_the_wiki_refuses_fails_the_run(mac, tmp_path, capsys):
 def test_invalid_slug_never_calls_latch(slug, tmp_path):
     def forbidden(*args):
         pytest.fail("invalid slug reached Latch")
-    assert ep.main(["merge", "--kind", "people", "--slug", slug, "--title", "Jane",
-                    "--dossier", str(tmp_path / "missing")], call_tool=forbidden) == 1
+    f = dossier_file(tmp_path, slug=slug)
+    assert ep.main(["merge", "--dossier", str(f)], call_tool=forbidden) == 1
+
+
+@pytest.mark.parametrize("who, why", [
+    ({"kind": "deals"}, "kind must be one of"),
+    ({"title": "  "}, "has no title"),
+    ({"slug": None}, "slug must be"),
+])
+def test_a_dossier_without_its_names_never_calls_latch(who, why, tmp_path, capsys):
+    def forbidden(*args):
+        pytest.fail("a nameless dossier reached Latch")
+    f = dossier_file(tmp_path, **who)
+    assert ep.main(["merge", "--dossier", str(f)], call_tool=forbidden) == 1
+    assert why in capsys.readouterr().err
+
+
+def test_a_hostile_name_stays_data(mac, tmp_path):
+    # A sender's display name is someone else's text: it travels in the file,
+    # becomes the page title, and never reaches a command line.
+    mac.wiki("init", "~/Plow/wiki")
+    hostile = 'Jane"; rm -rf ~ #$(id)'
+    f = dossier_file(tmp_path, title=hostile)
+    assert ep.main(["merge", "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 0
+    meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
+    assert meta["title"] == hostile
+
+
+def test_the_command_takes_no_name_argument():
+    with pytest.raises(SystemExit):
+        ep.main(["merge", "--title", "Jane", "--dossier", "x.json"])
 
 
 def test_rejected_new_page_is_removed(mac, tmp_path, capsys):
     mac.wiki("init", "~/Plow/wiki")
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps({**D, "sources": [{"resource": ""}]}))
-    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
-                    "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 1
+    f = dossier_file(tmp_path, {**D, "sources": [{"resource": ""}]})
+    assert ep.main(["merge", "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 1
     assert "wiki validate" in capsys.readouterr().err
     assert not (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
 
@@ -113,10 +143,8 @@ def test_rejected_new_page_is_removed(mac, tmp_path, capsys):
 def test_bare_cli_uses_owner_day(mac, tmp_path, monkeypatch):
     mac.wiki("init", "~/Plow/wiki")
     monkeypatch.setattr(ep, "owner_today", lambda: date(2026, 10, 2))
-    f = tmp_path / "d.json"
-    f.write_text(json.dumps(D))
-    assert ep.main(["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane",
-                    "--dossier", str(f)], call_tool=mac.call_tool) == 0
+    f = dossier_file(tmp_path)
+    assert ep.main(["merge", "--dossier", str(f)], call_tool=mac.call_tool) == 0
     meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
     assert meta["created"] == meta["updated"] == "2026-10-02"
 
@@ -125,11 +153,10 @@ def test_bare_cli_uses_owner_day(mac, tmp_path, monkeypatch):
 def test_overlapping_updates_preserve_successful_page(mac, tmp_path, reject_second):
     mac.wiki("init", "~/Plow/wiki")
     first_read, release, second_read = Event(), Event(), Event()
-    first = tmp_path / "first.json"
-    first.write_text(json.dumps(D))
-    second = tmp_path / "second.json"
-    second.write_text(json.dumps({**D, "timeline": [{"date": "2026-10-02", "fact": "New fact", "item": "gmail:me:t2"}],
-                                  "sources": [{"resource": "" if reject_second else "gmail:me:t2"}]}))
+    first = dossier_file(tmp_path, name="first.json")
+    second = dossier_file(tmp_path, {**D, "timeline": [{"date": "2026-10-02", "fact": "New fact", "item": "gmail:me:t2"}],
+                                     "sources": [{"resource": "" if reject_second else "gmail:me:t2"}]},
+                          name="second.json")
 
     def call(which):
         def tool(name, args):
@@ -147,7 +174,7 @@ def test_overlapping_updates_preserve_successful_page(mac, tmp_path, reject_seco
     page = mac.home / "Plow/wiki/entities/people/jane-doe.md"
     page.parent.mkdir(parents=True, exist_ok=True)
     page.write_text(ep.merge(None, {**D, "timeline": []}, "people", "Jane", "2026-10-01"))
-    argv = ["merge", "--kind", "people", "--slug", "jane-doe", "--title", "Jane", "--today", "2026-10-02", "--dossier"]
+    argv = ["merge", "--today", "2026-10-02", "--dossier"]
     with ThreadPoolExecutor(2) as pool:
         one = pool.submit(ep.main, [*argv, str(first)], call(1))
         try:

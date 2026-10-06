@@ -205,9 +205,11 @@ the `ref`.
 Gather runs once. One spawn set (split at ten) of:
 
 - **One investigator per key name**, per `/opt/plow/skills/memo-shared/references/investigate.md`.
-  Each one owns its entity's page for this run: it merges its dossier with
-  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --kind people|orgs --slug <slug> --title <name> --dossier -`
-  and returns the dossier and the merge's exit. A non-zero merge fails that investigator loudly;
+  Each one owns its entity's page for this run. Its task names the key name by its number on
+  `## Key names` (`<n>`), never by the name itself; it writes its dossier to
+  `/var/lib/plow/pt/run/dossiers/<n>.json` and merges it with
+  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier /var/lib/plow/pt/run/dossiers/<n>.json`
+  — a name never appears on a command line — and returns the dossier and the merge's exit. A non-zero merge fails that investigator loudly;
   the coordinator re-runs it, and never hand-writes the page.
 - **Customer Investigator.** The same charter with the entity “the owner's customers and users”:
   who they are, usage evidence, relationship, and whether they would vouch, from messages with

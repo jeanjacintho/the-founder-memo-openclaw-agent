@@ -63,8 +63,11 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
   (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
 - `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
-  `entity_page.py merge --kind people|orgs --slug <lowercase-kebab-slug> --title <title> --dossier <file|->`,
-  the dossier `{"description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
+  `entity_page.py merge --dossier /var/lib/plow/pt/run/dossiers/<n>.json`, nothing else on the line:
+  the dossier file, written with the write tool, carries `{"kind", "slug", "title", "description",
+  "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}` — the entity's names travel in
+  the file, never on a command line. A slug that is not one lowercase kebab-case component, an
+  unknown kind or a missing title is refused before the Mac is touched.
   It replaces `## Now`, merges `## Timeline` on (date, item) newest first, capped at 20, keeps
   every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
   `wiki validate --writer shared`. Exit 1 names the problem on stderr; nothing is half-merged.

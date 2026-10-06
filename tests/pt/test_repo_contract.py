@@ -1112,3 +1112,18 @@ class TestMemoContract:
 
         for md in ROOT.rglob("*.md"):
             assert not re.search(r"(gpt-\d|claude-|gemini-)", md.read_text()), md.relative_to(ROOT)
+
+
+class TestNamesNeverReachAShell:
+    def test_entity_names_travel_in_the_dossier_file_never_on_a_command_line(self):
+        # A sender's or attendee's name is someone else's text; a command line is
+        # parsed by a shell before entity_page.py can refuse anything.
+        import re
+
+        command = "entity_page.py merge --dossier /var/lib/plow/pt/run/dossiers/<n>.json"
+        for rel in ("memo-shared/references/investigate.md", "memo-tournament/SKILL.md"):
+            assert command in (ROOT / rel).read_text(), rel
+        for md in ROOT.rglob("*.md"):
+            for line in md.read_text().splitlines():
+                if "entity_page.py merge" in line:
+                    assert not re.search(r"--(?:title|slug|kind)\b|--dossier -", line), f"{md.relative_to(ROOT)}: {line.strip()}"
