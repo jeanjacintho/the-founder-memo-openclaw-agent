@@ -105,6 +105,16 @@ A result (even zero rows) works; `blocked`, an error or an unreachable Mac
 switches nothing on. It prints `SIGNALS:group_chat=…,email=…,imessage=…`;
 confirm in one line. No cron changes: the night reads the switches itself.
 
+## An event install
+
+An event build of this image sets `MEMO_EVENT` (a code in
+`memo-setup/assets/events.json`). `record_setup.py` then fills the printer (the
+event's shared printer line, 72 mm) and the Mac fields itself, so
+`NEXT_QUESTION` goes from `hour` straight to `close`: never ask about a printer
+or a Mac. At close, `finalize_setup.py` queues the first memo now instead of the
+bootstrap (`queued: memo-now`). Tell the owner, in one line, that their first
+memo is running and will print at the event's printer.
+
 ## The questions, in order
 
 Start of turn, every turn while `SETUP_NEEDED`: `setup_needed.py`'s second
