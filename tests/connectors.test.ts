@@ -166,9 +166,20 @@ test("with no Mac, connectors.changed tells the owner's session to re-check, and
   await onConnectorsChanged(events as never, "agent:main:main");
   assert.deepEqual(calls, [
     ["enqueue", CONNECTORS_CHANGED, { sessionKey: "agent:main:main", contextKey: "plow:connectors.changed", replace: true }],
-    ["wake", { source: "notifications-event", intent: "event", reason: "connectors.changed", sessionKey: "agent:main:main" }],
+    ["wake", { source: "notifications-event", intent: "immediate", reason: "wake", agentId: "main", sessionKey: "agent:main:main" }],
   ]);
   assert.match(CONNECTORS_CHANGED, /plow_google \["accounts"\]/);
+});
+
+test("every connectors.changed asks for its own targeted wake, not only the first after boot", async () => {
+  const { calls, events } = system();
+  for (let i = 0; i < 3; i++) await onConnectorsChanged(events as never, "agent:main:main");
+  const wakes = calls.filter(call => call[0] === "wake");
+  assert.equal(wakes.length, 3);
+  for (const [, request] of wakes) {
+    // The shape OpenClaw runs immediately for one session (heartbeat-wake-policy isTargetedUnscheduledWake).
+    assert.deepEqual(request, { source: "notifications-event", intent: "immediate", reason: "wake", agentId: "main", sessionKey: "agent:main:main" });
+  }
 });
 
 test("while Latch answers, connectors.changed asks only for a Slack re-check: Google stays on the Mac", async t => {

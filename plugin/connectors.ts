@@ -213,7 +213,7 @@ export const CONNECTORS_CHANGED = "Plow says your owner's Google or Slack connec
 
 type SystemEvents = {
   enqueueSystemEvent: (text: string, options: { sessionKey: string; contextKey?: string; replace?: boolean }) => boolean;
-  requestHeartbeat: (options: { source: "notifications-event"; intent: "event"; reason?: string; sessionKey?: string }) => void;
+  requestHeartbeat: (options: { source: "notifications-event"; intent: "immediate"; reason: "wake"; agentId: string; sessionKey: string }) => void;
 };
 
 /** On `connectors.changed`, tell the owner's session and wake it to re-check: Slack always, Google only when it is not on the Mac. */
@@ -222,5 +222,11 @@ export async function onConnectorsChanged(system: SystemEvents, sessionKey: stri
   const notice = await latchPresent() ? SLACK_CHANGED : CONNECTORS_CHANGED;
   // One pending notice at a time: a burst of changes is still one re-check.
   system.enqueueSystemEvent(notice, { sessionKey, contextKey: "plow:connectors.changed", replace: true });
-  system.requestHeartbeat({ source: "notifications-event", intent: "event", reason: "connectors.changed", sessionKey });
+  // A targeted, unscheduled wake: OpenClaw runs it now for this session only when
+  // it is exactly this shape (source notifications-event, intent immediate,
+  // reason "wake", a session and a configured agent; heartbeat-wake-policy
+  // isTargetedUnscheduledWake). Any other shape is an ordinary heartbeat wake,
+  // which waits on the heartbeat schedule: the first event after boot ran, the
+  // rest were skipped as not due.
+  system.requestHeartbeat({ source: "notifications-event", intent: "immediate", reason: "wake", agentId: "main", sessionKey });
 }
