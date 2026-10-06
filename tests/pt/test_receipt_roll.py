@@ -46,7 +46,7 @@ def test_every_slot_is_capped_so_the_roll_stays_short():
         item.update(headline=long, first_step=long, advisor={**item["advisor"], "quote": long, "name": long})
     worst["priority"]["questions"] = [long] * 3
     html = weasyprint.HTML(string=render.receipt_html(worst, long)).render().pages[0]._page_box.children[0]
-    assert html.margin_height() * 25.4 / 96 < 220  # mm (213 today); uncapped, this memo runs over a meter
+    assert html.margin_height() * 25.4 / 96 < 285  # mm (277 today); uncapped, this memo runs over a meter
 
 
 def test_the_receipt_embeds_its_fonts_and_renders_one_72mm_page():

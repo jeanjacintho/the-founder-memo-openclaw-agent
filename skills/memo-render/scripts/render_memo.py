@@ -338,17 +338,16 @@ p, h1, h2, h3, ul { margin: 0; padding: 0; }
 .slot .num { float: left; width: 26px; height: 26px; margin: 0 8px 0 0; border-radius: 50%;
   background: #000; color: #fff; text-align: center; font: 900 17px/25px "Memo Display", serif;
   font-variant-numeric: lining-nums; }
-.slot h2 { min-height: 26px; font: 900 16px/1.12 "Memo Display", serif; line-clamp: 2; }
-.slot .step { clear: left; margin-top: 4px; line-clamp: 3; }
+.slot h2 { min-height: 26px; font: 900 16px/1.12 "Memo Display", serif; line-clamp: 3; }
+.slot .step { clear: left; margin-top: 4px; line-clamp: 5; }
 .slot .step strong { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; }
 
 .r-box { margin-top: 10px; border: 2px solid #000; padding: 0 7px 5px; }
 .r-box h3 { margin: 0 -7px 5px; padding: 3px 4px 4px; background: #000; color: #fff; text-align: center;
   font: 700 9px/1.3 "Memo Text", serif; letter-spacing: 1px; text-transform: uppercase; }
 .r-box ul { list-style: none; }
-.r-box li { padding: 3px 0; border-bottom: 2px dotted #000; font-weight: 700; line-clamp: 2; }
+.r-box li { padding: 3px 0; border-bottom: 2px dotted #000; font-weight: 700; line-clamp: 4; }
 .r-box li:last-child { border-bottom: 0; }
-.unavailable li { line-clamp: 3; }
 
 blockquote { margin: 10px 0 0; padding: 7px 4px 6px; border-top: 2px solid #000; border-bottom: 2px solid #000;
   text-align: center; }
