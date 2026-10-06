@@ -639,6 +639,15 @@ class TestSoul:
         assert "45 minutes" in rule and "memo.max_usd" in budget
         assert "never abandon a started phase" in rule
 
+    def test_failed_phase_retries_and_child_timeouts_are_bounded(self):
+        skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
+        assert 'runTimeoutSeconds: 3600' in skill
+        assert 'runTimeoutSeconds: 900' in skill
+        assert 'retry that phase **once**' in skill
+        assert 'Keep the retry count on `RUN_PAGE`' in skill
+        assert 'On a second failure or timeout, stop research' in skill
+        assert 'Bootstrap uses\nits explanation-only stop path' in skill
+
     def test_re_evaluating_priorities_queues_a_run_never_cron_run(self):
         # Measured live 2026-09-30: asked to re-evaluate today's priorities, the
         # chat fired the daily job with `cron run` and raced the lock and window.
@@ -981,7 +990,7 @@ class TestDeployment:
         main = (REPO / "boot" / "main.ts").read_text()
         assert '.replaceAll("{{model}}", modelName(route))' in main
         assert 'pathPrepend: ["/opt/plow/pt-venv/bin"]' in config
-        assert 'deny: ["ask_user", "secrets"]' in config
+        assert 'deny: ["ask_user", "secrets", "process"]' in config
         assert 'profile: "messaging"' in config
         # The Mac is reached only through boot's loopback bridge: one relay,
         # the agent's own credential, never a hand-built device URL.

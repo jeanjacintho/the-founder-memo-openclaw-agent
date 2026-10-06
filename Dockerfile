@@ -133,6 +133,9 @@ RUN case "${TARGETARCH:-amd64}" in \
  && chmod 0755 /usr/local/bin/agentsview
 RUN cd /opt/plow && npm ci --omit=dev --omit=peer --omit=optional --ignore-scripts && node /opt/plow/build.ts && chmod +x /opt/plow/probe
 ENV OPENCLAW_STATE_DIR=/var/lib/plow OPENCLAW_CONFIG_PATH=/var/lib/plow/openclaw.json OPENCLAW_INCLUDE_ROOTS=/etc/plow/openclaw OPENCLAW_NO_RESPAWN=1 NODE_DISABLE_COMPILE_CACHE=1
+# One-off cache diagnostics retain fingerprints and counters, not conversation text.
+# Tracing stays disabled unless an operator explicitly enables it.
+ENV OPENCLAW_CACHE_TRACE_MESSAGES=0 OPENCLAW_CACHE_TRACE_PROMPT=0 OPENCLAW_CACHE_TRACE_SYSTEM=0
 # Agent Index listing. Compose (and a host that injects env) can override without rebuild.
 ENV AGENT_ID=thefoundertimes \
     AGENT_NAME="The Founder Memo" \

@@ -76,10 +76,9 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       ...(llm.provider === "openai" ? {
         models: { "openai/*": { agentRuntime: { id: "openclaw" } } }, modelPolicy: { allow: [] },
       } : {}),
-      // The current tournament directly spawns up to six leaf critics.
-      // Raise depth and width when the phase-coordinator engine lands (issue #59 Task 9).
-      // Delegation stays a suggestion so owner chat turns are not pushed into sub-agents.
-      subagents: { maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest" },
+      // A Gather coordinator may take an hour; omitted child timeouts must not
+      // inherit OpenClaw's unbounded default. Chat delegation remains a suggestion.
+      subagents: { maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest", runTimeoutSeconds: 3600 },
     } },
     mcp: { sessionIdleTtlMs: 300_000, ...(identity.mcp_url ? { servers: { plow: {
       url: "http://127.0.0.1:18790/mcp", transport: "streamable-http",
@@ -124,12 +123,14 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       // Code Mode catalogs every eligible tool behind exec/wait and has no
       // per-tool visibility allowlist.
       profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
-        "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+        "read", "write", "edit", "exec", "plow_start_thread", "plow_record_signal",
         "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
         "plow_google", "plow_slack", "plow_connect",
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
-      ], deny: ["ask_user", "secrets"],
+      ],
+      // Without process, OpenClaw awaits exec completion instead of model polling.
+      deny: ["ask_user", "secrets", "process"],
       // The memo-* scripts' python3 is the image's 3.13 venv, never the system 3.11.
       exec: { pathPrepend: ["/opt/plow/pt-venv/bin"] },
     },
