@@ -30,7 +30,9 @@ say Google access is not available.
 Pass argv without the leading `plow-gog` and learn the surface from
 `["--help"]`; `["accounts"]` lists what is connected. If Google is not
 connected, call `plow_connect` with `google`, send the owner the link it
-returns, and carry on when Plow tells you their connections changed.
+returns, and carry on when Plow tells you their connections changed. If they
+have not connected by its `expires_at`, or say the link failed or expired, call
+`plow_connect` again and send them the new link.
 
 ## Either way
 

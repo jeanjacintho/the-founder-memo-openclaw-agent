@@ -300,7 +300,8 @@ export default defineChannelPluginEntry({
     api.registerTool(context => ({
       name: "plow_connect", label: "Connect Google or Slack",
       description: "Get the link your owner opens to connect Google or Slack to Plow. Send it to them in your chat as is; it is single-use and expires " +
-        "in minutes. When they finish, Plow tells you and you re-check with plow_google [\"accounts\"] or plow_slack [\"status\"].",
+        "in minutes. When they finish, Plow tells you and you re-check with plow_google [\"accounts\"] or plow_slack [\"status\"]. " +
+        "If they have not connected by expires_at, or say the link failed or expired, call plow_connect again and send them the new link.",
       parameters: { type: "object", required: ["provider"], additionalProperties: false,
         properties: { provider: { type: "string", enum: ["google", "slack"] } } },
       async execute(_id, args: { provider: Provider }) {

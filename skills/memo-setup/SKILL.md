@@ -329,7 +329,9 @@ poll; do not type what the probe is.
    and they said yes, call `plow_connect` with `google`, send the owner its
    link in their language, record `mail.configured=false` for now, and set
    it to `true` once Plow tells you their connections changed and the probe
-   answers. There is no Mail.app without a Mac: skip step 2.
+   answers. If they have not connected by the link's `expires_at`, or say it
+   failed or expired, call `plow_connect` again and send the new link. There
+   is no Mail.app without a Mac: skip step 2.
 2. Only if that call is denied, 401/412, or Latch has no Google account:
    probe Mail.app:
 
