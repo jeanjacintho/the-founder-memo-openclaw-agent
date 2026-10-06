@@ -126,3 +126,13 @@ def test_the_count_is_the_owner_days(pt_home, monkeypatch):
     from datetime import date
     monkeypatch.setattr(attempts, "owner_today", lambda: date(2030, 1, 1))
     assert run("begin") == "proceed"
+
+
+def test_an_owner_ask_grants_one_start_past_a_spent_day_and_a_retry_is_capped_again(pt_home, chat):
+    for _ in range(attempts.MAX_ATTEMPTS):
+        run("begin")
+    assert run("begin") == "stop"
+    attempts.grant()
+    assert run("begin", "--key", "t_8c1d") == "proceed"  # a topic's own count is not the grant's
+    assert run("begin") == "proceed"
+    assert run("begin") == "stop"

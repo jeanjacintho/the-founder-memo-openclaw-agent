@@ -58,6 +58,7 @@ sys.path.insert(0, os.path.join(_SKILLS, "memo-shared", "scripts"))
 import pt_config_gate as _gate
 from record_owner_language import _write_json
 from pt_paths import config_file, pt_home, skills  # noqa: E402
+import run_attempts  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
@@ -293,6 +294,7 @@ def queue_now(backend, listing, window_minutes, owner_tz, clock=None):
            "timeout": run_timeout_seconds(window_minutes), "keep_after_run": True}
     previous = [j.id for j in listing if j.name == NOW_NAME]
     _check(backend.create(job), f"could not queue {NOW_NAME}")
+    run_attempts.grant()  # the owner asked: this copy may start past a spent day
     print(f"queued: {NOW_NAME} ({job['schedule']})")
     for job_id in previous:
         _check(backend.remove(job_id), f"could not remove the previous {NOW_NAME}")
