@@ -5,12 +5,13 @@ The Plow channel runs this before every owner DM turn and hands the
 output to the model; AGENTS.md tells the model to run it itself when that
 block is missing.
 A missing file, unreadable JSON, or any of the three setup keys absent
+(owner.timezone, memo.start, printer.configured)
 is SETUP_NEEDED — load memo-setup, do not introduce a general assistant.
 READY means the interview already finished; greetings are ordinary turns.
 
 When SETUP_NEEDED, a second line names what `.setup-draft.json` already
 holds (or DRAFT:none). Chat history is not progress: a wiped session
-still shows old printer/mail turns in the Plow thread.
+still shows old printer turns in the Plow thread.
 
 Exit 0 either way so a missing config is not mistaken for a crashed check.
 """
@@ -21,28 +22,31 @@ import re
 import sys
 from pathlib import Path
 
+import pt_config_gate as _config_gate
 from pt_paths import config_file
 
-_DELIVERY_HOUR_RE = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
+_START_RE = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 CONFIG_FILE = str(config_file())
 
 
 def setup_needed(path):
     try:
-        config = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        config = json.loads(Path(path).read_text(encoding="utf-8"), parse_constant=lambda token:
+                            (_ for _ in ()).throw(ValueError(f"non-standard JSON constant {token}")))
+        return bool(_config_gate.gate(config))
+    except (OSError, ValueError, _config_gate.GateError):
         return True
     if not isinstance(config, dict):
         return True
     owner = config.get("owner")
-    delivery = config.get("delivery")
+    memo = config.get("memo")
     printer = config.get("printer")
     tz = owner.get("timezone") if isinstance(owner, dict) else None
-    hour = delivery.get("hour") if isinstance(delivery, dict) else None
+    hour = memo.get("start") if isinstance(memo, dict) else None
     configured = printer.get("configured") if isinstance(printer, dict) else None
     if not (isinstance(tz, str) and tz.strip()):
         return True
-    if not (isinstance(hour, str) and _DELIVERY_HOUR_RE.fullmatch(hour)):
+    if not (isinstance(hour, str) and _START_RE.fullmatch(hour)):
         return True
     if not isinstance(configured, bool):
         return True
@@ -59,24 +63,15 @@ def draft_line(config_path):
     if not isinstance(draft, dict):
         return "DRAFT:none"
     fields = []
-    hour = draft.get("local_hour")
+    hour = draft.get("start")
     if isinstance(hour, str) and hour.strip():
-        fields.append("local_hour")
+        fields.append("start")
     printer = draft.get("printer")
     if isinstance(printer, dict) and isinstance(printer.get("configured"), bool):
         fields.append("printer")
-    priority = draft.get("priority")
-    if isinstance(priority, dict) and isinstance(priority.get("configured"), bool):
-        fields.append("priority")
-    mail = draft.get("mail")
-    if isinstance(mail, dict) and isinstance(mail.get("configured"), bool):
-        fields.append("mail")
-    elif isinstance(draft.get("mail.configured"), bool):
-        fields.append("mail")
-    signals = draft.get("signals")
-    if isinstance(signals, dict) and all(
-            isinstance(signals.get(s), bool) for s in ("group_chat", "email", "imessage")):
-        fields.append("signals")
+    mac = draft.get("mac")
+    if isinstance(mac, dict) and isinstance(mac.get("awake"), bool):
+        fields.append("awake")
     return "DRAFT:" + (",".join(fields) if fields else "none")
 
 

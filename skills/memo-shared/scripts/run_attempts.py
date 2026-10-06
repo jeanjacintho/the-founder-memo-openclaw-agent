@@ -6,7 +6,7 @@ and OpenClaw retries the job: 201 rate-limit errors and 909 model calls in one
 afternoon, an owner told nothing. Each retry redoes the whole paper, so the
 retries themselves feed the rate limit. This counts the paper's starts on the
 owner's day and, past MAX_ATTEMPTS undelivered ones, stops the run before it
-starts another research pass -- and tells the owner, once, itself.
+spends another model call -- and tells the owner, once, itself.
 
   begin [--key KEY] [--scheduled]
               run once the workspace lock is held (a topic edition holds none),
@@ -16,14 +16,11 @@ starts another research pass -- and tells the owner, once, itself.
               the main paper's day, nor the other way round.
               Prints one word:
                 proceed       attempt N of MAX_ATTEMPTS; go on
-                cooldown      an undelivered start is cooling down; the owner was
-                              told the earliest retry time: release and stop
-                cooldown-untold  same wait, but the notice failed; the failure hook
-                              may tell the owner, and the next start retries the notice
-                stop          the day's attempts are spent and the owner has been
+                stop          a retry is cooling down or the day's attempts are spent,
+                              and the owner has been
                               told (now, by this call, or on an earlier start):
                               release the lock and stop
-                stop-untold   spent, but the notice could not be posted: release
+                stop-untold   blocked, but the notice could not be posted: release
                               the lock and stop; the owner is still untold, so the
                               next start tries again (and the failure-notice hook
                               still tells them the edition did not arrive)
@@ -34,13 +31,13 @@ falls between the send and the mark, and no model-written text reaches a
 shell. --scheduled says the job runs again on its own tomorrow, for the line
 that says when the next try is; without it the line says to ask again later.
 
-Retries are admitted no sooner than two hours after the first start and
-four hours after the second. Cooldown checks do not consume attempts. This
-covers every undelivered start, including 429s; it does not sleep inside a
-model session or promise delivery at the earliest retry time. OpenClaw owns
-the next cron tick. Existing counters without retry_at retain their count
-and acquire the delay at their next admitted start.
+Retries wait at least two hours after the first start and four after the second.
+Cooldown checks do not consume attempts; deadlines are UTC elapsed time, displayed
+on the owner's clock. Existing counters without retry_at keep their spent starts.
 
+An explicit owner ask lifts the cap or cooldown once: queue_now (register_crons.py --now)
+calls grant(), and the paper's next start proceeds past a spent day, consuming
+the grant, so a retry of the same job is capped again.
 The count starts over when post_to_chat.py --clear-attempts [KEY] confirms a
 post or stages the edition (see `clear`). Always exits 0, like run_lock.py, so a
 cron-fired session reads the word. Each count lives in
@@ -55,7 +52,7 @@ import json
 import re
 import sys
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from owner_chat import post_owner_text
 from owner_phrases import phrase
@@ -63,7 +60,6 @@ from owner_time import owner_now, owner_today
 from pt_paths import pt_home
 
 MAX_ATTEMPTS = 3
-# Hourly cron retries must skip at least one tick, then wait longer again.
 RETRY_SECONDS = (2 * 3600, 4 * 3600)
 DEFAULT_KEY = "paper"
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -98,26 +94,45 @@ def _notice(scheduled):
     return phrase("attempts.spent_scheduled" if scheduled else "attempts.spent_on_demand")
 
 
+def _grant_path():
+    return pt_home() / "paper-attempts-grant"
+
+
+def grant():
+    """The owner asked for the paper now (queue_now): one start past a spent day.
+
+    A file, not a flag in the job's prompt: OpenClaw re-fires a failed job with
+    the same prompt, so a flag would lift the cap on every retry. The first start
+    consumes the grant; a retry of that job finds none and meets the cap again.
+    """
+    with _locked():
+        pt_home().mkdir(parents=True, exist_ok=True)
+        _grant_path().touch()
+
+
 def begin(key=DEFAULT_KEY, scheduled=False):
     path = _path(key)
     with _locked():
         data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
+        # Any start of the paper consumes the grant, so none lingers to lift a later retry.
+        granted = key == DEFAULT_KEY and _grant_path().exists()
+        if granted:
+            _grant_path().unlink()
         now = owner_now()
         retry_at = datetime.fromisoformat(data["retry_at"]) if data.get("retry_at") else None
-        if data["starts"] < MAX_ATTEMPTS and retry_at and now < retry_at:
-            if not data.get("cooldown_told", False):
+        if not granted and data["starts"] < MAX_ATTEMPTS and retry_at and now.astimezone(timezone.utc) < retry_at:
+            if not data["told"]:
                 try:
-                    post_owner_text(phrase("attempts.cooldown").format(
-                        time=retry_at.astimezone(now.tzinfo).strftime("%Y-%m-%d %H:%M %Z")))
-                    data["cooldown_told"] = True
+                    post_owner_text(phrase("attempts.cooldown", time=retry_at.astimezone(now.tzinfo).strftime("%Y-%m-%d %H:%M %Z")))
+                    data["told"] = True
                 except SystemExit as exc:
                     print(f"run_attempts: the cooldown notice was not posted: {exc}", file=sys.stderr)
-            word = "cooldown" if data.get("cooldown_told") else "cooldown-untold"
-        elif data["starts"] < MAX_ATTEMPTS:
+            word = "stop" if data["told"] else "stop-untold"
+        elif data["starts"] < MAX_ATTEMPTS or granted:
             data["starts"] += 1
+            data["told"] = False
             if data["starts"] < MAX_ATTEMPTS:
-                data["retry_at"] = (now + timedelta(seconds=RETRY_SECONDS[data["starts"] - 1])).isoformat()
-            data["cooldown_told"] = False
+                data["retry_at"] = (now.astimezone(timezone.utc) + timedelta(seconds=RETRY_SECONDS[data["starts"] - 1])).isoformat()
             word = "proceed"
         else:
             if not data["told"]:

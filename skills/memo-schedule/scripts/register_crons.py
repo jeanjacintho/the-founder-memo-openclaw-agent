@@ -1,54 +1,38 @@
 #!/usr/bin/env python3
-"""Register the Founder Times' crons, idempotently, from the topic store.
+"""Register the memo's crons, idempotently, from pt/config.json.
 
 Why this exists at all. The scheduler keeps its jobs in the gateway's state
 volume; a fresh volume has none, and nothing else replays them. Keeping the
-spec here, derived from pt/topics.json (the one record of what the owner
-asked to be watched), means "set up the plow times crons" replays a reviewed
-derivation instead of improvising schedules from a sentence. The spec is
-data-driven rather than fixed: the topic list changes.
+spec here, derived from pt/config.json, means "set up the crons" replays a
+reviewed derivation instead of improvising schedules from a sentence.
 
-The spec (design doc §3.6 and the personalized-paper plan §3.3/§6):
+The spec:
 
-  pt-daily-edition       <min> <hour> * * *        one job; exists while
-                         computed as                setup can register
-                         delivery.hour -
-                         lead_minutes (never
-                         before midnight)
-  pt-daily-edition-<n>   same, extra_hours         reprint of the MAIN paper
-                         (n ≥ 2)                    (unscoped sections), not
-                                                    a different roster
-  pt-paper-HHMM          same computation          one job per distinct
-                         against a section's        section deliver_at that
-                         deliver_at                 is not delivery.hour
-  pt-subscription-<id>   0 <delivery.hour> * * *   one per subscription topic
-                                                   not yet cancelled
-  pt-oneoff-<id>         one-shot at the topic's   one per pending one-off
-                         scheduled_for             still ahead; swept once
-                                                   delivered
-  pt-daily-edition-now   one-shot, a minute out    --now: the main paper on
-                                                   demand, same prompt, no hold
+  memo-nightly   <min> <hour> * * *, memo.start   the night's run; its budget
+                 (default 01:00) in owner.timezone is memo.window_minutes
+                                                   (default 240) plus the
+                                                   publish margin
+  memo-deliver   every minute                      no-agent command job:
+                                                   resumes post-delivery
+                                                   finalizers that failed
+  memo-now       one-shot, a minute out            --now: tonight's run on
+                                                   demand, same prompt
+  memo-bootstrap one-shot, a minute out            once, right after setup
+                                                   (finalize_setup.py): the
+                                                   first full-history read
 
-Every cron job is registered with `--tz owner.timezone`: every stored hour --
-delivery.hour, extra_hours, a section's deliver_at -- is the owner's wall
-clock, and the scheduler fires on it directly, daylight saving included.
-post_to_chat.py's --hold-until waits on the same zone. Each job is an agent
-turn in an isolated session with delivery `none`; the paper reaches chat
-through post_to_chat.py.
+The cron job carries `--tz owner.timezone`: memo.start is the owner's wall
+clock, and the scheduler fires on it directly, daylight saving included. The
+window counts from when the run actually starts, not from the nominal hour.
+Each job is an agent turn in an isolated session with delivery `none`; the
+memo reaches chat through post_to_chat.py.
 
-This script therefore CREATES missing jobs and REMOVES pt-* jobs whose
-topic is gone -- cancelled, delivered one-offs, or names with no topic
-behind them. It never touches a job whose name does not start with pt-:
-those are not this agent's to manage (OpenClaw keeps its own jobs, such as
-its heartbeat, in the same list).
-
-It also RECONCILES drift, which create-if-missing alone does not: a job
-that is registered with a different schedule, zone, prompt or model than
-the spec calls for is updated in place with `cron edit`. Drift is only
-judged on a field the scheduler reported; a missing field is left alone
-rather than edited on a guess. Never remove-then-create a drifted job: if
-create failed after remove, the morning paper had no job until someone
-reran the script.
+This script CREATES missing jobs, RECONCILES drift (schedule, zone, prompt,
+model or run budget) in place with `cron edit`, and REMOVES a registered
+memo-* job the spec no longer names. After replacements are enabled, it
+retires the exact legacy paper/delivery jobs; unrelated jobs are untouched. Never
+remove-then-create a drifted job: if create failed after remove, the night
+had no job until someone reran the script.
 
 One refusal is the point of the script: an unreadable, partial or
 unexpected job listing aborts. Never read "I could not tell what is
@@ -70,85 +54,51 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 _SKILLS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
-sys.path[:0] = [os.path.join(_SKILLS, "memo-intake", "scripts"), os.path.join(_SKILLS, "memo-shared", "scripts")]
-from record_owner_language import _write_json  # noqa: E402 -- the config's atomic writer
-from pt_paths import config_file, script  # noqa: E402
+sys.path.insert(0, os.path.join(_SKILLS, "memo-shared", "scripts"))
+import pt_config_gate as _gate
+from record_owner_language import _write_json
+from pt_paths import config_file, pt_home, skills  # noqa: E402
+import run_attempts  # noqa: E402
+import run_lock  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
 CONFIG_FILE = str(config_file())
-# The only job names this spec owns. Pinned as a fullmatch so a name that
-# does not parse is never interpreted, and a half-matching id never removes
-# a job (see stale_names).
-_JOB_NAME_RE = re.compile(r"^pt-(?P<kind>subscription|oneoff)-(?P<tid>t_[0-9a-f]{4})$")
-# The one daily-paper job; no topic id because it is the whole paper, not a
-# topic. Owned and swept by name, exactly like the id-borne jobs above.
-DAILY_NAME = "pt-daily-edition"
-# A second (or third, ...) full-paper delivery time, from
-# delivery.extra_hours -- same paper, same sections, re-researched and
-# re-delivered at another hour of the same day. Numbered from 2 so the
-# canonical DAILY_NAME reads as "the" edition and these read as its
-# reruns, matching the lock-name convention (daily2-<date>, daily3-<date>)
-# a hand-registered job already used before this existed as a real spec.
-_EXTRA_DAILY_RE = re.compile(r"^pt-daily-edition-(?P<n>[2-9]\d*)$")
-# A focused paper at a section's deliver_at, named from the hour so two
-# sections at 12:30 share one job and a dropped hour is sweepable by name.
-_PAPER_RE = re.compile(r"^pt-paper-(?P<hhmm>(?:[01]\d|2[0-3])[0-5]\d)$")
-# The on-demand copy (--now): a one-shot the sweep below never removes, so
-# a queued paper survives a registration run; the next --now replaces it.
-NOW_NAME = "pt-daily-edition-now"
-# The outbox's flusher: a scheduled paper that finishes before its delivery hour
-# is staged in pt/outbox (post_to_chat.py --hold-until) instead of sleeping in
-# its session, and this no-agent command job posts it once the hour comes. It
-# runs every minute with no model and no tokens, is never swept, and drifts only
-# on its command. The venv's python: a command job's PATH is the gateway's.
-DELIVER_NAME = "pt-deliver"
+NIGHTLY_NAME = "memo-nightly"
+# The on-demand run (--now): a one-shot the sweep never removes, so a queued
+# run survives a registration; the next --now replaces it unless it is running.
+NOW_NAME = "memo-now"
+# The first read of the owner's company, once, right after setup: never swept,
+# never re-queued (pt/bootstrap.json records that it was).
+BOOTSTRAP_NAME = "memo-bootstrap"
+# Resumes post_to_chat.py's recovery tickets: a memo posted whose print or
+# record failed is finished the next minute without posting it again. No
+# model, no tokens; drifts only on its command. The venv's python: a command
+# job's PATH is the gateway's.
+DELIVER_NAME = "memo-deliver"
 DELIVER_ARGV = ["/opt/plow/pt-venv/bin/python3",
-                "/opt/plow/skills/memo-shared/scripts/post_to_chat.py", "--flush-outbox"]
+                "/opt/plow/skills/memo-shared/scripts/post_to_chat.py", "--recover"]
+DEFAULT_START = "01:00"
+DEFAULT_WINDOW_MINUTES = 240
+# Render, print, post and record after the window closes.
+PUBLISH_MARGIN_MINUTES = 60
 WORKSPACE_LOCK = "paper-workspace"
-DEFAULT_LEAD_MINUTES = 0
-# Every acquirer of a lock uses one lifetime. A run cannot outlive its scheduler
-# budget (cron_backend.PAPER_TIMEOUT_SECONDS), and it takes the lock no earlier
-# than it starts, so a lock older than the budget belongs to a run that is gone:
-# one killed by a model error or by the budget itself, which never reaches its
-# release. The margin covers the run's own wind-down. Every paper shares the
-# workspace lock, so nothing shorter is safe: it could call a live run dead and
-# start a competing paper.
-STALE_RUN_MINUTES = PAPER_TIMEOUT_SECONDS // 60 + 20
-# The closest two papers may start. The first can wait up to two lock rounds before it takes the
-# lock and then be killed at its budget, so its lock is at most budget-minus-that-wait old when the
-# second starts; the second's own two rounds add the wait back. Spacing papers at least the stale
-# limit apart is what lets the second always reclaim an orphan, whatever the first waited.
-# One more than the limit: takeover needs the lock strictly older than it (run_lock.py).
-MIN_PAPER_SPACING_MINUTES = STALE_RUN_MINUTES + 1
-# A scheduled paper that finds the workspace held (an on-demand copy runs its
-# whole ~35-minute paper under the lock) waits two rounds of this before giving
-# the day up: ~40 minutes, inside the hold-until window, each round under
-# OpenClaw's 30-minute exec timeout. The plain on-demand copy never waits; a
-# fresh-advice copy does.
-HELD_LOCK_WAIT_SECONDS = 1200
-# The priority desk's floor: with less than this left before delivery, a fresh
-# three-generation tournament cannot finish (measured ~35-50 min) before the
-# render and print still to follow. A delivery hour near midnight clamps the
-# lead below it and nothing refuses that, so the prompt states the window and
-# the desk writes its own reason instead of starting a tournament it cannot end.
-MIN_TOURNAMENT_MINUTES = 50
+_START_RE = re.compile(r"^(?:[01]\d|2[0-3]):[0-5]\d$")
 
-# One topic's own edition: a subscription's nightly run or a one-off.
 DELIVERY_FAILURE_NOTICE = (
-    "This is a paper execution, not a heartbeat: run the full paper pipeline. "
-    "Do not finish the run before post_to_chat.py confirms the chat post or stages the edition. "
+    "This is a memo run, not a heartbeat: run the whole night. "
+    "Do not finish the run before post_to_chat.py confirms the chat post. "
     "After that confirmation, finish with a short status for the cron run record; "
     "the cron reply is not delivered to chat. "
     "If any step stops, refuses or fails before post_to_chat.py confirms delivery, "
     "release the paper-workspace lock if you hold it, then send exactly one short "
     "message to the owner with message(action=send), channel plow, accountId chat, "
-    "target plow-owner. Say the edition was not delivered and give the reason in "
+    "target plow-owner. Say the memo was not delivered and give the reason in "
     "one sentence. Do not send this notice after confirmed delivery."
 )
 PAPER_RUN_MARKER = "[PLOW_PAPER_RUN]"
 # Measured live: gpt-6-luna asked plow__plow_read_skill (the owner's Mac)
-# for memo-research, got "no skill named", and gave up the paper. The memo-*
+# for a research skill, got "no skill named", and gave up the paper. The memo-*
 # skills live in this container and only the read tool reaches them.
 SKILL_LOADING = (
     "Load each memo-* skill by reading /opt/plow/skills/<name>/SKILL.md with the read "
@@ -156,480 +106,147 @@ SKILL_LOADING = (
     "owner's Mac, which does not have them. "
 )
 
-def topic_prompt(tid, depth, scheduled):
-    """One topic's own edition. It counts its starts under its own key, apart from the papers',
-    so a failing topic cannot spend the main paper's day (nor the other way round)."""
-    attempts = script("memo-shared", "run_attempts.py")
-    return (
-        PAPER_RUN_MARKER + " " + SKILL_LOADING +
-        f"First run {attempts} begin --key {tid}{' --scheduled' if scheduled else ''}: on 'proceed' go on; "
-        f"on 'cooldown' or 'cooldown-untold' stop without research or waiting in this session; "
-        f"begin owns the pause notice. On 'stop' or 'stop-untold' this edition's attempts for "
-        f"the day are spent (retries after a "
-        f"provider rate limit only feed it) and begin has told the owner, or tried to, itself -- "
-        f"stop without researching, writing nothing to the owner. "
-        f"Then run memo-research on topic {tid} now (depth {depth}), then memo-render for it, "
-        f"delivering with post_to_chat.py per memo-render/SKILL.md step 2, with --clear-attempts {tid}. "
-        + DELIVERY_FAILURE_NOTICE
+
+def _is_legacy_paper_job(name):
+    return name in ("pt-daily-edition", "pt-daily-edition-now", "pt-deliver") or (
+        re.fullmatch(r"pt-daily-edition-(?:[2-9]|[1-9]\d+)", name) is not None
     )
 
 
-def paper_prompt(hold_until=None, lead_minutes=0, focus=None, fresh_advice=False):
-    """The one run prompt every paper is built from, scheduled or on demand.
+def run_timeout_seconds(window_minutes):
+    return (window_minutes + PUBLISH_MARGIN_MINUTES) * 60
 
-    focus=None is the MAIN paper: every active section with no deliver_at
-    (or deliver_at equal to delivery.hour) and every assignment due today.
-    focus="HH:MM" is the focused paper for sections booked at that hour.
-    Every paper shares one workspace lock because their desk and topic
-    scratch is shared. A scheduled paper reuses today's accepted advisor
-    checkpoint when one exists, else runs the tournament.
 
-    hold_until is the send clock (delivery.hour / an extra or focused hour).
-    The job may start earlier via lead_minutes; POST must still wait. The
-    on-demand copy (--now) passes none, posts when done, and never waits
-    ~150 minutes on a tournament: it reuses the newest accepted checkpoint
-    of any date, printed with its as-of date, and runs the tournament only
-    when none has ever been accepted. fresh_advice (--now --fresh-advice) is
-    the owner asking to re-evaluate today's priorities: that copy runs the
-    tournament and reuses no checkpoint, since reusing one is what they
-    asked it not to do.
+def stale_run_minutes(window_minutes):
+    """A lock older than the run's own budget belongs to a run that is gone."""
+    return run_timeout_seconds(window_minutes) // 60 + 20
 
-    The prompt carries only what the run cannot read from its skills: the
-    lock, the roster, the advice rule and the send clock. Delivery, print
-    and topic finalization are memo-render step 2's, never restated here.
-    """
-    if focus is None:
-        title, check = "the daily edition", "--deliver-at main --as-of today"
-        roster = (
-            "every active news section with no deliver_at (or deliver_at "
-            "equal to delivery.hour in pt/config.json — skip sections that belong "
-            "to another paper hour) and every assignment with run_on <= today"
-        )
-    else:
-        title, check = f"the {focus} paper", f"--deliver-at {focus}"
-        roster = (
-            f"ONLY active news sections whose deliver_at is {focus} (read topics.json; "
-            f"do not research unscoped sections, sections of another hour, or assignments)"
-        )
-    hold = (
-        f", with --hold-until {hold_until} so chat waits for that clock "
-        f"(if that hour has already passed, post immediately; never wait until tomorrow), "
-        f"and with --clear-attempts"
-        if hold_until else ", with --clear-attempts"
-    )
-    lock = script("memo-shared", "run_lock.py")
-    advice = (
-        "run the tournament now, whatever run/desk-priority/tournament.json holds: the owner "
-        "asked to re-evaluate today's priorities, so reuse none, and no delivery hour bounds "
-        "it. If it cannot reach an accepted checkpoint, the paper is not delivered: never "
-        "print an unavailable advice card for a tournament that ran"
-        if fresh_advice else
-        "reuse today's accepted checkpoint in run/desk-priority/tournament.json when "
-        f"there is one, else run the tournament -- this job starts {lead_minutes} minutes "
-        f"before {hold_until} (delivery.lead_minutes, clamped so it never starts before "
-        f"midnight); once the lock is yours, run {script('memo-shared', 'owner_time.py')} "
-        f"minutes-until {hold_until} and, under {MIN_TOURNAMENT_MINUTES} minutes, record the "
-        f"desk's unavailable reason with {script('memo-tournament', 'advice_unavailable.py')} window "
-        f"--deliver-at {hold_until} --reason \"<why, in the owner's language>\" instead of "
-        f"starting one; with {MIN_TOURNAMENT_MINUTES} minutes "
-        f"or more, run the tournament"
-        if hold_until else
-        "reuse the newest accepted checkpoint in run/desk-priority/tournament.json whatever "
-        "its date -- an older one prints with \"as_of\" per memo-render -- and run the "
-        "tournament only if none has ever been accepted. An older checkpoint is never a "
-        "reason to stop the paper; continue research and compile the edition with its as-of date"
-    )
-    attempts = script("memo-shared", "run_attempts.py")
-    next_flag = " --scheduled" if hold_until else ""
-    # A fresh-advice copy waits like a scheduled paper: it was promised to the owner, and
-    # a paper that starts in the minute before it runs would otherwise end it at 'held'.
-    waits = bool(hold_until) or fresh_advice
-    wait = f" --wait-seconds {HELD_LOCK_WAIT_SECONDS}" if waits else ""
-    if fresh_advice:
-        # The tournament alone takes 35-50 minutes, so two rounds can end before a
-        # paper that won the workspace in the scheduling gap lets go; its lock
-        # goes stale on its own after STALE_RUN_MINUTES, which bounds this.
-        held = (
-            "run the same acquire again, and again for as long as it prints 'held' "
-            "(each round waits; the other paper's lock expires on its own) -- never stop "
-            "at 'held', the owner was promised this evaluation"
-        )
-    elif waits:
-        held = (
-            "run the same acquire once more; if that is also 'held', another paper owns "
-            "the workspace -- stop"
-        )
-    else:
-        held = "another paper owns the workspace -- stop"
-    # One undated lock for the shared workspace: a dated name would give a paper that starts
-    # after midnight a different lock from the one the earlier paper still holds (and a
-    # fresh-advice copy waiting across midnight could take it), so two papers would archive and
-    # write the same scratch. A stuck lock is reclaimed by age (STALE_RUN_MINUTES) as before.
-    lock_arg = f"--name {WORKSPACE_LOCK}"
+
+def memo_prompt(window_minutes=DEFAULT_WINDOW_MINUTES, scheduled=True):
+    """The one run prompt, nightly or on demand. Everything else -- the lock, the
+    day's attempts, the Mac gate, the phases -- is memo-tournament's Start."""
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
-        f"Run {title} now, in one session. First run {lock} acquire "
-        f"{lock_arg} --stale-minutes {STALE_RUN_MINUTES}{wait}; "
-        f"if its output is 'held', "
-        f"{held}. Then run {attempts} begin{next_flag}: on 'proceed' go on; "
-        f"on 'cooldown' or 'cooldown-untold' run {lock} release {lock_arg} and stop without "
-        f"research or waiting in this session; begin owns the pause notice. On 'stop' or "
-        f"'stop-untold' the day's attempts are spent (retries after a provider rate limit only "
-        f"feed it) and begin has told the owner, or tried to, itself -- run {lock} release "
-        f"{lock_arg} and stop, writing nothing to the owner. Then "
-        f"/opt/plow/skills/memo-shared/scripts/prepare_daily_run.py --preserve-priority "
-        f"(it archives prior scratch after the lock; do not inspect or reuse old run files). Then "
-        f"/opt/plow/skills/memo-intake/scripts/topics.py reopen-sections "
-        f"(delivered sections are yesterday's paper, not a skip). Run "
-        f"/opt/plow/skills/memo-intake/scripts/topics.py check-paper {check}. "
-        f"If it refuses, repeat its named roster, run {lock} "
-        f"release {lock_arg}, and stop before research. "
-        f"Then run memo-research: first the priority desk exactly as "
-        f"memo-research/references/desks.md says ({advice}), "
-        f"then every other standing desk it lists, in its order, then {roster}. "
-        f"Then run memo-render for the batch, delivering with post_to_chat.py "
-        f"per memo-render/SKILL.md step 2{hold}. "
-        f"Release the lock with {lock} release {lock_arg}. "
+        f"Run tonight's memo now, in one session: follow "
+        f"{skills() / 'memo-tournament' / 'SKILL.md'} from its Start section. "
+        f"This run is {'scheduled' if scheduled else 'on demand'}. "
+        f"The window is {window_minutes} minutes from when this run starts "
+        f"(stale lock after {stale_run_minutes(window_minutes)} minutes). "
         f"{DELIVERY_FAILURE_NOTICE}"
     )
 
 
-def load_owner_zone(config_path=CONFIG_FILE):
-    """owner.timezone, or refuse: every schedule here is written against it."""
+def bootstrap_prompt(window_minutes=DEFAULT_WINDOW_MINUTES):
+    return (
+        f"{SKILL_LOADING}"
+        f"Run the memo's bootstrap now, in one session: follow "
+        f"{skills() / 'memo-tournament' / 'SKILL.md'} § Bootstrap. "
+        f"The window is {window_minutes} minutes from when this run starts "
+        f"(stale lock after {stale_run_minutes(window_minutes)} minutes). "
+        "If it stops before its summary is posted, release the paper-workspace lock if you hold "
+        "it, then send exactly one short message to the owner with message(action=send), channel "
+        "plow, accountId chat, target plow-owner, saying the first read of their company did not "
+        "finish and tonight's run will read it instead."
+    )
+
+
+def queue_bootstrap(backend, owner_tz, window_minutes=DEFAULT_WINDOW_MINUTES, clock=None, home=None):
+    """memo-bootstrap a minute out, once per install. Prints what it did."""
+    marker = (home or pt_home()) / "bootstrap.json"
+    if marker.exists() or any(j.name == BOOTSTRAP_NAME for j in backend.list()):
+        print(f"already queued: {BOOTSTRAP_NAME}")
+        return
+    at = (clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
+    job = {"name": BOOTSTRAP_NAME, "schedule": at.isoformat(timespec="seconds"), "tz": None,
+           "prompt": bootstrap_prompt(window_minutes), "timeout": run_timeout_seconds(window_minutes),
+           "keep_after_run": True}
+    _check(backend.create(job), f"could not queue {BOOTSTRAP_NAME}")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"queued_for": job["schedule"]}) + "\n")
+    print(f"queued: {BOOTSTRAP_NAME} ({job['schedule']})")
+
+
+def _config(config_path):
     path = pathlib.Path(config_path)
     try:
-        config = json.loads(path.read_text())
-        owner = config["owner"]["timezone"]
+        return path, json.loads(path.read_text())
     except FileNotFoundError:
-        raise SystemExit(
-            f"refusing to register: {path} is missing. memo-setup writes it; "
-            "its owner.timezone is what every schedule here is written against."
-        ) from None
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise SystemExit(
-            f"refusing to register: could not read owner.timezone from {path} "
-            f"({exc!r})."
-        ) from exc
+        raise SystemExit(f"refusing to register: {path} is missing -- memo-setup writes it.") from None
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"refusing to register: malformed {path} ({exc!r}).") from exc
+
+
+def owner_zone(config):
+    """owner.timezone, or refuse: every schedule here is written against it."""
+    try:
+        owner = config["owner"]["timezone"]
+    except (KeyError, TypeError) as exc:
+        raise SystemExit(f"refusing to register: could not read owner.timezone from config ({exc!r}).") from exc
     if not str(owner or "").strip():
-        raise SystemExit(
-            f"refusing to register: {path} has a blank owner.timezone."
-        )
+        raise SystemExit(f"refusing to register: config has a blank owner.timezone.")
     return owner
 
 
-def adopt_owner_clock(owner_tz, legacy_tz, config_path=CONFIG_FILE):
-    """Retire delivery.local_hour, left by an older setup that stored
-    delivery.hour on the previous runtime's container clock (legacy_tz, that
-    install's TZ). With one zone that hour already is the owner's; across two
-    zones it is not recoverable without guessing through offsets.
-    """
-    path = pathlib.Path(config_path)
-    config = json.loads(path.read_text())
-    if "local_hour" not in config["delivery"]:
-        return
-    if owner_tz != legacy_tz:
-        raise SystemExit(
-            f"refusing to register: {path} predates owner-clock hours and its times "
-            f"are on the old container clock ({legacy_tz}), not the owner's "
-            f"({owner_tz}). Ask the owner for their delivery time, extra hours and "
-            "paper times again, write them as their own clock, remove "
-            "delivery.local_hour, and re-run.")
-    del config["delivery"]["local_hour"]
-    _write_json(path, config)
+def normalize_memo(config):
+    """Normalize in memory; return (start, window, changed), without writing."""
+    memo = config.get("memo")
+    changed = memo is None or "delivery" in config
+    if memo is None:
+        delivery = config.get("delivery") or {}
+        hour = delivery.get("hour")
+        lead = delivery.get("lead_minutes", 0)
+        if not isinstance(hour, str) or not _START_RE.fullmatch(hour):
+            raise SystemExit(f"refusing to register: config has no valid memo.start or legacy delivery.hour.")
+        if isinstance(lead, bool) or not isinstance(lead, int) or lead < 0:
+            raise SystemExit("refusing to register: delivery.lead_minutes must be a non-negative integer.")
+        h, m = map(int, hour.split(":"))
+        minutes = max(0, h * 60 + m - lead)
+        memo = {"start": f"{minutes // 60:02d}:{minutes % 60:02d}",
+                "window_minutes": DEFAULT_WINDOW_MINUTES, "max_usd": 100}
+        config["memo"] = memo
+    config.pop("delivery", None)
+    if not isinstance(memo, dict):
+        raise SystemExit(f"refusing to register: config has memo={memo!r}; it must be an object.")
+    # A memo block written before the ceiling existed gets the defaults the gate requires.
+    for key, default in (("window_minutes", DEFAULT_WINDOW_MINUTES), ("max_usd", 100)):
+        if key not in memo:
+            memo[key] = default
+            changed = True
+    start = memo.get("start", DEFAULT_START)
+    window = memo.get("window_minutes", DEFAULT_WINDOW_MINUTES)
+    if not isinstance(start, str) or not _START_RE.fullmatch(start):
+        raise SystemExit(f'refusing to register: config has memo.start={start!r}; it must be "HH:MM".')
+    if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+        raise SystemExit(f"refusing to register: config has memo.window_minutes={window!r}; "
+                         "it must be a positive integer.")
+    return start, window, changed
 
 
-def load_delivery_hour(config_path=CONFIG_FILE):
-    """delivery.hour from pt/config.json -- its exact 'HH:MM' shape is the
-    gate's contract; both parts feed the schedule."""
-    path = pathlib.Path(config_path)
-    try:
-        config = json.loads(path.read_text())
-        return str(config["delivery"]["hour"])
-    except FileNotFoundError:
-        raise SystemExit(
-            f"refusing to register: {path} is missing -- memo-setup owns it"
-        ) from None
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise SystemExit(f"refusing to register: malformed {path} ({exc!r}).") from exc
-
-
-def load_extra_hours(config_path=CONFIG_FILE):
-    """delivery.extra_hours from pt/config.json -- additional full-paper
-    delivery times the same day, each "HH:MM" like delivery.hour itself.
-
-    Optional and defaults to empty: an install with one delivery time a day
-    (the common case) has no extra_hours key at all, and a schedule that
-    refused to compute without it would strand a working agent. The gate
-    validates each entry's shape when the key is present; this just reads
-    it back, in order (order is the slot numbering -- pt-daily-edition-2 is
-    always extra_hours[0]).
-    """
-    path = pathlib.Path(config_path)
-    try:
-        config = json.loads(path.read_text())
-    except FileNotFoundError:
-        raise SystemExit(
-            f"refusing to register: {path} is missing -- memo-setup owns it"
-        ) from None
-    except (OSError, ValueError) as exc:
-        raise SystemExit(f"refusing to register: malformed {path} ({exc!r}).") from exc
-    hours = config.get("delivery", {}).get("extra_hours") or []
-    if not isinstance(hours, list) or not all(isinstance(h, str) for h in hours):
-        raise SystemExit(
-            f"refusing to register: {path} has delivery.extra_hours={hours!r}; "
-            "it must be a list of \"HH:MM\" strings."
-        )
-    return hours
-
-
-def load_lead_minutes(config_path=CONFIG_FILE):
-    """delivery.lead_minutes from pt/config.json, defaulting to 0.
-
-    The key is optional on purpose (the gate only validates it when present):
-    an install written before the personalized paper existed has no
-    lead_minutes, and a schedule that refuses to compute for it would strand
-    a working agent. Absent means the default, not an error.
-    """
-    path = pathlib.Path(config_path)
-    try:
-        config = json.loads(path.read_text())
-        raw = config.get("delivery", {}).get("lead_minutes", DEFAULT_LEAD_MINUTES)
-    except FileNotFoundError:
-        raise SystemExit(
-            f"refusing to register: {path} is missing -- memo-setup owns it"
-        ) from None
-    except (OSError, ValueError, AttributeError, TypeError) as exc:
-        raise SystemExit(f"refusing to register: malformed {path} ({exc!r}).") from exc
-    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
-        raise SystemExit(
-            f"refusing to register: {path} has delivery.lead_minutes={raw!r}; "
-            "it must be a non-negative integer (minutes before delivery.hour)."
-        )
-    return raw
-
-
-def _hour_minute(delivery_hour):
-    """Parse a gate-shaped "HH:MM" into (hour, minute) ints."""
-    hour_part, minute_part = delivery_hour.split(":")
-    return int(hour_part), int(minute_part)
-
-
-def _minutes(hhmm):
-    hour, minute = _hour_minute(hhmm)
-    return hour * 60 + minute
-
-
-def _lead(hour, lead_minutes):
-    """The lead for one owner-clock hour, clamped so the run never starts
-    before midnight -- the run's lock and paper are dated in the owner's zone."""
-    return min(lead_minutes, _minutes(hour))
-
-
-def daily_schedule(delivery_hour, lead_minutes):
-    """The daily paper's cron expression, on its delivery day.
-
-    delivery.hour is any real "HH:MM" (the gate's contract). The lead is
-    subtracted in minutes from the OWNER's chosen minute, not just the hour.
-    A lead reaching back past midnight is refused: that run would fire the
-    evening before and be the previous day's paper. Every job's schedule
-    comes through here, so this is the one place that refuses it.
-    """
-    total = _minutes(delivery_hour) - lead_minutes
-    if total < 0:
-        raise SystemExit(
-            f"refusing to register: delivery.lead_minutes={lead_minutes} would start "
-            f"the {delivery_hour} run before midnight of its delivery day.")
-    return f"{total % 60} {total // 60} * * *"
-
-
-def daily_job(delivery_hour, lead_minutes, owner_tz, *, name=DAILY_NAME):
-    """One full-paper delivery job -- the canonical slot, or an extra one."""
-    return {
-        "name": name,
-        "schedule": daily_schedule(delivery_hour, lead_minutes),
-        "tz": owner_tz,
-        "prompt": paper_prompt(hold_until=delivery_hour, lead_minutes=lead_minutes),
-    }
+def nightly_job(start, window_minutes, owner_tz):
+    hour, minute = (int(part) for part in start.split(":"))
+    return {"name": NIGHTLY_NAME, "schedule": f"{minute} {hour} * * *", "tz": owner_tz,
+            "prompt": memo_prompt(window_minutes), "timeout": run_timeout_seconds(window_minutes)}
 
 
 def deliver_job():
-    """The one job every install has besides its papers: pt-deliver."""
     return {"name": DELIVER_NAME, "every": "1m", "schedule": None, "tz": None,
             "prompt": None, "command": DELIVER_ARGV}
 
 
-def paper_job_name(hour):
-    """pt-paper-HHMM from a strict HH:MM (12:30 → pt-paper-1230)."""
-    hh, mm = hour.split(":")
-    return f"pt-paper-{hh}{mm}"
-
-
-def paper_hour_from_name(name):
-    match = _PAPER_RE.fullmatch(name)
-    if match is None:
-        return None
-    hhmm = match.group("hhmm")
-    return f"{hhmm[:2]}:{hhmm[2:]}"
-
-
-def focused_paper_hours(topics, delivery_hour):
-    """Distinct section deliver_at values that are not the main paper hour."""
-    hours = []
-    seen = set()
-    for topic in topics:
-        if topic.get("kind") != "section" or topic.get("status") == "cancelled":
-            continue
-        at = topic.get("deliver_at")
-        if not at or at == delivery_hour or at in seen:
-            continue
-        seen.add(at)
-        hours.append(at)
-    return sorted(hours)
-
-
-def require_workspace_spacing(hours, lead_minutes=DEFAULT_LEAD_MINUTES):
-    """Refuse paper starts whose shared-workspace windows can overlap.
-
-    Compared on the jobs' real cron start times: a lead clamped at midnight pulls a late-night
-    paper's start toward its neighbour, so two delivery hours far enough apart can still start close."""
-    minimum_minutes = MIN_PAPER_SPACING_MINUTES
-    starts = {hour: _minutes(hour) - _lead(hour, lead_minutes) for hour in hours}
-    for index, first in enumerate(hours):
-        for second in hours[index + 1:]:
-            distance = abs(starts[first] - starts[second])
-            if min(distance, 24 * 60 - distance) < minimum_minutes:
-                raise SystemExit(
-                    f"refusing to register: paper times {first} and {second} are less than "
-                    f"{minimum_minutes} minutes apart; their shared workspace can overlap."
-                )
-
-
-def paper_job(hour, lead_minutes, owner_tz):
-    """One focused paper: desks plus sections whose deliver_at is this hour."""
-    return {
-        "name": paper_job_name(hour),
-        "schedule": daily_schedule(hour, lead_minutes),
-        "tz": owner_tz,
-        "prompt": paper_prompt(hold_until=hour, lead_minutes=lead_minutes, focus=hour),
-    }
-
-
-def subscription_job(topic, delivery_hour, owner_tz):
-    """The job spec for one subscription topic: nightly at the delivery hour."""
-    hour, minute = _hour_minute(delivery_hour)
-    return {
-        "name": f"pt-subscription-{topic['id']}",
-        "schedule": f"{minute} {hour} * * *",
-        "tz": owner_tz,
-        "prompt": topic_prompt(topic["id"], "deep", scheduled=True),
-    }
-
-
-def oneoff_job(topic):
-    """A pending one-off's own edition, one-shot at its scheduled_for."""
-    return {
-        "name": f"pt-oneoff-{topic['id']}",
-        "schedule": topic["scheduled_for"],
-        "tz": None,
-        "prompt": topic_prompt(topic["id"], topic["depth"], scheduled=False),
-    }
-
-
-def desired_jobs(topics, delivery_hour, owner_tz,
-                 lead_minutes=DEFAULT_LEAD_MINUTES, extra_hours=()):
-    """The jobs the topic store calls for, in spec order.
-
-    The daily edition comes first (it is the main paper), then one job per
-    extra delivery time (delivery.extra_hours -- the same MAIN roster,
-    re-researched later the same day), then one job per distinct section
-    deliver_at that is not delivery.hour (a different newspaper), then one
-    job per subscription, then one per pending one-off at its scheduled_for
-    still ahead (topics.py refuses one without an offset; a past one is
-    not re-armed). Hours are the owner's and register in the owner's zone;
-    lead_minutes is the nominal lead, clamped per slot (see _lead).
-    """
-    focused_hours = focused_paper_hours(topics, delivery_hour)
-    require_workspace_spacing(
-        [delivery_hour, *extra_hours, *focused_hours], lead_minutes=lead_minutes
-    )
-    jobs = []
-    # The daily paper always exists once setup can register: weather and
-    # calendar run even with zero news sections.
-    jobs.append(daily_job(delivery_hour, _lead(delivery_hour, lead_minutes), owner_tz))
-    for n, hour in enumerate(extra_hours, start=2):
-        jobs.append(daily_job(hour, _lead(hour, lead_minutes), owner_tz, name=f"{DAILY_NAME}-{n}"))
-    for hour in focused_hours:
-        jobs.append(paper_job(hour, _lead(hour, lead_minutes), owner_tz))
-    jobs.extend(
-        subscription_job(t, delivery_hour, owner_tz)
-        for t in topics
-        if t["kind"] == "subscription" and t["status"] != "cancelled"
-    )
-    now = datetime.now().astimezone()
-    jobs.extend(
-        oneoff_job(t)
-        for t in topics
-        if t["kind"] == "one_off" and t["status"] == "pending" and t.get("scheduled_for")
-        and datetime.fromisoformat(t["scheduled_for"]).astimezone() > now
-    )
-    return jobs
-
-
-def stale_names(topics, registered, extra_hours_count=0, delivery_hour=None):
-    """Registered pt-* jobs the topic store no longer calls for.
-
-    A subscription job outlives only its non-cancelled topic; a one-off job
-    outlives only a topic still pending or running (a fired one-shot stays
-    registered as completed; this sweep prunes it once the topic is
-    delivered, cancelled or gone). The daily job is never stale; a
-    numbered extra-daily job goes stale the moment the owner removes that
-    many delivery times. A pt-paper-HHMM job outlives only an active section still at that
-    hour (and not the main delivery.hour). Names not starting with pt- are
-    never ours to remove.
-    """
-    by_id = {t["id"]: t for t in topics}
-    live_papers = set()
-    if delivery_hour is not None:
-        live_papers = {paper_job_name(h) for h in focused_paper_hours(topics, delivery_hour)}
-    stale = []
-    for name in registered:
-        if name == DAILY_NAME:
-            continue
-        extra_match = _EXTRA_DAILY_RE.fullmatch(name)
-        if extra_match is not None:
-            n = int(extra_match.group("n"))
-            if n > extra_hours_count + 1:
-                stale.append(name)
-            continue
-        if _PAPER_RE.fullmatch(name):
-            if delivery_hour is not None and name not in live_papers:
-                stale.append(name)
-            continue
-        match = _JOB_NAME_RE.fullmatch(name)
-        if match is None:
-            continue
-        kind, tid = match.group("kind"), match.group("tid")
-        topic = by_id.get(tid)
-        if topic is None:
-            stale.append(name)
-        elif kind == "subscription" and topic["status"] == "cancelled":
-            stale.append(name)
-        elif kind == "oneoff" and topic["status"] in ("delivered", "cancelled"):
-            stale.append(name)
-    return stale
+def desired_jobs(start, window_minutes, owner_tz):
+    return [nightly_job(start, window_minutes, owner_tz), deliver_job()]
 
 
 def registered_jobs(listing):
-    """{name: job} for the pt-* jobs this spec manages, from a full listing.
+    """{name: job} for the memo-* jobs this spec manages, from a full listing.
 
     A managed name registered twice is refused rather than guessed at --
     editing or sweeping one of two copies leaves the other firing. The
-    on-demand copy (pt-daily-edition-now) is the exception: queue_now
-    replaces it by id.
+    on-demand run is the exception: queue_now replaces it by id.
     """
     registered = {}
     for job in listing:
-        if not job.name.startswith("pt-") or job.name == NOW_NAME:
+        if not job.name.startswith("memo-") or job.name in (NOW_NAME, BOOTSTRAP_NAME):
             continue
         if job.name in registered:
             raise SystemExit(
@@ -640,82 +257,64 @@ def registered_jobs(listing):
     return registered
 
 
-def _same_schedule(want, have, cron):
-    if cron:
-        return want == have
-    try:  # one-shots come back normalized to UTC; compare the instant
-        return datetime.fromisoformat(want).timestamp() == datetime.fromisoformat(
-            have.replace("Z", "+00:00")).timestamp()
-    except (TypeError, ValueError, AttributeError):
-        return want == have
-
-
 def job_drift(job, spec):
     """True when a registered job's reported fields contradict the spec.
 
     Only a field that is BOTH reported and different is a drift; an absent
-    field is silence, not a mismatch. Schedule, zone, prompt and model are
-    the fields a spec change actually moves (the delivery hour, the owner's
-    zone, the lead, the delivery contract, the model the paper is tuned on).
-    The run budget is the exception: a job registered before it was set reports
-    no timeout at all, which is the scheduler's 60-minute default, so a reported
-    spec with no timeout drifts and the next register moves it.
+    field is silence, not a mismatch. The run budget is the exception: a job
+    that reports a timeout field with no value runs on the scheduler's
+    60-minute default, which ends the night mid-run.
     """
     if job.get("command") is not None:  # a command job has no prompt or model
         return spec.get("command") is not None and spec["command"] != job["command"]
-    if "timeout" in spec and spec["timeout"] != PAPER_TIMEOUT_SECONDS:
+    if "timeout" in spec and spec["timeout"] != job.get("timeout", PAPER_TIMEOUT_SECONDS):
         return True
     for key in ("schedule", "tz", "prompt", "model"):
         have = spec.get(key)
         want = job.get(key, MODEL) if key == "model" else job.get(key)
-        if have is None or want is None:
-            continue
-        if key == "schedule":
-            if not _same_schedule(want, have, cron=job.get("tz") is not None):
-                return True
-        elif have != want:
+        if have is not None and want is not None and have != want:
             return True
     return False
 
 
-def _is_paper(name):
-    """A job that runs a paper under the workspace lock."""
-    return (name in (DAILY_NAME, NOW_NAME) or bool(_EXTRA_DAILY_RE.fullmatch(name))
-            or bool(_PAPER_RE.fullmatch(name)))
+def queue_now(backend, window_minutes, owner_tz, clock=None):
+    """Tonight's run on demand: the nightly prompt as a one-shot a minute out.
 
-
-def queue_now(backend, listing, lead_minutes, owner_tz, clock=None, fresh_advice=False):
-    """The on-demand copy: the main paper's own prompt as a one-shot job.
-
-    The scheduler fires it exactly like the morning run -- its own session,
-    the same workspace lock, the same delivery leg -- so "send me the paper
-    now" can never be a thinner or different paper. Previous copies are
-    removed by id only after the new one is created, so a failed create
-    never cancels a copy the owner was already promised. A copy that is
-    running is left alone and no second one is queued: `cron rm` aborts its
-    session mid-paper, the workspace lock outlives it, and every later copy
-    reads 'held' and stops until the lock goes stale. The same holds for any
-    paper mid-run: a copy queued behind it reads 'held' and stops. So while
-    one runs, a fresh-advice request queues nothing and says so -- the running
-    paper reuses its checkpoint, so its edition is not the fresh evaluation.
+    Previous copies are removed by id only after the new one is created, so a
+    failed create never cancels a run the owner was already promised. While a
+    run is in flight nothing is queued: `cron rm` aborts its session mid-run,
+    and a copy queued behind it reads 'held' and stops. With no run in flight,
+    a workspace lock is a dead run's leftover, released before queueing (#91).
     """
-    running = [j for j in listing if _is_paper(j.name) and j.running]
-    if running and fresh_advice:
-        print(f"not queued: {running[0].name} ({running[0].id}) is mid-paper -- "
-              "no fresh evaluation was queued; ask again once it is delivered")
-        return
+    # Every decision below reads one listing taken under the guard each acquirer holds
+    # while it takes the workspace: a run that started since main's own listing shows
+    # here as running, so it is neither cancelled nor robbed of its lock.
+    lock = run_lock.lock_path(WORKSPACE_LOCK)
+    with run_lock.guarded(lock.parent):
+        listing = backend.list()
+        running = [j for j in listing if j.name in (NIGHTLY_NAME, NOW_NAME) and j.running]
+        # The bootstrap holds the workspace too, but delivers no memo.
+        bootstrapping = [j for j in listing if j.name == BOOTSTRAP_NAME and j.running]
+        # No run in flight: the lock was kept by a run that died (a provider error, say)
+        # for its stale-lock window, and this copy would read 'held' and end NO_REPLY
+        # behind the owner's "queued".
+        if not (running or bootstrapping) and lock.exists():
+            lock.unlink()
+            print(f"released: {WORKSPACE_LOCK}, left by a run that is no longer running")
     if running:
-        print(f"already running: {running[0].name} ({running[0].id}) -- its edition is on the way")
+        print(f"already running: {running[0].name} ({running[0].id}) -- its memo is on the way")
         return
-    at =(clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
-    job = {
-        "name": NOW_NAME,
-        "schedule": at.isoformat(timespec="seconds"),
-        "tz": None,
-        "prompt": paper_prompt(lead_minutes=lead_minutes, fresh_advice=fresh_advice),
-    }
+    if bootstrapping:
+        print(f"not queued: {BOOTSTRAP_NAME} is still taking its first read of the company -- "
+              "ask again once it finishes")
+        return
+    at = (clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
+    job = {"name": NOW_NAME, "schedule": at.isoformat(timespec="seconds"), "tz": None,
+           "prompt": memo_prompt(window_minutes, scheduled=False),
+           "timeout": run_timeout_seconds(window_minutes), "keep_after_run": True}
     previous = [j.id for j in listing if j.name == NOW_NAME]
     _check(backend.create(job), f"could not queue {NOW_NAME}")
+    run_attempts.grant()  # the owner asked: this copy may start past a spent day
     print(f"queued: {NOW_NAME} ({job['schedule']})")
     for job_id in previous:
         _check(backend.remove(job_id), f"could not remove the previous {NOW_NAME}")
@@ -726,94 +325,87 @@ def _check(proc, failure):
         raise SystemExit(f"{failure}:\n{proc.stdout}\n{proc.stderr}")
 
 
-def main(argv=None, backend=None, config_path=CONFIG_FILE, env=None):
+def main(argv=None, backend=None, config_path=CONFIG_FILE):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # parse_args(None) on the CLI is sys.argv[1:], but in-process callers
     # pass [] so argparse never reads the test runner's argv.
-    parser.add_argument(
-        "--now", action="store_true",
-        help="after registering, queue the main paper as a one-shot a minute "
-             "out -- the on-demand copy, same prompt, no send clock",
-    )
-    parser.add_argument(
-        "--fresh-advice", action="store_true",
-        help="with --now: the owner asked to re-evaluate today's priorities, so the "
-             "copy runs the advice tournament instead of reusing a checkpoint",
-    )
+    parser.add_argument("--now", action="store_true",
+                        help="after registering, queue tonight's run as a one-shot a minute out")
+    parser.add_argument("--start", help="set the owner's research start (HH:MM)")
+    parser.add_argument("--enabled", choices=("on", "off"), help="enable or disable nightly memos")
     args = parser.parse_args(argv if argv is not None else [])
-    if args.fresh_advice and not args.now:
-        parser.error("--fresh-advice is an option of --now")
-    env = os.environ if env is None else env
 
     if backend is None:
         if not os.path.exists(OPENCLAW[1]):
             raise SystemExit(f"{OPENCLAW[1]} not found -- run this inside the agent container")
         backend = CronBackend()
 
-    owner_tz = load_owner_zone(config_path)
-    # The topic store, via memo-intake's single reader -- so a broken
-    # topics.json refuses here too, rather than reading as "no topics" and
-    # pruning every subscription job this run could have kept.
-    import topics as topics_mod
-    topics = topics_mod.load_topics()
-    adopt_owner_clock(owner_tz, (env.get("TZ") or "").strip() or owner_tz, config_path)
-    delivery_hour = load_delivery_hour(config_path)
-    extra_hours = load_extra_hours(config_path)
-    lead_minutes = load_lead_minutes(config_path)
-
+    path, config = _config(config_path)
+    owner_tz = owner_zone(config)
+    start, window, changed = normalize_memo(config)
+    if args.start is not None:
+        config["memo"]["start"] = start = args.start
+        changed = True
+    if args.enabled is not None:
+        config["priority"] = {**(config.get("priority") or {}), "configured": args.enabled == "on"}
+        changed = True
+    try:
+        failures = _gate.gate(config)
+    except _gate.GateError as exc:
+        raise SystemExit(f"refusing to change memo: {exc}") from exc
+    if failures:
+        raise SystemExit(f"refusing to change memo: {failures}")
     listing = backend.list()
+    for job in listing:
+        if _is_legacy_paper_job(job.name) and job.running:
+            raise SystemExit(f"refusing to retire running legacy job {job.name}; retry after it finishes")
     registered = registered_jobs(listing)
+    if changed:
+        _write_json(path, config)
+        print(f"saved: memo.start={start} priority.configured={(config.get('priority') or {}).get('configured', False)}")
+    enabled = (config.get("priority") or {}).get("configured", False)
+    desired = desired_jobs(start, window, owner_tz) if enabled else [deliver_job()]
     paused = []
-    pending = []
 
-    for job in [*desired_jobs(topics, delivery_hour, owner_tz, lead_minutes, extra_hours), deliver_job()]:
+    for job in desired:
         current = registered.get(job["name"])
-        if current is not None:
-            if not current.enabled:
-                print(
-                    f"WARNING: {job['name']} is registered but DISABLED -- it will "
-                    "never fire, and this leaves it disabled rather than "
-                    f"duplicating it. Enable it: {' '.join(OPENCLAW)} cron enable {current.id}"
-                )
-                paused.append(job["name"])
-                # Still brought up to the spec (budget included), so enabling it later
-                # does not bring back an old job.
-                if job_drift(job, current.spec):
-                    pending.append(("edit", job, current))
-                continue
-            if not job_drift(job, current.spec):
-                print(f"already present, skipped: {job['name']}")
-                continue
-            pending.append(("edit", job, current))
-        else:
-            pending.append(("create", job, None))
-
-    for action, job, current in pending:
-        if action == "edit":
-            print(
-                f"updating drifted job: {job['name']} "
-                f"(was {current.spec.get('schedule')!r} {current.spec.get('tz')!r}, "
-                f"now {job['schedule'] or job.get('every')!r} {job['tz']!r})"
-            )
-            _check(backend.edit(current.id, job), f"could not update drifted job {job['name']}")
-            print(f"updated: {job['name']} ({job['schedule'] or 'every ' + job['every']})")
-        else:
+        if current is None:
             _check(backend.create(job), f"could not register {job['name']}")
             print(f"registered: {job['name']} ({job['schedule'] or 'every ' + job['every']})")
+            continue
+        if not current.enabled:
+            print(f"WARNING: {job['name']} is registered but DISABLED -- it will never fire, and "
+                  "this leaves it disabled rather than duplicating it. Enable it: "
+                  f"{' '.join(OPENCLAW)} cron enable {current.id}")
+            paused.append(job["name"])
+        if not job_drift(job, current.spec):
+            if current.enabled:
+                print(f"already present, skipped: {job['name']}")
+            continue
+        _check(backend.edit(current.id, job), f"could not update drifted job {job['name']}")
+        print(f"updated: {job['name']} ({job['schedule'] or 'every ' + job['every']})")
 
-    for name in stale_names(topics, registered, len(extra_hours), delivery_hour):
-        _check(backend.remove(registered[name].id), f"could not remove stale job {name}")
-        print(f"removed stale job: {name}")
-
-    if args.now:
-        queue_now(backend, listing, lead_minutes, owner_tz, fresh_advice=args.fresh_advice)
-
+    # Do not retire any working legacy schedule if a replacement is disabled.
     if paused:
-        raise SystemExit(
-            f"registered what was missing, but {len(paused)} job(s) are "
-            f"DISABLED and will never fire: {', '.join(paused)} -- "
-            f"{' '.join(OPENCLAW)} cron enable <id>"
-        )
+        raise SystemExit(f"replacement jobs are DISABLED: {', '.join(paused)}; enable them before cutover")
+
+    wanted = {job["name"] for job in desired}
+    for name, job in registered.items():
+        if name not in wanted:
+            _check(backend.remove(job.id), f"could not remove stale job {name}")
+            print(f"removed stale job: {name}")
+
+    # Exact legacy paper jobs only; unrelated pt-* automations belong to their owners.
+    for job in listing:
+        if _is_legacy_paper_job(job.name):
+            _check(backend.remove(job.id), f"could not retire legacy job {job.name}")
+            print(f"retired legacy job: {job.name}")
+
+    if args.now and not enabled:
+        raise SystemExit("not queued: priority.configured is false; enable the memo first")
+    if args.now:
+        queue_now(backend, window, owner_tz)
+
     return 0
 
 

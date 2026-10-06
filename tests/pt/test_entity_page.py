@@ -1,0 +1,283 @@
+"""entity_page.py -- one investigator's dossier merged into its shared wiki page."""
+from __future__ import annotations
+
+import json
+from datetime import date
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+
+import pytest
+
+from conftest import load_module
+
+ep = load_module("entity_page", "memo-shared/scripts/entity_page.py")
+wiki = load_module("wiki", "memo-shared/scripts/wiki.py")
+
+D = {"title": "Jane Doe", "kind": "people", "slug": "jane-doe", "description": "Partner at Acme Ventures; owes a term sheet.",
+     "now": "Waiting on Acme's term sheet; ball: them.",
+     "timeline": [{"date": "2026-09-30", "fact": "Said the sheet comes Friday", "item": "gmail:me:t1"}],
+     "sources": [{"resource": "gmail:me:t1"}], "tags": ["investor"]}
+
+
+@pytest.fixture(autouse=True)
+def local_state(tmp_path, monkeypatch):
+    monkeypatch.setenv("PT_HOME", str(tmp_path / "state"))
+
+
+@pytest.fixture
+def merge_cli(mac, tmp_path):
+    mac.wiki("init", "~/Plow/wiki")
+    def run(dossier=D, today="2026-10-01"):
+        f = tmp_path / "d.json"
+        f.write_text(json.dumps(dossier))
+        argv = ["merge", "--dossier", str(f)]
+        return ep.main(argv + (["--today", today] if today else []), call_tool=mac.call_tool)
+    return run
+
+
+def dossier_file(tmp_path, dossier=D, name="d.json", **who):
+    """A dossier as the investigator writes it: the entity's names inside the file."""
+    f = tmp_path / name
+    f.write_text(json.dumps({"kind": "people", "slug": "jane-doe", "title": "Jane Doe", **dossier, **who}))
+    return f
+
+
+def test_new_page_is_valid_okf_with_now_and_timeline():
+    meta, body = wiki.split_page(ep.merge(None, D, "people", "Jane Doe", "2026-10-01"))
+    assert meta["type"] == "Person" and meta["category"] == "entities"
+    assert meta["created"] == meta["updated"] == "2026-10-01"
+    assert "## Now\nWaiting on Acme's term sheet; ball: them.\n" in body
+    assert "- 2026-09-30 · Said the sheet comes Friday · {gmail:me:t1}" in body
+
+
+def test_refresh_replaces_now_dedupes_timeline_and_keeps_owner_sections():
+    first = ep.merge(None, D, "orgs", "Acme", "2026-10-01")
+    owned = first + "\n## My notes\nNever take their first offer.\n"
+    owned = owned.replace("## Timeline\n", "## Timeline\nmet at the dinner, liked them\n")
+    later = {**D, "now": "Sheet received.", "timeline": [
+        {"date": "2026-09-30", "fact": "Said the sheet comes Friday (confirmed)", "item": "gmail:me:t1"},
+        {"date": "2026-10-03", "fact": "Sent the sheet", "item": "gmail:me:t2"}],
+        "sources": [{"resource": "gmail:me:t2"}]}
+    meta, body = wiki.split_page(ep.merge(owned, later, "orgs", "Acme", "2026-10-04"))
+    assert meta["type"] == "Organization" and meta["created"] == "2026-10-01"
+    assert meta["updated"] == "2026-10-04"
+    assert [s["resource"] for s in meta["sources"]] == ["gmail:me:t1", "gmail:me:t2"]
+    assert "## Now\nSheet received.\n" in body and "ball: them" not in body
+    assert body.count("{gmail:me:t1}") == 1 and "(confirmed)" in body
+    assert body.index("{gmail:me:t2}") < body.index("{gmail:me:t1}")  # newest first
+    assert "met at the dinner, liked them" in body and "## My notes\nNever take" in body
+
+
+def test_timeline_caps_at_twenty_newest():
+    many = {**D, "timeline": [{"date": f"2026-09-{d:02d}", "fact": f"f{d}", "item": f"i{d}"} for d in range(1, 26)]}
+    body = ep.merge(None, many, "people", "Jane Doe", "2026-10-01")
+    assert body.count(" · {i") == 20 and "{i25}" in body and "{i5}" not in body
+
+
+def test_refresh_unions_repeated_new_sources_once():
+    page = ep.merge(None, D, "people", "Jane", "2026-10-01")
+    refresh = {**D, "sources": D["sources"] + [{"resource": "gmail:me:t2"}] * 2}
+    meta, _ = wiki.split_page(ep.merge(page, refresh, "people", "Jane", "2026-10-02"))
+    assert [source["resource"] for source in meta["sources"]] == ["gmail:me:t1", "gmail:me:t2"]
+
+
+def test_owner_canonical_timeline_wins_over_refresh_and_survives_cap():
+    page = ep.merge(None, D, "people", "Jane", "2026-10-01")
+    owner_line = "- 2026-09-30 · Owner corrected this fact · {gmail:me:t1}"
+    older_line = "- 2020-01-01 · Owner wants to keep this · {old-receipt}"
+    page = page.replace("## Timeline\n", f"## Timeline\n{owner_line}\n{older_line}\n")
+    refresh = {**D, "timeline": D["timeline"] + [
+        {"date": f"2026-10-{d:02d}", "fact": f"New fact {d}", "item": f"i{d}"} for d in range(1, 26)]}
+    text = ep.merge(page, refresh, "people", "Jane", "2026-10-26")
+    assert owner_line in text and older_line in text
+    assert text.count("{gmail:me:t1}") == 1
+    assert text.count(ep.MANAGED) == 20
+    assert "{i25}" in text and "{i5}" not in text
+
+
+def test_owner_edit_to_a_generated_bullet_survives_with_its_hidden_marker():
+    page = ep.merge(None, D, "people", "Jane", "2026-10-01")
+    page = page.replace("Said the sheet comes Friday", "Owner corrected the deadline")
+    text = ep.merge(page, D, "people", "Jane", "2026-10-02")
+    assert "Owner corrected the deadline" in text
+    assert "Said the sheet comes Friday" not in text
+    assert text.count("{gmail:me:t1}") == 1
+
+
+@pytest.mark.parametrize("bad", [
+    {**D, "timeline": [{"date": "Friday", "fact": "x", "item": "y"}]},
+    {**D, "timeline": [{"date": "2026-09-30", "fact": "x", "item": ""}]},
+    {k: v for k, v in D.items() if k != "now"},
+])
+def test_malformed_dossier_fails_loudly(bad):
+    with pytest.raises(ValueError):
+        ep.merge(None, bad, "people", "Jane Doe", "2026-10-01")
+
+
+def test_cli_writes_then_validates_on_the_mac(mac, merge_cli):
+    assert merge_cli() == 0
+    assert (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
+
+
+def test_a_page_the_wiki_refuses_fails_the_run(mac, merge_cli, capsys):
+    page = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(ep.merge(None, D, "people", "Jane Doe", "2026-10-01").replace(
+        "category: entities", "category: entities\norg: not a link"))
+    original = page.read_text()
+    assert merge_cli(today="2026-10-02") == 1
+    assert "entities/people/jane-doe.md" in capsys.readouterr().err
+    assert page.read_text() == original
+
+
+@pytest.mark.parametrize("slug", ["../../owner/goals", "../jane", "a/b", "a\\b", ".", "..", "/jane", "jane\n"])
+def test_invalid_slug_never_calls_latch(slug, tmp_path):
+    def forbidden(*args):
+        pytest.fail("invalid slug reached Latch")
+    f = dossier_file(tmp_path, slug=slug)
+    assert ep.main(["merge", "--dossier", str(f)], call_tool=forbidden) == 1
+
+
+@pytest.mark.parametrize("who, why", [
+    ({"kind": "deals"}, "kind must be one of"),
+    ({"title": "  "}, "has no title"),
+    ({"slug": None}, "slug must be"),
+])
+def test_a_dossier_without_its_names_never_calls_latch(who, why, tmp_path, capsys):
+    def forbidden(*args):
+        pytest.fail("a nameless dossier reached Latch")
+    f = dossier_file(tmp_path, **who)
+    assert ep.main(["merge", "--dossier", str(f)], call_tool=forbidden) == 1
+    assert why in capsys.readouterr().err
+
+
+def test_a_hostile_name_stays_data(mac, tmp_path):
+    # A sender's display name is someone else's text: it travels in the file,
+    # becomes the page title, and never reaches a command line.
+    mac.wiki("init", "~/Plow/wiki")
+    hostile = 'Jane"; rm -rf ~ #$(id)'
+    f = dossier_file(tmp_path, title=hostile)
+    assert ep.main(["merge", "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 0
+    meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
+    assert meta["title"] == hostile
+
+
+def test_the_command_takes_no_name_argument():
+    with pytest.raises(SystemExit):
+        ep.main(["merge", "--title", "Jane", "--dossier", "x.json"])
+
+
+def test_rejected_new_page_is_removed(mac, tmp_path, capsys):
+    mac.wiki("init", "~/Plow/wiki")
+    f = dossier_file(tmp_path, {**D, "sources": [{"resource": ""}]})
+    assert ep.main(["merge", "--dossier", str(f), "--today", "2026-10-01"], call_tool=mac.call_tool) == 1
+    assert "wiki validate" in capsys.readouterr().err
+    assert not (mac.home / "Plow/wiki/entities/people/jane-doe.md").exists()
+
+
+def test_bare_cli_uses_owner_day(mac, merge_cli, monkeypatch):
+    monkeypatch.setattr(ep, "owner_today", lambda: date(2026, 10, 2))
+    assert merge_cli(today=None) == 0
+    meta, _ = wiki.split_page((mac.home / "Plow/wiki/entities/people/jane-doe.md").read_text())
+    assert meta["created"] == meta["updated"] == "2026-10-02"
+
+
+def test_owner_save_after_read_is_merged_instead_of_overwritten(mac, merge_cli, monkeypatch):
+    assert merge_cli() == 0
+    path = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    original_call = mac.call_tool
+    saved = False
+
+    def tool(name, args):
+        nonlocal saved
+        result = original_call(name, args)
+        if name == "plow_read_file" and not saved:
+            path.write_text(path.read_text() + "\n## My notes\nSaved while the memo was reading.\n")
+            saved = True
+        return result
+
+    monkeypatch.setattr(mac, "call_tool", tool)
+    assert merge_cli({**D, "now": "Updated by memo."}) == 0
+    assert "Saved while the memo was reading." in path.read_text()
+    assert "Updated by memo." in path.read_text()
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_failed_validation_never_rolls_back_over_owner_save(mac, merge_cli, monkeypatch, capsys, existing):
+    if existing:
+        assert merge_cli() == 0
+    path = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    original_call = mac.call_tool
+    owner_page = ep.merge(None, D, "people", "Jane", "2026-10-01") + "\n## My notes\nOwner save.\n"
+
+    def tool(name, args):
+        result = original_call(name, args)
+        if name == "plow_run_command" and args["argv"][:2] == ["wiki", "validate"]:
+            assert result["exit_code"] == 1
+            path.write_text(owner_page)
+        return result
+
+    monkeypatch.setattr(mac, "call_tool", tool)
+    assert merge_cli({**D, "sources": [{"resource": ""}]}) == 1
+    assert "wiki validate" in capsys.readouterr().err
+    assert path.read_text() == owner_page
+
+
+def test_repeated_owner_saves_fail_without_overwriting_notes(mac, merge_cli, monkeypatch, capsys):
+    assert merge_cli() == 0
+    path = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    original_call = mac.call_tool
+
+    def tool(name, args):
+        result = original_call(name, args)
+        if name == "plow_read_file":
+            path.write_text(path.read_text() + "\nAnother owner save.\n")
+        return result
+
+    monkeypatch.setattr(mac, "call_tool", tool)
+    assert merge_cli({**D, "now": "Must not be committed."}) == 1
+    assert "page changed during merge" in capsys.readouterr().err
+    assert path.read_text().count("Another owner save.") == 3
+    assert "Must not be committed." not in path.read_text()
+
+
+@pytest.mark.parametrize("reject_second", [False, True])
+def test_overlapping_updates_preserve_successful_page(mac, tmp_path, reject_second):
+    mac.wiki("init", "~/Plow/wiki")
+    first_read, release, second_read = Event(), Event(), Event()
+    first = dossier_file(tmp_path, name="first.json")
+    second = dossier_file(tmp_path, {**D, "timeline": [{"date": "2026-10-02", "fact": "New fact", "item": "gmail:me:t2"}],
+                                     "sources": [{"resource": "" if reject_second else "gmail:me:t2"}]},
+                          name="second.json")
+
+    def call(which):
+        def tool(name, args):
+            result = mac.call_tool(name, args)
+            if name == "plow_read_file":
+                # Missing pages raise before this point, so seed the page below.
+                if which == 1:
+                    first_read.set()
+                    assert release.wait(5)
+                else:
+                    second_read.set()
+            return result
+        return tool
+
+    page = mac.home / "Plow/wiki/entities/people/jane-doe.md"
+    page.parent.mkdir(parents=True, exist_ok=True)
+    page.write_text(ep.merge(None, {**D, "timeline": []}, "people", "Jane", "2026-10-01"))
+    argv = ["merge", "--today", "2026-10-02", "--dossier"]
+    with ThreadPoolExecutor(2) as pool:
+        one = pool.submit(ep.main, [*argv, str(first)], call(1))
+        try:
+            assert first_read.wait(5)
+            two = pool.submit(ep.main, [*argv, str(second)], call(2))
+            assert not second_read.wait(0.2)
+        finally:
+            release.set()
+        assert one.result(timeout=5) == 0
+        assert two.result(timeout=5) == int(reject_second)
+    text = page.read_text()
+    assert "{gmail:me:t1}" in text
+    assert ("{gmail:me:t2}" in text) is not reject_second
+

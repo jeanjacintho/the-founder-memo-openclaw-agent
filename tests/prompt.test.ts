@@ -5,15 +5,62 @@ import { test } from "node:test";
 import { renderConfig } from "../boot/config.ts";
 import { probeIdentity } from "../boot/probe-fixture.ts";
 import { renderPrompt } from "../boot/prompt.ts";
+import { llmRoute, roleModels } from "../boot/llm.ts";
 
 const prompt = await readFile(new URL("../prompt/AGENTS.md", import.meta.url), "utf8");
 const maxChars = renderConfig(probeIdentity, "http://api").agents.defaults.bootstrapMaxChars;
 
+test("the tournament dispatch contract uses the configured writer and critic routes", async () => {
+  const roles = roleModels({
+    MEMO_MODEL_WRITER: "plow/anthropic/writer-fixture", MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25",
+    MEMO_MODEL_CRITIC: "plow/openai/critic-fixture", MEMO_MODEL_CRITIC_PRICE: "1,10,0.1,1",
+  })!;
+  const rendered = prompt.replaceAll("{{writer_model}}", roles.writer).replaceAll("{{critic_model}}", roles.critic);
+  assert.match(rendered, /writer model is `plow\/anthropic\/writer-fixture`/);
+  assert.match(rendered, /critic\s+model is `plow\/openai\/critic-fixture`/);
+  assert.match(rendered, /Pass these exact ids as `sessions_spawn.model`/);
+  assert.doesNotMatch(rendered, /\{\{(?:writer|critic)_model\}\}/);
+  const skill = await readFile(new URL("../skills/memo-tournament/SKILL.md", import.meta.url), "utf8");
+  const loop = skill.split("### Mechanical loop (authoritative)")[1].split("### ")[0];
+  assert.match(loop, /five writer children \(`model`: the writer model\)/);
+  assert.match(loop, /critics:[\s\S]*\(`model`: the critic model\)/);
+  assert.match(loop, /one culler child \(`model`: the writer\s+model\)/);
+});
+
+test("unset role models render the selected boot route for both roles", () => {
+  const route = llmRoute({ AGENT_PROVIDER: "openai", AGENT_MODEL: "chat-fixture" }, "").route;
+  const roles = roleModels({}) ?? { writer: route.primary, critic: route.primary };
+  const rendered = prompt.replaceAll("{{writer_model}}", roles.writer).replaceAll("{{critic_model}}", roles.critic);
+  assert.match(rendered, /writer model is `openai\/chat-fixture`/);
+  assert.match(rendered, /critic\s+model is `openai\/chat-fixture`/);
+});
+
+test("no Mac still renders the default thread trust instruction", async () => {
+  assert.match(await renderPrompt(prompt, null, "test-token"), /ask the owner whether the group should have its Plow trusted flag set/i);
+});
+
+for (const [mode, expected] of [
+  ["ask", /ask the owner whether the group should have its Plow trusted flag set/i],
+  ["trusted", /create groups with trusted: true/i],
+  ["untrusted", /create groups with trusted: false/i],
+] as const) test(`thread trust mode ${mode} renders its instruction`, async () => {
+  const rendered = await renderPrompt(prompt, null, "test-token", mode);
+  assert.match(rendered, expected);
+  assert.match(rendered, /Every phone group remains listen-only with only plow_record_signal, regardless of this flag/);
+  assert.doesNotMatch(rendered, /full trust \(access to your Mac, mail, files\)/);
+  if (mode !== "ask") assert.doesNotMatch(rendered, /ask the owner whether the group should have its Plow trusted flag set/i);
+});
+
+test("invalid thread trust mode fails at boot", async () => {
+  await assert.rejects(renderPrompt(prompt, null, "test-token", "unknown"), /PLOW_THREAD_TRUST/);
+});
+
 test("dashboard address comes from agent identity, including absence", async () => {
-  assert.equal(await renderPrompt(prompt, null, "test-token", "https://dashboard.example/agent"),
-    `${prompt}\nYour dashboard is https://dashboard.example/agent. Give that exact address when asked; never guess a dashboard URL.\n`);
-  assert.equal(await renderPrompt(prompt, null, "test-token", null),
-    `${prompt}\nYou have no dashboard. Say so when asked for its URL; never guess one.\n`);
+  const base = await renderPrompt(prompt, null, "test-token", "ask", null);
+  assert.equal(await renderPrompt(prompt, null, "test-token", "ask", "https://dashboard.example/agent"),
+    base.replace("\nYou have no dashboard. Say so when asked for its URL; never guess one.\n",
+      "\nYour dashboard is https://dashboard.example/agent. Give that exact address when asked; never guess a dashboard URL.\n"));
+  assert.match(base, /You have no dashboard. Say so when asked for its URL/);
 });
 
 for (const format of ["json", "sse", "oversized", "missing", "invalid", "unavailable", "redirect"]) {
@@ -43,10 +90,10 @@ for (const format of ["json", "sse", "oversized", "missing", "invalid", "unavail
     try {
       const address = server.address();
       assert.ok(address && typeof address !== "string");
-      const rendered = await renderPrompt(prompt, `http://127.0.0.1:${address.port}`, "test-token");
+      const rendered = await renderPrompt(prompt, `http://127.0.0.1:${address.port}`, "test-token", "ask");
       const expectedInstructions = format === "oversized" ? "A".repeat(8_000)
         : "Use plow_list_skills to discover the owner's Mac skills.";
-      const base = `${prompt}\nYou have no dashboard. Say so when asked for its URL; never guess one.\n`;
+      const base = await renderPrompt(prompt, null, "test-token", "ask");
       assert.equal(rendered, ["json", "sse", "oversized"].includes(format)
         ? `${base}\nInstructions from your owner's Mac through Latch (up to 8,000 characters):\n\n\`\`\`text\n${expectedInstructions}\n\`\`\`\n`
         : base);
@@ -63,6 +110,18 @@ test("the prompt directs existing-chat sends to the native tool", () => {
   assert.ok(!prompt.includes("Do not use message"));
   assert.doesNotMatch(prompt, /message\(action="send"\) is for OTHER conversations/i);
   assert.match(prompt, /message\(action="send"\).*current conversation/i);
-  assert.match(prompt, /accountId/);
+  assert.doesNotMatch(prompt, /plow_ask_owner|escalation/i);
   assert.match(prompt, /plow_start_thread/);
+  assert.doesNotMatch(prompt, /owner-approved follow-up/);
+});
+
+test("the prompt treats offered tools as the owner's trust grant", () => {
+  assert.match(prompt, /tools are available on a member's turn, the owner trusted/i);
+  assert.match(prompt, /plow_reply_to/i);
+  assert.match(prompt, /owner.*OK in this thread/i);
+  assert.match(prompt, /owner.*yes in the thread.*act there/i);
+  assert.match(prompt, /owner answers\s+in their DM[\s\S]*back to the thread/i);
+  assert.match(prompt, /do not act on or relay that approval with plow_reply_to/i);
+  assert.match(prompt, /requests cannot be approved here/i);
+  assert.doesNotMatch(prompt, /In the owner's own conversation, act\./);
 });

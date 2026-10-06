@@ -1,26 +1,28 @@
 ---
 type: Project
-title: The Founder Times
-description: Your morning paper — every edition it delivered, and what its advisor's desk knows about your company.
+title: The Founder Memo
+description: Your nightly memo — every one it printed, and what its advisors know about your company.
 category: projects
-tags: [newspaper]
+tags: [memo]
 sources:
   - resource: plow-chat:{chat}
 created: {today}
 updated: {today}
 ---
-# The Founder Times
+# The Founder Memo
 
-The paper writes here every morning; you can edit anything it wrote. To change
-what it covers, text the paper.
+The memo writes here every night; you can edit anything it wrote. To correct
+it, text the memo.
 
-- [The advisor's Q&A](/projects/thefoundertimes/qa.md) — what the advisor needs to know about
+- [The advisor's Q&A](/projects/founder-memo/qa.md) — what the advisor needs to know about
   the company, ranked by how much the answer changes the advice.
-- [The advisor's read capabilities and sources](/projects/thefoundertimes/resources.md) — documented
+- [The advisor's read capabilities and sources](/projects/founder-memo/resources.md) — documented
   read-only tools and sources worth revisiting.
 - [What I'm working toward](/entities/owner/goals.md) — your goals, what not to do now,
   and notes. What you write there overrides anything the desk infers.
 
 ## Your advisors
+
+## Memos
 
 ## Editions

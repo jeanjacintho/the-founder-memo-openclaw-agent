@@ -2,7 +2,7 @@
 """owner_phrases.py -- the paper's fixed lines, in the owner's language.
 
 Scripts and the channel write a few lines no model is there to phrase: the
-setup wait lines, the print-miss line, the failed-turn notice, the printed
+setup wait lines, the print-miss line, the failed-edition notice, the printed
 page's labels. `owner.language` is free-form ("Mandarin in, Mandarin out"),
 and no table in code can hold every language -- so the model writes the
 closed set once, in the owner's language, and everything reads it here.
@@ -19,6 +19,8 @@ back to the curated English or Portuguese below. English and Portuguese are
 `ready` with no file at all.
 
 Library: `phrase(key, language=None, **fields)` -> the line, formatted.
+Pre-memo packs keep their existing labels while `status` requests translation
+of the new cost keys; recording a new pack still requires the complete set.
 """
 from __future__ import annotations
 
@@ -44,8 +46,7 @@ SOURCE = {
     "print.retry": "; next scheduled run retries",
     "print.timeout": PRINT_TIMEOUT_NOTE,
     "print.no_pdf": "no PDF to print at {path}",
-    "turn.failed": ("I couldn't finish handling your last message. Part of the request "
-                    "may have already happened, so please check before resending."),
+    "edition.failed": "The edition was not delivered because a required run step failed.",
     "attempts.cooldown": "The edition has not arrived. I am pausing retries until at least {time}; delivery is not confirmed.",
     "attempts.spent_scheduled": ("The edition was not delivered after repeated attempts, so I am not "
                                  "trying again now. The next scheduled paper comes tomorrow."),
@@ -53,11 +54,11 @@ SOURCE = {
                                  "trying again now. Ask me again later."),
     "page.first_step": "FIRST STEP",
     "page.questions": "QUESTIONS FOR YOU · TEXT “Q2: …”",
-    "page.sources": "Sources:",
     "page.could_not_source": "Couldn't source:",
-    "page.nothing_to_report": "Nothing to report this time.",
     "page.advice_from": "Advice from",
     "page.priority_band": "What to prioritize today",
+    "page.cost": "Tonight's research: ${usd} · {duration}",
+    "page.cost_unknown": "Tonight's research: cost unavailable · {duration}",
 }
 
 # Curated Portuguese: the paper's first language, never left to a translation.
@@ -68,8 +69,7 @@ PORTUGUESE = {
     "print.retry": "; a próxima edição agendada tenta de novo",
     "print.timeout": "resultado desconhecido: ainda em execução após {seconds}s",
     "print.no_pdf": "nenhum PDF para imprimir em {path}",
-    "turn.failed": ("Não consegui terminar de tratar sua última mensagem. Parte do pedido "
-                    "pode já ter acontecido — confira antes de mandar de novo."),
+    "edition.failed": "A edição não foi entregue porque uma etapa necessária da execução falhou.",
     "attempts.cooldown": "A edição ainda não chegou. Vou pausar as tentativas até pelo menos {time}; a entrega não está confirmada.",
     "attempts.spent_scheduled": ("A edição não foi entregue depois de várias tentativas, então não vou "
                                  "tentar de novo agora. O próximo jornal agendado sai amanhã."),
@@ -77,11 +77,11 @@ PORTUGUESE = {
                                  "tentar de novo agora. Peça de novo mais tarde."),
     "page.first_step": "PRIMEIRO PASSO",
     "page.questions": "PERGUNTAS PARA VOCÊ · RESPONDA “Q2: …”",
-    "page.sources": "Fontes:",
     "page.could_not_source": "Sem fonte:",
-    "page.nothing_to_report": "Nada a relatar desta vez.",
     "page.advice_from": "Conselho de",
     "page.priority_band": "O que priorizar hoje",
+    "page.cost": "Pesquisa desta noite: US${usd} · {duration}",
+    "page.cost_unknown": "Pesquisa desta noite: custo indisponível · {duration}",
 }
 
 
@@ -109,6 +109,9 @@ def _stored():
         return None
     if not isinstance(data, dict) or not isinstance(data.get("phrases"), dict):
         return None
+    # Retired labels are ignored only when reading an existing pack.
+    for key in ("page.sources", "page.nothing_to_report", "turn.failed"):
+        data["phrases"].pop(key, None)
     return data
 
 
@@ -116,7 +119,10 @@ def table(language=None):
     """The table for this owner: their written phrases, else curated pt/en."""
     language = current_language() if language is None else language
     stored = _stored()
-    if stored and language and stored.get("language") == language and not problems(stored["phrases"]):
+    if stored and language and stored.get("language") == language and not problems(
+            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown", "edition.failed")):
+        # Old packs keep their existing translations; status() still requires
+        # a complete replacement before using the newly introduced labels.
         return stored["phrases"]
     return PORTUGUESE if is_portuguese(language) else SOURCE
 
@@ -135,12 +141,14 @@ def status(language=None):
     return "ready" if ok else "missing"
 
 
-def problems(candidate):
+def problems(candidate, *, allow_missing=()):
     """Why a translation is not usable, first reason first; [] when it is."""
     if not isinstance(candidate, dict):
         return ["phrases is not an object"]
     found = []
     for key in SOURCE:
+        if key not in candidate and key in allow_missing:
+            continue
         if key not in candidate:
             found.append(f"missing: {key}")
         elif not isinstance(candidate[key], str) or not candidate[key].strip():

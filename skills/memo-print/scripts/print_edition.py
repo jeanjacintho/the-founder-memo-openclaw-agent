@@ -9,7 +9,8 @@ itself. This script is that same shape for paper.
 
 A later run that DID reach `lp` failed because the CUPS queue refused HTML
 (`Unsupported document-format "text/html"` on JornalVirtual). The file
-shipped is edition.pdf, the one the chat already got. Latch write_file is
+shipped is edition.pdf, the one the chat already got; a 72 mm roll
+(printer.paper "72mm") gets receipt.pdf, rendered beside it. Latch write_file is
 text, so the PDF rides as base64 and is decoded on the Mac before `lp`.
 
 Usage:
@@ -35,26 +36,53 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent.parent / "memo-shared" / "scripts"))
 from latch_mcp import LatchError, connect, finish_command
 
+# tsp143.ppd's tallest 72 mm page. Without it CUPS shrinks the receipt onto
+# the default 72x200 mm page; the driver's variable length cuts after the ink.
+RECEIPT_MEDIA = "X72MMY2000MM"
+
 PATH_RE = re.compile(
     r"(/Users/[^\s'\"]+/Plow/pt/edition-[0-9-]+\.pdf(?:\.b64)?)"
 )
 
 
-def printer_name(config_path):
-    """CUPS name when printer.configured is exactly true; else None (skip)."""
+def _printer(config_path):
     try:
         cfg = json.loads(Path(config_path).read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
-        return None
-    if not isinstance(cfg, dict):
-        return None
-    printer = cfg.get("printer") or {}
-    if not isinstance(printer, dict) or printer.get("configured") is not True:
+        return {}
+    printer = cfg.get("printer") if isinstance(cfg, dict) else None
+    return printer if isinstance(printer, dict) else {}
+
+
+def printer_name(config_path):
+    """CUPS name when printer.configured is exactly true; else None (skip)."""
+    printer = _printer(config_path)
+    if printer.get("configured") is not True:
         return None
     name = printer.get("name")
     if not isinstance(name, str) or not name.strip():
         return None
     return name.strip()
+
+
+def receipt_paper(config_path):
+    """printer.paper "72mm": a thermal roll, which gets the receipt page."""
+    return _printer(config_path).get("paper") == "72mm"
+
+
+def write_receipt(pdf_path):
+    """receipt.pdf beside edition.pdf, from the same edition.json."""
+    sys.path.insert(0, str(_HERE.parent.parent / "memo-render" / "scripts"))
+    import render_memo  # noqa: PLC0415 -- only a roll needs WeasyPrint
+
+    run_dir = Path(pdf_path).resolve().parent
+    try:
+        memo = json.loads((run_dir / "edition.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        sys.exit(f"error: no edition.json for the receipt page: {exc}")
+    receipt = run_dir / "receipt.pdf"
+    render_memo.write_pdf(render_memo.receipt_html(memo), receipt)
+    return str(receipt)
 
 
 def read_pdf(path):
@@ -127,7 +155,7 @@ def require_exit_zero(call_tool, result, step):
         sys.exit(f"error: {step} {result['exit_code']}: {output}")
 
 
-def ship(pdf_path, printer, date, call_tool):
+def ship(pdf_path, printer, date, call_tool, lp_options=()):
     pdf = read_pdf(pdf_path)
     dest_b64 = mac_b64_path(date)
 
@@ -150,7 +178,7 @@ def ship(pdf_path, printer, date, call_tool):
     lp = call_tool(
         "plow_run_command",
         {
-            "argv": ["lp", "-d", printer, abs_pdf],
+            "argv": ["lp", "-d", printer, *lp_options, abs_pdf],
             "network": True,
             "read_paths": [abs_pdf],
             "goal": "Print today's Founder Times edition",
@@ -158,7 +186,7 @@ def ship(pdf_path, printer, date, call_tool):
     )
     lp = finish_command(call_tool, lp, "lp")  # a running lp can still fail with BFD
     if is_bfd(lp):
-        cmd = f"lp -d {shlex.quote(printer)} {shlex.quote(abs_pdf)}"
+        cmd = shlex.join(["lp", "-d", printer, *lp_options, abs_pdf])
         lp = call_tool(
             "plow_run_applescript",
             {
@@ -185,13 +213,14 @@ def main(argv=None):
         print("skipped: printer.configured is not true")
         return
     date = args.date or edition_date(args.pdf)
+    lp_options = ["-o", f"media={RECEIPT_MEDIA}"] if receipt_paper(args.config) else []
     if args.dry_run:
-        print(f"dry-run: would write {mac_pdf_path(date)} and lp -d {printer}")
+        print(f"dry-run: would write {mac_pdf_path(date)} and {shlex.join(['lp', '-d', printer, *lp_options])}")
         return
 
-
+    pdf = write_receipt(args.pdf) if lp_options else args.pdf
     try:
-        ship(args.pdf, printer, date, connect().call_tool)
+        ship(pdf, printer, date, connect().call_tool, lp_options)
     except LatchError as exc:
         sys.exit(f"error: {exc}")
     print(f"page printed on {printer}")

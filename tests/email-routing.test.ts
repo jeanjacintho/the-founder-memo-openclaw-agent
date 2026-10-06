@@ -9,10 +9,10 @@ import { websocketFixture } from "./ws-fixture.ts";
 const require = createRequire(new URL("../plugin/package.json", import.meta.url));
 const { resolveAgentRoute } = await import(require.resolve("openclaw/plugin-sdk/routing"));
 
-test("native routing isolates email threads and shares one thread across senders", async t => {
+test("native routing isolates email threads, and gives each outside sender in a thread a session of their own", async t => {
   const { server, apiBase, abortAfter } = await websocketFixture(t);
   const controller = abortAfter();
-  const sender = (uid: string) => ({ type: "member", uid, display_name: uid, role: "member" });
+  const sender = (uid: string) => ({ type: "member", uid, display_name: uid, role: "member", provider_key: [uid, "example.test"].join("@") });
   const chat = (uid: string) => ({ uid, status: "active", trusted: false, participants: [
     { type: "agent", relationship: "self", line: { uid: "mail" } }, sender("alice"), sender("bob"),
   ] });
@@ -26,17 +26,18 @@ test("native routing isolates email threads and shares one thread across senders
       } } }));
     }
   });
-  const sessions: string[] = [];
+  const sessions = new Map<string, string>();
   let channel: { gateway: { startAccount: (context: object) => Promise<void> } };
   entry.register({ registrationMode: "full", registerTool() {}, logger: { info() {} }, on() {},
     registerChannel(value: { plugin: typeof channel }) { channel = value.plugin; },
     runtime: { channel: {
       routing: { resolveAgentRoute },
       inbound: {
-        buildContext: async (context: { route: { routeSessionKey: string } }) => { sessions.push(context.route.routeSessionKey); return {}; },
+        // Keyed by message: turns in different threads run concurrently, so arrival order is not fixed.
+        buildContext: async (context: { messageId: string; route: { routeSessionKey: string } }) => { sessions.set(context.messageId, context.route.routeSessionKey); return {}; },
         dispatch: async ({ replyOptions }: { replyOptions: { onAgentRunTerminalOutcome: (outcome: string) => void } }) => {
           replyOptions.onAgentRunTerminalOutcome("completed");
-          if (sessions.length === 3) controller.abort();
+          if (sessions.size === 3) controller.abort();
           return { dispatched: true, dispatchResult: { deliberateSilentTerminalReply: true } };
         },
       },
@@ -46,7 +47,7 @@ test("native routing isolates email threads and shares one thread across senders
     account: { apiBase, accountId: "email", lineUid: "ln_probe", emailLineUid: "mail" },
     cfg: renderConfig(probeIdentity, apiBase), abortSignal: controller.signal,
   });
-  assert.equal(sessions.length, 3);
-  assert.notEqual(sessions[0], sessions[1], "one sender in different threads must have separate sessions");
-  assert.equal(sessions[0], sessions[2], "different senders in one thread must share the session");
+  assert.equal(sessions.size, 3);
+  assert.notEqual(sessions.get("0"), sessions.get("1"), "one sender in different threads must have separate sessions");
+  assert.notEqual(sessions.get("0"), sessions.get("2"), "an outsider's mail must not share another sender's running session");
 });
