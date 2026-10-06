@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from conftest import ROOT, load_module
+from test_finalize_setup import FakeScheduler
 
 sys.path.insert(0, str(ROOT / "memo-shared" / "scripts"))
 record = load_module("record_setup", "memo-shared/scripts/record_setup.py")
@@ -35,27 +36,12 @@ def test_without_an_event_the_interview_is_unchanged_and_an_unknown_code_is_refu
     assert record.main(["record_setup.py", str(tmp_path / "other" / "config.json"), "start=01:00"]) == 1
 
 
-class Scheduler:
-    def __init__(self):
-        self.created = []
-
-    def list(self):
-        return [type("Job", (), {"name": j["name"], "id": j["name"], "running": False})() for j in self.created]
-
-    def create(self, job):
-        self.created.append(job)
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-    def remove(self, _id):
-        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-
-
 def test_finalize_runs_an_event_installs_first_memo_now_instead_of_the_bootstrap(tmp_path, monkeypatch):
     monkeypatch.setenv("PT_HOME", str(tmp_path))
     (tmp_path / ".setup-draft.json").write_text(json.dumps({
         "start": "01:00", "event": "EV-PLOW", "mac": {"awake": False},
         "printer": {"configured": True, "line": LINE, "paper": "72mm"}}))
-    backend = Scheduler()
+    backend = FakeScheduler()
     assert finalize.main(["finalize_setup.py", str(tmp_path / "config.json"), "--owner-tz", "America/Los_Angeles"],
                          backend=backend) == 0
     config = json.loads((tmp_path / "config.json").read_text())
@@ -92,19 +78,19 @@ def test_a_printer_line_gets_the_receipt_and_never_lp(tmp_path, monkeypatch, cap
     assert "page sent to the event printer" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("existing", [True, False])
-def test_send_to_line_reuses_its_printer_chat_or_starts_one_untrusted(monkeypatch, existing):
+def test_send_to_line_always_resolves_a_chat_with_only_the_printer_line(monkeypatch):
+    # Review of #98: reusing any chat that merely contains the printer line could post a
+    # receipt into a group with other people in it.
     import bearer_http, owner_chat, post_to_chat
     monkeypatch.setenv("PLOW_API_BASE", "https://api.example")
     monkeypatch.setenv("PLOW_AGENT_TOKEN", "tok")
-    chats = [{"uid": "cht_printer", "participants": [{"provider_key": LINE}]}] if existing else []
-    monkeypatch.setattr(owner_chat, "fetch_identity", lambda base, token: {"line": {"uid": "ln_x"}, "chats": chats})
+    group = {"uid": "cht_group", "participants": [{"provider_key": LINE}, {"provider_key": "+15550100001"}]}
+    monkeypatch.setattr(owner_chat, "fetch_identity", lambda base, token: {"line": {"uid": "ln_x"}, "chats": [group]})
     calls = []
-    monkeypatch.setattr(bearer_http, "post_json_read", lambda base, path, token, label, body: calls.append((path, body)) or {"uid": "cht_new"})
+    monkeypatch.setattr(bearer_http, "post_json_read", lambda base, path, token, label, body: calls.append((path, body)) or {"uid": "cht_printer"})
     monkeypatch.setattr(bearer_http, "post_json", lambda base, path, token, label, body: calls.append((path, body)))
     monkeypatch.setattr(post_to_chat, "declare_and_upload", lambda base, chat, token, pdf, filename=None: f"att@{chat}")
     pe.send_to_line("/run/receipt.pdf", LINE, "2026-10-06")
-    chat = "cht_printer" if existing else "cht_new"
-    if not existing:
-        assert calls[0][0] == "/v1/chats" and calls[0][1]["members"] == [LINE] and calls[0][1]["trusted"] is False
-    assert calls[-1] == (f"/v1/chats/{chat}/messages", {"body": "", "attachment_uids": [f"att@{chat}"]})
+    assert calls[0] == ("/v1/chats", {"line_uid": "ln_x", "members": [LINE], "body": "The Founder Memo",
+                                      "trusted": False, "idempotency_key": f"memo-print-{LINE}"})
+    assert calls[-1] == ("/v1/chats/cht_printer/messages", {"body": "", "attachment_uids": ["att@cht_printer"]})
