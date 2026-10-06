@@ -943,3 +943,74 @@ for (const listed of [false, true]) test(`empty and dot-segment chat IDs are rej
   assert.ok(!logs.some(text => text.startsWith("transport stopped")));
   assert.notEqual(controller.signal.reason?.name, "TimeoutError");
 });
+
+
+test("chat and email listeners filter new conversations before sharing checkpoint files", async t => {
+  const { root, server, apiBase, abortAfter } = await websocketFixture(t);
+  const controller = abortAfter();
+  const chats = [acceptedChat("phone"), { ...acceptedChat("mail"), participants: [
+    { type: "agent", relationship: "self", line: { uid: "mail-line" } },
+  ] }];
+  t.mock.method(globalThis, "fetch", async (url: string) => Response.json(
+    url.endsWith("/chats") || url.includes("/messages?") ? { data: [], has_more: false } :
+    chats.find(chat => url.endsWith(`/chats/${chat.uid}`)) ?? { ticket: "ticket" }));
+  const baselines: string[] = [];
+  const bothWrites = Promise.withResolvers<void>();
+  controller.signal.addEventListener("abort", () => bothWrites.resolve());
+  const originalWrite = fs.writeFile;
+  const writer = t.mock.method(fs, "writeFile", async (...args: Parameters<typeof fs.writeFile>) => {
+    if (String(args[0]).endsWith(".tmp") && JSON.parse(String(args[1])).uid.startsWith("first:")) {
+      baselines.push(String(args[0]));
+      if (baselines.length === 2) bothWrites.resolve();
+      await bothWrites.promise;
+    }
+    return originalWrite(...args);
+  });
+  syncBuiltinESMExports();
+  t.after(() => { writer.mock.restore(); syncBuiltinESMExports(); });
+  server.on("connection", socket => {
+    for (const uid of ["mail", "phone"]) socket.send(JSON.stringify({ event_type: "message_received", event_id: uid,
+      chat_id: uid, data: { message: inbound(`source-${uid}`) } }));
+  });
+  const acked = new Set<string>();
+  const logs: string[] = [];
+  const turns: string[] = [];
+  await Promise.all(["chat", "email"].map(accountId => listen(
+    { apiBase, accountId, lineUid: "line", emailLineUid: "mail-line" }, controller.signal, text => {
+      logs.push(text);
+      if (text.startsWith("acked chat=mail message=source-mail") || text.startsWith("acked chat=phone message=source-phone")) acked.add(text.split(" ")[1]);
+      if (acked.size === 2) controller.abort();
+    }, async (chat) => { turns.push(`${accountId}:${chat.uid}`); return "completed"; })));
+  assert.deepEqual(turns.sort(), ["chat:phone", "email:mail"]);
+  assert.equal(new Set(baselines).size, 2, "only its serving account initializes each checkpoint");
+  assert.equal(baselines.length, 2);
+  assert.ok(!logs.some(text => text.startsWith("transport stopped")), logs.join("\n"));
+  assert.equal(await checkpointUid(root, "phone"), "source-phone");
+  assert.equal(await checkpointUid(root, "mail"), "source-mail");
+});
+
+test("a new email conversation remains recoverable when its first metadata lookup fails", async t => {
+  const { server, apiBase, abortAfter } = await websocketFixture(t);
+  const chat = { ...acceptedChat("mail"), participants: [
+    { type: "agent", relationship: "self", line: { uid: "mail-line" } },
+  ] };
+  const messages = ["first", "later"].map(inbound);
+  let boot = 0;
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url.endsWith("/chats/mail")) return Response.json(chat, { status: boot ? 200 : 503 });
+    return Response.json(url.endsWith("/chats") ? { data: boot ? [chat] : [], has_more: false } :
+      url.includes("/messages?") ? { data: boot ? [...messages].reverse() : [], has_more: false } : { ticket: "ticket" });
+  });
+  server.on("connection", socket => {
+    if (!boot) for (const message of messages) socket.send(JSON.stringify({ event_type: "message_received", event_id: message.uid,
+      chat_id: "mail", data: { message } }));
+  });
+  const turns: string[] = [];
+  for (; boot < 2; boot++) {
+    const controller = abortAfter();
+    await listen({ apiBase, accountId: "email", lineUid: "line", emailLineUid: "mail-line" }, controller.signal,
+      text => { if (text.startsWith("transport stopped") || text.startsWith("acked chat=mail message=later")) controller.abort(); },
+      async (_chat, message) => { turns.push(message.uid); return "completed"; });
+  }
+  assert.deepEqual(turns, ["first", "later"]);
+});

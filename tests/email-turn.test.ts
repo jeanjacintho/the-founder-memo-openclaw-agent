@@ -5,6 +5,7 @@ import { test, type TestContext } from "node:test";
 import { getSessionEntry, resolveStorePath, updateLastRoute } from "openclaw/plugin-sdk/session-store-runtime";
 import { readVisibleSessionTranscriptMessageEntries } from "openclaw/plugin-sdk/session-transcript-runtime";
 import entry from "../plugin/index.ts";
+import { emailLabel } from "../plugin/email.ts";
 import { websocketFixture } from "./ws-fixture.ts";
 import { nativeSendPolicy } from "./native-message-policy.ts";
 
@@ -113,7 +114,7 @@ test("a non-owner email turn's final goes to the owner's 1:1, labelled, and noth
     await final(dispatch, { text });
   });
   assert.deepEqual(posts.map(post => post.path), ["/chats/home/messages"]);
-  assert.equal(posts[0].body.body, `Email "Booking" from "sender@example.com":\n${text.trim()}`);
+  assert.equal(posts[0].body.body, `"Booking" · "sender@example.com":\n${text.trim()}`);
   assert.ok(logs.some(line => line.startsWith("completed chat=thread")));
   const prompt = contexts[0].supplemental.groupSystemPrompt!;
   assert.match(prompt, /You are Elm, your owner's assistant/);
@@ -218,8 +219,8 @@ test("a thread started from a trusted group reports its finals to that group, re
   const { posts } = await run(t, "email", [{ chat: "started", sender: outsider }], async dispatch => { await final(dispatch, { text: "They replied yes." }); }, undefined, state);
   assert.deepEqual(posts.map(post => post.path), ["/chats/group/messages"]);
   // The group sees no chat id; the group's session copy keeps it, to reply in the thread.
-  assert.equal(posts[0].body.body, `Email "Hello" from "sender@example.com":\nThey replied yes.`);
-  assert.deepEqual(await transcript("agent:main:plow:chat:group:group"), [`Email "Hello" from "sender@example.com" (thread started):\nThey replied yes.`]);
+  assert.equal(posts[0].body.body, `"Hello" · "sender@example.com":\nThey replied yes.`);
+  assert.deepEqual(await transcript("agent:main:plow:chat:group:group"), [`"Hello" · "sender@example.com" (thread started):\nThey replied yes.`]);
 });
 
 for (const [name, response, expected] of [
@@ -317,7 +318,7 @@ test("a NO_REPLY line beside an email final is dropped; the runtime's reminder n
   const { posts } = await run(t, "email", [{ chat: "thread", sender: outsider }, { chat: "other", sender: outsider }], async dispatch => {
     await final(dispatch, { text: dispatch.ctxPayload.conversation.id === "thread" ? `Morgan asked about Thursday.\n\nNO_REPLY\n\n${note}` : "NO_REPLY\n" });
   });
-  assert.deepEqual(posts.map(post => post.body.body), [`Email "Booking" from "sender@example.com":\nMorgan asked about Thursday.\n\n${note}`]);
+  assert.deepEqual(posts.map(post => post.body.body), [`"Booking" · "sender@example.com":\nMorgan asked about Thursday.\n\n${note}`]);
 });
 
 for (const [name, failures, truncated, paths, completed] of [
@@ -349,4 +350,10 @@ for (const [name, persona, ownerName, sent] of [
     await tool().execute("call", { to: "thread", body: "Thursday works.\n" });
   });
   assert.deepEqual(posts.map(post => [post.path, post.body.body]), [["/chats/thread/messages", sent]]);
+});
+
+test("email labels leave missing subjects empty and quote sender-provided text", () => {
+  assert.equal(emailLabel({ ...chats.thread, display_name: "" }, outsider), '"" · "sender@example.com"');
+  assert.equal(emailLabel({ ...chats.thread, display_name: 'Assunto\nOutra linha' }, outsider),
+    `${JSON.stringify('Assunto\nOutra linha')} · "sender@example.com"`);
 });

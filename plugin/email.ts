@@ -34,7 +34,7 @@ const quote = (value: string) => JSON.stringify(value).replace(/[\u2028\u2029]/g
 
 // Which email a delivered final is about, as the owner reads it: subject and sender's address.
 export function emailLabel(chat: Chat, sender: Member | Agent) {
-  return `Email ${quote(chat.display_name || "(no subject)")} from ${quote(sender.type === "member" ? sender.provider_key || sender.display_name : sender.line.display_name || sender.line.uid)}`;
+  return `${quote(chat.display_name ?? "")} · ${quote(sender.type === "member" ? sender.provider_key || sender.display_name : sender.line.display_name || sender.line.uid)}`;
 }
 
 // The footer every mail carries, naming who wrote it and for whom.

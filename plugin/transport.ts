@@ -109,7 +109,7 @@ export async function recover(account: Account, chat: string, checkpoint: string
   return messages.reverse();
 }
 
-async function earliestUnansweredOwnerMessage(account: Account, chat: string, newest: Message): Promise<string> {
+async function earliestUnansweredMessage(account: Account, chat: string, newest: Message): Promise<string> {
   let earliest = newest.uid;
   for await (const page of messagePages(account, chat)) for (const message of page.data) {
     if (message.direction !== "inbound" || message.sender.type !== "member") return earliest;
@@ -325,8 +325,8 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
             if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
             const page = await request<Page<Message>>(account, `/chats/${chat.uid}/messages?limit=1`);
             const newest = page.data[0];
-            checkpoint = chat.uid === owner?.uid && newest?.direction === "inbound" && newest.sender.type === "member"
-              ? `first:${await earliestUnansweredOwnerMessage(account, chat.uid, newest)}` : newest?.uid ?? "";
+            checkpoint = (account.accountId === "email" || chat.uid === owner?.uid) && newest?.direction === "inbound" && newest.sender.type === "member"
+              ? `first:${await earliestUnansweredMessage(account, chat.uid, newest)}` : newest?.uid ?? "";
             const buffered = bufferedChats.get(chat.uid);
             const first = buffered?.values().next().value;
             // A buffered frame moves first contact back only when history proves it is older.
@@ -368,6 +368,8 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
         if (event.event_type !== "message_received" || !validChatId(event.chat_id) || seen.has(event.data.message.uid) || replayed.has(event.data.message.uid)) continue;
         // Persist discovery before queueing: a dropped connection discards unstarted work.
         if (!checkpoints.has(event.chat_id)) {
+          const chat = await request<Chat>(account, `/chats/${event.chat_id}`);
+          if (!accepts(account, chat)) continue;
           let checkpoint: string;
           try { checkpoint = await readCheckpoint(event.chat_id); }
           catch (error) {
