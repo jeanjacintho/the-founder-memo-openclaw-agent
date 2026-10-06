@@ -135,7 +135,7 @@ RUN cd /opt/plow && npm ci --omit=dev --omit=peer --omit=optional --ignore-scrip
 ENV OPENCLAW_STATE_DIR=/var/lib/plow OPENCLAW_CONFIG_PATH=/var/lib/plow/openclaw.json OPENCLAW_INCLUDE_ROOTS=/etc/plow/openclaw OPENCLAW_NO_RESPAWN=1 NODE_DISABLE_COMPILE_CACHE=1
 # Agent Index listing. Compose (and a host that injects env) can override without rebuild.
 ENV AGENT_ID=thefoundertimes \
-    AGENT_NAME="The Founder Times" \
+    AGENT_NAME="The Founder Memo" \
     AGENT_BLURB="Your day's priorities, printed. Inspired by Mayfield's Patrick Salyer, it learns what you're working on from your Mac and prints what to focus on today, with sources, or sends a PDF to chat." \
     AGENT_RUNTIME="OpenClaw 2.0"
 ENV MEMO_MODEL_WRITER=plow/anthropic/claude-opus-5 \
