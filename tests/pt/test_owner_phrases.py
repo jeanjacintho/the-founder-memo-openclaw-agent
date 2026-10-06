@@ -119,18 +119,24 @@ def test_the_file_names_the_language_it_was_written_for(pt_home):
 
 
 @pytest.mark.parametrize("has_cost", [False, True])
-def test_pre_memo_pack_keeps_active_labels_and_requires_only_missing_cost_translation(pt_home, has_cost):
+@pytest.mark.parametrize("has_edition_failed", [False, True])
+def test_pre_memo_pack_keeps_active_labels_and_requires_missing_translations(pt_home, has_cost, has_edition_failed):
     configure(pt_home, "Mandarin Chinese")
     old = translated()
     if not has_cost:
         old = {k: v for k, v in old.items() if k not in ("page.cost", "page.cost_unknown")}
-    old.update({"page.questions": "ZH Sources:", "page.nothing_to_report": "ZH Nothing to report."})
+    if not has_edition_failed:
+        old.pop("edition.failed")
+        old["turn.failed"] = "ZH Previous turn failed."
+    old.update({"page.sources": "ZH Sources:", "page.nothing_to_report": "ZH Nothing to report."})
     raw = json.dumps({"language": "Mandarin Chinese", "phrases": old})
     path = pt_home / "owner-phrases.json"
     path.write_text(raw)
     assert phrases.phrase("chat.busy") == old["chat.busy"]
     assert phrases.phrase("page.first_step") == old["page.first_step"]
-    assert phrases.status() == ("ready" if has_cost else "missing")
+    assert phrases.phrase("attempts.spent_on_demand") == old["attempts.spent_on_demand"]
+    assert phrases.phrase("attempts.spent_scheduled") == old["attempts.spent_scheduled"]
+    assert phrases.status() == ("ready" if has_cost and has_edition_failed else "missing")
     assert path.read_text() == raw
     if not has_cost:
         assert "missing: page.cost" in phrases.problems(old)

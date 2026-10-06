@@ -108,7 +108,7 @@ def _stored():
     if not isinstance(data, dict) or not isinstance(data.get("phrases"), dict):
         return None
     # Retired labels are ignored only when reading an existing pack.
-    for key in ("page.sources", "page.nothing_to_report"):
+    for key in ("page.sources", "page.nothing_to_report", "turn.failed"):
         data["phrases"].pop(key, None)
     return data
 
@@ -118,9 +118,9 @@ def table(language=None):
     language = current_language() if language is None else language
     stored = _stored()
     if stored and language and stored.get("language") == language and not problems(
-            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown")):
-        # Old packs still supply every active label; new memo output requires
-        # a complete pack through status() before using its cost labels.
+            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown", "edition.failed")):
+        # Old packs keep their existing translations; status() still requires
+        # a complete replacement before using the newly introduced labels.
         return stored["phrases"]
     return PORTUGUESE if is_portuguese(language) else SOURCE
 
