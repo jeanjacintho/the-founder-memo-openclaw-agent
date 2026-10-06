@@ -8,7 +8,7 @@ stated local time into the container's local hour once, at write time, but
 never touches the container's own TZ. A page named for the owner's day, or
 a heading stamped with the owner's own hour, can therefore land a day (or
 an hour) off whatever the container's clock reads. Two callers need the
-owner's own now -- history.py's seven-day window, record_edition.py's
+owner's own now -- history.py's seven-day window, record_memo.py's
 `## HH:MM edition` heading and `created`/`updated` -- so this is their one
 shared source instead of two.
 
@@ -18,12 +18,15 @@ that exists but can't be trusted (bad JSON, an unreadable file, an unknown
 zone name) raises instead of guessing -- a silently wrong window or heading
 would read as valid.
 
-CLI, for a scheduled paper checking its own window (memo-tournament Orient):
+CLI:
 
-    owner_time.py minutes-until HH:MM
+    owner_time.py minutes-until HH:MM   whole minutes from now until HH:MM today on the
+                                        owner's clock -- negative once passed, never tomorrow
+    owner_time.py now                   the owner's now, ISO-8601 with its offset
+                                        (memo-tournament records it as the run's start)
+    owner_time.py minutes-since ISO     whole minutes since that instant (the run's window)
 
-prints the whole minutes from now until HH:MM today on the owner's clock --
-negative once it has passed, never rolled over to tomorrow. Bad usage: exit 2.
+Bad usage: exit 2.
 """
 from __future__ import annotations
 
@@ -38,7 +41,7 @@ from zoneinfo import ZoneInfo
 from pt_paths import config_file
 
 # A sentinel, not a Path: PT_HOME (tests point it at a tmp dir, same as
-# run_lock.py/record_edition.py) has to be read at call time, not
+# run_lock.py/record_memo.py) has to be read at call time, not
 # baked in as a default at import time.
 CONFIG = object()
 
@@ -79,13 +82,29 @@ def minutes_until(hhmm, config_path=CONFIG):
     return int((target - now).total_seconds() // 60)
 
 
+def minutes_since(iso, config_path=CONFIG):
+    """Whole minutes from an aware ISO-8601 instant until the owner's now."""
+    then = datetime.fromisoformat(iso)
+    if then.tzinfo is None:
+        raise ValueError(f"not an instant with an offset: {iso!r}")
+    return int((owner_now(config_path) - then).total_seconds() // 60)
+
+
+USAGE = "usage: owner_time.py minutes-until HH:MM | now | minutes-since ISO-8601"
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 2 or argv[0] != "minutes-until":
-        print("usage: owner_time.py minutes-until HH:MM", file=sys.stderr)
-        return 2
     try:
-        print(minutes_until(argv[1]))
+        if argv == ["now"]:
+            print(owner_now().isoformat(timespec="seconds"))
+        elif len(argv) == 2 and argv[0] == "minutes-until":
+            print(minutes_until(argv[1]))
+        elif len(argv) == 2 and argv[0] == "minutes-since":
+            print(minutes_since(argv[1]))
+        else:
+            print(USAGE, file=sys.stderr)
+            return 2
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

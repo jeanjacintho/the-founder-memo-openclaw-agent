@@ -5,7 +5,7 @@ usage: wiki_setup.py [--desk]
 
 Idempotent and cheap when there is nothing to do (a few page reads), so every
 caller runs it: memo-setup when the advisor's desk is turned on, the desk before
-each daily pass (--desk), and record_edition.py before it writes.
+each daily pass (--desk), and record_memo.py before it writes.
 
   - no ~/Plow/wiki          -> `wiki init ~/Plow/wiki` through Latch's plugin
   - the paper's schema and page, when absent, from memo-shared/assets/wiki/

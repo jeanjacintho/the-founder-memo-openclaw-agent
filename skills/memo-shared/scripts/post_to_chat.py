@@ -48,7 +48,7 @@ posting the edition again, then removes it when every finalizer completes.
 After a successful POST, two
 finalizers run independently and best-effort: print the run's PDF via print_edition.py when configured (a
 miss posts one line saying why), and record via
-record_edition.py (`--pdf` and `--text-file` both) on the sibling
+record_memo.py (`--pdf` and `--text-file` both) on the sibling
 `edition.json` -- one's failure never skips or undoes another, and nothing
 about the record reaches chat. `--dry-run` prints the redacted envelope and
 never sends.
@@ -88,7 +88,7 @@ RECORD_SCRIPT = (
     Path(__file__).resolve().parent.parent.parent
     / "memo-render"
     / "scripts"
-    / "record_edition.py"
+    / "record_memo.py"
 )
 
 
@@ -250,10 +250,10 @@ def recover_delivery(ticket, *, notify_print_failure=False, wait=True):
                 succeeded = True
             else:
                 result = _best_effort(
-                    run_record_edition, (edition_json, delivered_at), "edition not recorded"
+                    run_record_memo, (edition_json, delivered_at), "memo not recorded"
                 )
                 print(result)
-                succeeded = "edition not recorded" not in result
+                succeeded = "memo not recorded" not in result
             if succeeded:
                 pending.remove(finalizer)
                 state["finalizers_pending"] = pending
@@ -434,7 +434,7 @@ def print_page(pdf_path):
 RECORD_TIMEOUT = 300
 
 
-def run_record_edition(edition_json, delivered_at):
+def run_record_memo(edition_json, delivered_at):
     """delivered_at is captured once in main(), immediately before the chat
     POST, under the same delivery-order lock, and passed through -- not a
     fresh owner_now() here, well after whatever the print step's own
@@ -452,12 +452,12 @@ def run_record_edition(edition_json, delivered_at):
             timeout=RECORD_TIMEOUT,
         )
     except subprocess.TimeoutExpired:
-        return f"edition not recorded — timed out after {RECORD_TIMEOUT}s"
+        return f"memo not recorded — timed out after {RECORD_TIMEOUT}s"
     blob = ((proc.stdout or "") + (proc.stderr or "")).strip()
     if proc.returncode != 0:
-        if "edition not recorded" in blob:
+        if "memo not recorded" in blob:
             return blob
-        return f"edition not recorded — {blob or proc.returncode}"
+        return f"memo not recorded — {blob or proc.returncode}"
     return blob
 
 
@@ -634,13 +634,13 @@ def deliver(base, uid, token, *, pdf=None, text="", filename=None, text_file=Non
         except SystemExit as exc:
             print(f"print-failure notice not posted: {exc}", file=sys.stderr)
     recorded = (
-        _best_effort(run_record_edition, (edition_json, delivered_at), "edition not recorded")
+        _best_effort(run_record_memo, (edition_json, delivered_at), "memo not recorded")
         if edition_json else "skipped: no posted file"
     )
     print(recorded)
     recoveries = []
-    if "edition not recorded" in recorded:
-        recoveries.append(f"record_edition.py <edition.json> --now {delivered_at.isoformat()}")
+    if "memo not recorded" in recorded:
+        recoveries.append(f"record_memo.py <edition.json> --now {delivered_at.isoformat()}")
     if recoveries:
         sys.exit(
             "error: post-delivery finalization failed; recover with "

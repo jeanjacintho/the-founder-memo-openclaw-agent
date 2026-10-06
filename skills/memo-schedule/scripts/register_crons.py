@@ -106,13 +106,14 @@ def stale_run_minutes(window_minutes):
     return run_timeout_seconds(window_minutes) // 60 + 20
 
 
-def memo_prompt(window_minutes=DEFAULT_WINDOW_MINUTES):
+def memo_prompt(window_minutes=DEFAULT_WINDOW_MINUTES, scheduled=True):
     """The one run prompt, nightly or on demand. Everything else -- the lock, the
     day's attempts, the Mac gate, the phases -- is memo-tournament's Start."""
     return (
         f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
         f"Run tonight's memo now, in one session: follow "
         f"{skills() / 'memo-tournament' / 'SKILL.md'} from its Start section. "
+        f"This run is {'scheduled' if scheduled else 'on demand'}. "
         f"The window is {window_minutes} minutes from when this run starts "
         f"(stale lock after {stale_run_minutes(window_minutes)} minutes). "
         f"{DELIVERY_FAILURE_NOTICE}"
@@ -226,8 +227,8 @@ def queue_now(backend, listing, window_minutes, owner_tz, clock=None):
         return
     at = (clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
     job = {"name": NOW_NAME, "schedule": at.isoformat(timespec="seconds"), "tz": None,
-           "prompt": memo_prompt(window_minutes), "timeout": run_timeout_seconds(window_minutes),
-           "keep_after_run": True}
+           "prompt": memo_prompt(window_minutes, scheduled=False),
+           "timeout": run_timeout_seconds(window_minutes), "keep_after_run": True}
     previous = [j.id for j in listing if j.name == NOW_NAME]
     _check(backend.create(job), f"could not queue {NOW_NAME}")
     print(f"queued: {NOW_NAME} ({job['schedule']})")

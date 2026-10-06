@@ -129,6 +129,8 @@ class TestPrompt:
         assert prompt.startswith(crons.PAPER_RUN_MARKER)
         assert "/opt/plow/skills/memo-tournament/SKILL.md from its Start section" in prompt
         assert "The window is 180 minutes from when this run starts" in prompt
+        assert "This run is scheduled." in prompt
+        assert "This run is on demand." in crons.memo_prompt(180, scheduled=False)
         assert (ROOT / "memo-tournament" / "SKILL.md").is_file()
 
     def test_the_prompt_says_how_skills_load(self):
@@ -293,7 +295,7 @@ class TestNow:
         (create,) = [w for w in sched.writes if crons.NOW_NAME in w]
         at = create[create.index("--at") + 1]
         assert "T" in at and at[-6] in "+-"
-        assert create[create.index("--message") + 1] == crons.memo_prompt(240)
+        assert create[create.index("--message") + 1] == crons.memo_prompt(240, scheduled=False)
         assert "--keep-after-run" in create
         assert "queued: memo-now" in capsys.readouterr().out
 

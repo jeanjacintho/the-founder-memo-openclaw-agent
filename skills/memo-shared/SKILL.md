@@ -101,21 +101,19 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   work (one hang-on, then one "still on it", never a play-by-play). Cron never
   calls it.
 - `scripts/owner_time.py` — the owner's own clock, not the container's:
-  called bare as `owner_time.py minutes-until HH:MM` it prints the minutes left
-  until that time today (negative once passed; the priority desk's window check).
+  called bare as `owner_time.py now` it prints the owner's now (the run's `RUN_STARTED`),
+  `owner_time.py minutes-since <ISO>` the whole minutes since then, and
+  `owner_time.py minutes-until HH:MM` the minutes left until that time today.
   As a library, `owner_now()` (an aware datetime) and `owner_today()`, from `owner.timezone`
   in `pt/config.json`. Falls back to the container's clock only when the
   config or the key is absent; a config that exists but can't be trusted (bad
   JSON, an unreadable file, an unknown zone name) raises. Shared by
-  `history.py`'s window, `record_edition.py`'s heading and
+  `history.py`'s window, `record_memo.py`'s timestamps and
   `post_to_chat.py --hold-until`.
-- `memo-tournament/scripts/history.py recent [--topic ID]` — what this paper printed on the last 7
-  days, read from the wiki's edition pages: bare, the advisor desk's cards, `[{"date", "desk"}]`;
-  with a news section's topic id, that section's own blocks,
-  `[{"date", "headline", "printed": [{"claim", "url"}]}]`, so a pass knows which sources it has
-  already spent.
-- `memo-render/scripts/record_edition.py <edition.json>` — the delivered edition onto the day's
-  page in the wiki, then `wiki validate` + `wiki index`.
+- `memo-tournament/scripts/history.py recent` — the cards the memo printed on the 7 nights before
+  today, read from the wiki's memo pages, `[{"date", "desk"}]`.
+- `memo-render/scripts/record_memo.py <memo.json>` — the delivered memo onto its night's page
+  (`memos/<date>.md`) in the wiki, then `wiki validate` + `wiki index`.
 - `scripts/run_lock.py` — one exclusive run per name with stale takeover, so
   two daily-paper runs can never race and deliver a hollow edition.
   Called bare, never through an interpreter:
