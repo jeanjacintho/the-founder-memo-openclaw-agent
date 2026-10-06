@@ -27,6 +27,7 @@ recommendations rest on the same quoted line -- across every advisor's file,
 not per advisor -- or when the card names a file path or calls the reader
 "the founder". The footer is the run's cost and duration; an unknown cost
 says so, never $0.00. Exit 1 prints `error: memo refused — <why>`.
+The PDF is refused if it exceeds one Letter page; shorten the card and retry.
 """
 from __future__ import annotations
 
@@ -39,7 +40,7 @@ import sys
 from datetime import date
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "memo-shared" / "scripts"))
-from owner_phrases import phrase  # noqa: E402
+from owner_phrases import phrase, status  # noqa: E402
 
 TEMPLATE = pathlib.Path(__file__).resolve().parent.parent / "memo-template.html"
 ADVISORS = pathlib.Path(__file__).resolve().parents[2] / "memo-setup" / "assets" / "advisors"
@@ -52,8 +53,6 @@ SELF_RE = re.compile(
     r"\b(?:the (?:founder|ceo|owner)|a founder should|o (?:fundador|ceo|dono)|a (?:fundadora|dona))\b",
     re.I,
 )
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 class CardError(ValueError):
@@ -229,11 +228,6 @@ def checkpoint_problems(memo, tournament):
     return failures
 
 
-def pretty_date(raw):
-    year, month, day = (int(part) for part in raw.split("-"))
-    return f"{_MONTHS[month - 1]} {day}, {year}"
-
-
 def duration(minutes):
     hours, rest = divmod(minutes, 60)
     return f"{hours}h {rest:02d}m" if hours else f"{rest}m"
@@ -279,6 +273,8 @@ def render(memo, template_text=None):
     if problems:
         raise CardError("; ".join(problems))
     language = memo["language"]
+    if status(language) != "ready":
+        raise CardError("owner phrases need translation before rendering the memo")
     if "priority" in memo:
         priority = memo["priority"]
         body = "\n".join(priority_html(rank, item, language)
@@ -293,7 +289,7 @@ def render(memo, template_text=None):
     text = template_text if template_text is not None else TEMPLATE.read_text(encoding="utf-8")
     for slot, value in {
         "{{LANG}}": _esc(language), "{{MASTHEAD}}": _esc(MASTHEAD),
-        "{{DATE}}": _esc(pretty_date(memo["date"])),
+        "{{DATE}}": _esc(memo["date"]),
         "{{BAND}}": _esc(phrase("page.priority_band", language)),
         "{{BODY}}": body, "{{COST}}": _esc(cost_line(memo["run"], language)),
     }.items():
@@ -308,7 +304,10 @@ def write_pdf(html_text, path):
         from weasyprint import HTML  # noqa: PLC0415 -- the image's dependency, not the tests'
     except ImportError:
         sys.exit("error: weasyprint is not installed; cannot write the memo's PDF")
-    HTML(string=html_text).render().write_pdf(str(path))
+    document = HTML(string=html_text).render()
+    if len(document.pages) != 1:
+        raise CardError("memo exceeds one Letter page; shorten the card before rendering")
+    document.write_pdf(str(path))
 
 
 def main(argv=None):
@@ -336,7 +335,11 @@ def main(argv=None):
         return 1
     if a.html:
         pathlib.Path(a.html).write_text(page, encoding="utf-8")
-    write_pdf(page, a.pdf)
+    try:
+        write_pdf(page, a.pdf)
+    except (OSError, ValueError) as exc:
+        print(f"error: memo refused — {exc}", file=sys.stderr)
+        return 1
     print(f"RENDERED {a.pdf}")
     return 0
 

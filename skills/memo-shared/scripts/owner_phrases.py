@@ -19,6 +19,8 @@ back to the curated English or Portuguese below. English and Portuguese are
 `ready` with no file at all.
 
 Library: `phrase(key, language=None, **fields)` -> the line, formatted.
+Pre-memo packs keep their existing labels while `status` requests translation
+of the new cost keys; recording a new pack still requires the complete set.
 """
 from __future__ import annotations
 
@@ -118,7 +120,10 @@ def table(language=None):
     """The table for this owner: their written phrases, else curated pt/en."""
     language = current_language() if language is None else language
     stored = _stored()
-    if stored and language and stored.get("language") == language and not problems(stored["phrases"]):
+    if stored and language and stored.get("language") == language and not problems(
+            stored["phrases"], allow_missing=("page.cost", "page.cost_unknown")):
+        # Old packs still supply every active label; new memo output requires
+        # a complete pack through status() before using its cost labels.
         return stored["phrases"]
     return PORTUGUESE if is_portuguese(language) else SOURCE
 
@@ -137,12 +142,14 @@ def status(language=None):
     return "ready" if ok else "missing"
 
 
-def problems(candidate):
+def problems(candidate, *, allow_missing=()):
     """Why a translation is not usable, first reason first; [] when it is."""
     if not isinstance(candidate, dict):
         return ["phrases is not an object"]
     found = []
     for key in SOURCE:
+        if key not in candidate and key in allow_missing:
+            continue
         if key not in candidate:
             found.append(f"missing: {key}")
         elif not isinstance(candidate[key], str) or not candidate[key].strip():

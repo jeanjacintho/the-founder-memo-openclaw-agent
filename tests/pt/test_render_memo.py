@@ -59,7 +59,7 @@ def checkpoint(m):
 def test_memo_has_three_priorities_questions_and_cost():
     page = render.render(memo())
     assert page.count('class="priority"') == 3 and "Q1 — Is Acme" in page and "$87.40" in page
-    assert "3h 56m" in page and "The Founder Memo" in page and "Oct 2, 2026" in page
+    assert "3h 56m" in page and "The Founder Memo" in page and "2026-10-02" in page
     assert page.count("FIRST STEP:") == 3
 
 
@@ -71,6 +71,17 @@ def test_unknown_cost_says_unavailable_not_zero():
 def test_the_cost_line_follows_the_owners_language():
     page = render.render(memo(language="Português"))
     assert "Pesquisa desta noite: US$87.40" in page and "PRIMEIRO PASSO" in page
+    assert "2026-10-02" in page and "Oct" not in page
+
+
+def test_custom_language_without_new_cost_phrases_is_refused(tmp_path):
+    import owner_phrases
+    old = {k: "ZH " + v for k, v in owner_phrases.SOURCE.items()
+           if k not in ("page.cost", "page.cost_unknown")}
+    owner_phrases.phrases_file().parent.mkdir(parents=True, exist_ok=True)
+    owner_phrases.phrases_file().write_text(json.dumps({"language": "Mandarin Chinese", "phrases": old}))
+    with pytest.raises(render.CardError, match="phrases need translation"):
+        render.render(memo(language="Mandarin Chinese"))
 
 
 def test_same_quote_in_two_advisors_files_is_still_refused(advisors, tmp_path):
@@ -135,6 +146,7 @@ def test_the_card_prints_only_as_its_checkpoint(change, why):
 
 
 class FakeHTML:
+    pages = [object()]
     def __init__(self, string):
         self.string = string
 
@@ -163,6 +175,20 @@ def test_cli_refuses_a_card_without_its_checkpoint_and_leaves_no_pdf(tmp_path, m
     pdf.write_text("last night's")
     assert render.main([str(tmp_path / "memo.json"), "--pdf", str(pdf)]) == 1
     assert "only with --tournament" in capsys.readouterr().err
+    assert not pdf.exists()
+
+
+def test_overflow_is_refused_and_removes_the_stale_pdf(tmp_path, monkeypatch, capsys):
+    class Overflow(FakeHTML):
+        pages = [object(), object()]
+    monkeypatch.setitem(sys.modules, "weasyprint", types.SimpleNamespace(HTML=Overflow))
+    m = memo()
+    (tmp_path / "memo.json").write_text(json.dumps(m))
+    (tmp_path / "t.json").write_text(json.dumps(checkpoint(m)))
+    pdf = tmp_path / "memo.pdf"
+    pdf.write_text("old memo")
+    assert render.main([str(tmp_path / "memo.json"), "--tournament", str(tmp_path / "t.json"), "--pdf", str(pdf)]) == 1
+    assert "exceeds one Letter page" in capsys.readouterr().err
     assert not pdf.exists()
 
 
