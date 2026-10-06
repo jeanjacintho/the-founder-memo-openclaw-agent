@@ -26,6 +26,9 @@ from datetime import date
 from latch_mcp import LatchError
 from latch_mcp import connect as latch_connect
 from wiki import Wiki, join_page, split_page
+from owner_time import owner_today
+from pt_paths import pt_home
+from run_lock import guarded
 
 TYPES = {"people": "Person", "orgs": "Organization"}
 CAP = 20
@@ -94,22 +97,31 @@ def main(argv=None, call_tool=None):
     m.add_argument("--slug", required=True)
     m.add_argument("--title", required=True)
     m.add_argument("--dossier", required=True)
-    m.add_argument("--today", default=date.today().isoformat())
+    m.add_argument("--today")
     a = p.parse_args(argv)
     rel = f"entities/{a.kind}/{a.slug}.md"
     try:
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", a.slug):
+            raise ValueError("slug must be a single lowercase kebab-case component")
         with (sys.stdin if a.dossier == "-" else open(a.dossier, encoding="utf-8")) as f:
             dossier = json.load(f)
         w = Wiki(call_tool or latch_connect().call_tool)
-        page = merge(w.read(rel), dossier, a.kind, a.title, a.today)
-        w.write(rel, page)
-        code, out = w.run("validate", "--writer", "shared")
+        with guarded(pt_home() / "entity-locks" / a.kind / a.slug):
+            original = w.read(rel)
+            page = merge(original, dossier, a.kind, a.title, a.today or owner_today().isoformat())
+            try:
+                w.write(rel, page)
+                problems = w._validate("shared", rel)
+                if problems:
+                    raise LatchError("wiki validate: " + "; ".join(problems))
+            except (OSError, ValueError, KeyError, TypeError, LatchError):
+                if original is None:
+                    w.remove(rel)
+                else:
+                    w.write(rel, original)
+                raise
     except (OSError, ValueError, KeyError, TypeError, LatchError) as exc:
         print(f"entity_page: {rel}: {exc}", file=sys.stderr)
-        return 1
-    mine = [line for line in out.splitlines() if line.startswith(rel)]
-    if mine or code not in (0, 1):
-        print("entity_page: wiki validate: " + ("; ".join(mine) or out.strip()), file=sys.stderr)
         return 1
     return 0
 

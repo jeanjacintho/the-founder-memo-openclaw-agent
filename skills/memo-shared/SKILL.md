@@ -63,7 +63,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
   (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
 - `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
-  `entity_page.py merge --kind people|orgs --slug <slug> --title <title> --dossier <file|->`,
+  `entity_page.py merge --kind people|orgs --slug <lowercase-kebab-slug> --title <title> --dossier <file|->`,
   the dossier `{"description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
   It replaces `## Now`, merges `## Timeline` on (date, item) newest first, capped at 20, keeps
   every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
@@ -71,7 +71,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 - `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints
   `{"usd": <float|null>, "sessions": n, "unpriced": m}` (tokens times each model's configured
   price; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
-  --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not.
+  --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not
+  or spend is unknown. Any token-bearing session without a price makes the total unknown.
 - `scripts/run_gate.py` — the night waits for the Mac. Bare:
   `run_gate.py wait --started <ISO-8601> --window <minutes>` probes `~/Plow/wiki/wiki.toml`
   through Latch every five minutes; `MAC:reachable` (0) start, `MAC:window-closed` (2) the

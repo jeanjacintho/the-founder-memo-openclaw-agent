@@ -168,9 +168,9 @@ test("the Plow MCP filter exposes only the Latch tools used by newspaper researc
   assert.ok(!config.tools.alsoAllow.includes("group:plugins"), "do not grant every plugin tool");
 });
 
-test("memo spawns two levels deep, ten wide, without chat turns preferring delegation", () => {
+test("the current tournament allows six leaf children without chat turns preferring delegation", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").agents.defaults.subagents, {
-    maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest",
+    maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest",
   });
 });
 
@@ -183,7 +183,7 @@ test("writer and critic models join the Plow provider with their prices", () => 
   const cfg = renderConfig(identity, "http://api:8000", undefined, ROLES);
   const byId = Object.fromEntries(cfg.models.providers.plow.models.map((m: { id: string }) => [m.id, m]));
   assert.deepEqual(byId["anthropic/claude-opus-5-5"].cost, { input: 5, output: 25 });
-  // A role model Plow already lists keeps its entry and gains the price, so costUsd is never empty.
+  // A role model Plow already lists keeps its entry and gains the price for its listed tokens.
   assert.deepEqual(byId["openai/gpt-6-sol"], { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"],
     contextWindow: 1050000, cost: { input: 1.25, output: 10 } });
   assert.equal(cfg.models.providers.plow.models.length, 3);

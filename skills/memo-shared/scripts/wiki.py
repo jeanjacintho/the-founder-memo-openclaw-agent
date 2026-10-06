@@ -74,12 +74,20 @@ class Wiki:
         )
         return int(result["exit_code"]), str(result.get("output") or "")
 
-    def _validate(self, writer):
+    def remove(self, rel):
+        result = finish_command(self._call, self._call("plow_run_command", {
+            "argv": ["sh", "-c", 'rm -- "$HOME/Plow/wiki/$1"', "sh", rel], "write_paths": [WIKI],
+            "wait_ms": 60000, "goal": "Remove a rejected new entity page",
+        }), "remove rejected page")
+        if int(result["exit_code"]) != 0:
+            raise LatchError(f"remove rejected page: {result.get('output', '')}")
+
+    def _validate(self, writer, rel=None):
         """`wiki validate --writer <writer>`'s problem lines; exit 2 (unknown writer) raises."""
         code, out = self.run("validate", "--writer", writer)
         if code not in (0, 1):
             raise LatchError(f"wiki validate --writer {writer}: {out.strip()}")
-        return out.splitlines() if code else []
+        return [line for line in out.splitlines() if rel is None or line.startswith(rel + ":")] if code else []
 
     def check(self):
         """`wiki validate` of this paper's root and its one shared page, then
