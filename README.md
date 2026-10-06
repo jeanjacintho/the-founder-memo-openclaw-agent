@@ -1,38 +1,78 @@
 # The Founder Memo
 
-Three researched priorities for your company, printed on your Mac and delivered
-as the same PDF in chat, in the language you write. An
-[OpenClaw](https://github.com/openclaw/openclaw) agent on [Plow Chat](https://howto.plow.co/).
+Your nightly advisor, printed. While you sleep it reads your mail, messages,
+meetings, calendar and the web on your Mac, argues the options out in the voice
+of advisors you trust, and puts **the three priorities that matter most** in
+the printer tray — the same PDF in chat.
 
-## What it does
+An [OpenClaw](https://github.com/openclaw/openclaw) agent on
+[Plow Chat](https://howto.plow.co/). It is one founder's advisor: it starts at
+the hour you name, spends up to the window and the dollar ceiling you set
+(default four hours and $100 a night), and writes in the language you write.
+The bar is a memo good enough to pay that for, and better informed each night
+than the last.
 
-The nightly run reads your mail, messages, meetings, calendar and named web
-sources through [Latch](https://howto.plow.co/latch). It gathers dossiers on the
-people and companies behind your decisions, then challenges recommendations
-through at least three generations with independent facts and strategy critics.
-Before publishing, it checks the decisive facts again. The compact Letter memo
-contains three ranked priorities, the questions that could change them, and the
-run's cost and duration. Failed reads stay unknown; claims carry sources.
+## What it is
 
-Setup asks when research should start (default 01:00), probes the printer, and
-keeps your advisor and signal preferences. The Mac supplies your timezone.
-`memo.start` controls the start, `memo.window_minutes` defaults to four hours,
-and `memo.max_usd` defaults to $100. Delivery happens when research finishes.
-Existing installs retain their research start (old delivery hour minus lead,
-clamped at midnight), printer, signals and priority opt-out. An opt-out disables
-the nightly memo until you turn it on in chat.
+Every night, from the start hour, it runs a tournament on your Mac through
+[Latch](https://howto.plow.co/latch):
 
-Your wiki at `~/Plow/wiki` holds the sourced entity pages, goals, Q&A and delivered
-memos. Open it in Obsidian and edit anything. Chat is for corrections, answers and
-requests to run the memo now. It reports: no purchases, bookings, logins or downloads.
+1. **Orient** — reads its advisors, your goals and the questions it still has,
+   last night's memo and the signals you let it hear, places your company on
+   each advisor's stage map, and picks the people, companies and deals that
+   matter now.
+2. **Gather** — one investigator per name, through every source your Mac has
+   (Gmail and calendar, iMessage, WhatsApp, contacts, meeting transcripts in
+   msgvault when installed, the web and the dashboards you name), and a check
+   on whether last night's first steps happened.
+3. **Generations** — writers propose, two critics per proposal prosecute it
+   (one on the facts, one on the strategy, on a different model from a
+   different provider), a culler keeps the three best. At least three
+   generations, then more while the window and the ceiling allow.
+4. **Freshness** — re-reads the names the winners rest on.
+5. **Publish** — prints the memo: three priorities, each with its evidence, its
+   **first step** and a sourced line from the advisor it applies; the questions
+   whose answers would change the advice; and one line with what tonight's
+   research cost and how long it took ("cost unavailable" when a model has no
+   price — never $0.00).
+
+The advisors are Patrick Salyer (enterprise go-to-market), Paul Graham (the
+first users and product, growth, fundraising) and Ben Horowitz (the CEO's job,
+executives, crises), each a file of their published thinking with every
+quotable line sourced from a public page.
+
+You do not fill a profile. Setup asks when to start, whether there is a
+printer, and whether the Mac stays awake at night. A minute later it does a
+first full read of your company and texts you what it thinks your company is,
+so you can correct it before the first night. Reply to any memo to correct it
+or answer one of its questions.
+
+If a source cannot be read, the memo says so — it does not invent the paragraph.
+It reports. It does not act on what it finds: no purchases, no bookings, no
+logins, no downloads, no messages sent on your behalf.
+
+## What it keeps
+
+Everything durable is your wiki at `~/Plow/wiki` (Latch's Obsidian-style wiki):
+a page per person and company it investigated (`entities/people`,
+`entities/orgs`, a current state and a dated timeline, each fact pointing back
+at the message it came from — never an excerpt), and the memo's own pages under
+`projects/founder-memo/`: each night's memo with its first steps, the questions
+it has for you, the sources it may revisit, and each run's private research
+state. Your edits in Obsidian win. Every night ends with a `wiki snapshot`, so
+each night is a diff you can read or revert.
+
+An install upgraded from The Founder Times keeps its research start (its old
+delivery hour minus its lead, clamped at midnight), printer, signals and advisor
+opt-out; an opt-out disables the nightly memo until you turn it on in chat.
 
 ## Install (local)
 
 You need Git, Docker Compose, and [plow-agents](https://github.com/plow-pbc/plow-agents).
 
 ```sh
-git clone https://github.com/jeanjacintho/the-founder-times-openclaw-agent.git
-cd the-founder-times-openclaw-agent
+git clone https://github.com/jeanjacintho/the-founder-memo-openclaw-agent.git
+cd the-founder-memo-openclaw-agent
 
 plow-agents login                 # text the printed code
 plow-agents lines                 # pick a free line
@@ -41,10 +81,11 @@ docker compose up --build -d
 docker compose logs -f agent      # wait for: plow-boot: identity resolved … and [gateway] ready
 ```
 
-Text the line you minted. Setup begins with the nightly research start hour.
+Text the line you minted. The first message is the memo's start hour, not a
+profile interview.
 
 ```sh
-docker compose down          # stop, keep the paper, sessions and schedule
+docker compose down          # stop, keep the memo's state, sessions and schedule
 docker compose down -v       # wipe the state volume (fresh setup)
 plow-agents revoke           # retire the line in plow-credentials
 ```
@@ -72,9 +113,10 @@ and reports its token usage through the base's pinned reporter.
 Run [Latch](https://howto.plow.co/latch) on the Mac this agent should drive,
 signed in to the same Plow account. The agent reaches it with its own
 credential — nothing to paste, no restart. Chat works without Latch; research,
-the printer and the wiki do not. If the Mac sleeps, the paper says what it
-could not source, and a print that cannot reach the printer is reported in
-chat in your language.
+the printer and the wiki do not. Turn on Latch's **Keep Mac Awake**: a Mac
+asleep through the whole window means no memo that night (you get one line
+saying so), and a print that cannot reach the printer is reported in chat in
+your language.
 
 The printer is whatever CUPS on the Mac calls it (`lpstat -p`); setup asks
 once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
@@ -84,30 +126,45 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 - **Chat.** The owner's phone DM is the agent's main session. Before each of
   the owner's turns the Plow channel runs the setup gate and hands the model
   its answer; groups get answers, never setup questions.
-- **Schedule.** Every paper is an OpenClaw scheduler job
-  (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
-  from your memo settings: an isolated turn on the chat's own model, in **your**
-  timezone (`--tz`), with no automatic delivery — the paper posts itself as a
-  PDF. Jobs live in the state volume and survive restarts and
-  `docker compose up --build`; on a fresh volume, setup (or any schedule
-  change in chat) registers them again. They also keep the prompt they were
-  registered with: after updating the image of an existing install, register
-  again so they pick up its changes (the model-switch command does it too):
-  `docker compose exec agent bash -l -c /opt/plow/skills/memo-schedule/scripts/register_crons.py`
-  (on a VM, the same in an SSH session).
+- **Schedule.** `memo-nightly` is an OpenClaw scheduler job (`openclaw cron`)
+  at `memo.start` in **your** timezone, registered by
+  `memo-schedule/scripts/register_crons.py`: an isolated turn on the chat's own
+  model with a budget of the window plus an hour, no automatic delivery — the
+  memo posts itself as a PDF. "Run it now" in chat queues the same job as a
+  one-shot. Jobs live in the state volume and survive restarts and
+  `docker compose up --build`; on a fresh volume, setup (or any schedule change
+  in chat) registers them again. After updating the image of an existing
+  install, register again so they pick up its prompt:
+  `docker compose exec agent bash -l -c /opt/plow/skills/memo-schedule/scripts/register_crons.py`.
+- **Engine.** The night is a thin conductor that spawns one coordinator per
+  phase, which spawns its own investigators, writers, critics and culler
+  (two levels deep, at most ten at a time), so its context stays flat however
+  many generations run.
 - **Scripts.** The `memo-*` skills' Python scripts run on Python 3.13 with
-  WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The paper's state is
-  `/var/lib/plow/pt` (config, topics, run scratch).
+  WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The memo's state is
+  `/var/lib/plow/pt` (config, the accepted checkpoint, run scratch).
+
+## Config
+
+`/var/lib/plow/pt/config.json`, written by setup and changed by texting:
+
+| Key | Default | |
+|---|---|---|
+| `memo.start` | `01:00` | when the night starts, your clock |
+| `memo.window_minutes` | `240` | how long it researches; the memo prints when Publish finishes |
+| `memo.max_usd` | `100` | the night's dollar ceiling, checked before each generation after the third |
+| `printer.configured`, `printer.name` | from setup's probe | the CUPS queue it prints to |
+| `signals.group_chat`, `.email`, `.imessage` | `false` | what it may listen to for priorities |
 
 ## Model
 
 Every install runs on Plow's GPT-6 Sol (`plow/openai/gpt-6-sol`). A
-one-click install has nothing to configure and never leaves it. The paper's
+one-click install has nothing to configure and never leaves it. The memo's
 research runs are long tool loops: on Luna they gave up before research, on
 Sol they finish.
 
 The owner of one install can move all of its inference (chat, sub-agents
-and the scheduled papers) to their own OpenAI account. In a login shell on
+and the nightly runs) to their own OpenAI account. In a login shell on
 the agent (`docker compose exec agent bash -l`, or SSH on the VM):
 
 ```sh
@@ -115,9 +172,9 @@ plow-llm openai
 ```
 
 It signs in with a device code, checks that the account offers
-`gpt-6-sol` (the model an OpenAI account runs on: the paper's long research
-runs finish on Sol, and gave up on Luna), leaves a marker in the state volume,
-and registers the paper's jobs again under the new model. Restart the agent to apply it. The sign-in
+`gpt-6-sol` (the model an OpenAI account runs on: the long research runs
+finish on Sol, and gave up on Luna), leaves a marker in the state volume,
+and registers the memo's jobs again under the new model. Restart the agent to apply it. The sign-in
 and the marker live in the state volume, so rebuilds and image updates keep
 them. `plow-llm plow` moves back, and `plow-llm status` shows what the next
 boot will choose.
@@ -155,13 +212,11 @@ talk to.
 
 ## Known limitations
 
-- If the model provider is unreachable at a job's time, OpenClaw records the
-  run as skipped and tries again only at the job's next time: that day's paper
-  does not come by itself. Ask for it in chat ("send the paper now") once the
-  provider answers.
-- An edition delivered while the Mac is unreachable is not recorded in the
-  wiki, and the next morning's advisor has no "yesterday" for it.
-- One-shot jobs can be scheduled at most ten years ahead.
+- If the model provider is unreachable at the start hour, OpenClaw records the
+  run as skipped and tries again only the next night. Ask for it in chat ("run
+  it now") once the provider answers.
+- A memo delivered while the Mac is unreachable is not recorded in the wiki,
+  and the next night has no "yesterday" to check its first steps against.
 
 ## Layout
 
@@ -171,7 +226,7 @@ talk to.
   and the shared scripts behind them. `skills/owners-mac`,
   `skills/google-workspace` come from the base.
 - `tests/*.test.ts` — boot and plugin tests (`node --test`); `tests/pt/` —
-  newspaper tests and the repo contract (`pytest`).
+  the memo's script tests and the repo contract (`pytest`).
 
 ## Development
 
@@ -179,7 +234,7 @@ Tests need no Plow credentials and no network beyond fetching pinned tools.
 
 ```sh
 npm ci
-npm run test:py   # newspaper scripts: pytest on Python 3.13 via uv
+npm run test:py   # memo scripts: pytest on Python 3.13 via uv
 npm test          # the above, then the base's tsc, node tests and offline probe in the image
 ```
 

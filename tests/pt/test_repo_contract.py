@@ -53,7 +53,7 @@ class TestSoul:
 
     def test_setup_opener_does_not_ask_timezone(self):
         text = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "A que horas começo a pesquisa do memo?" in text
+        assert "A que horas eu começo a ler, à noite?" in text
         assert "Qual seu fuso" not in text
 
     def test_soul_setup_gate_is_a_bare_script_not_python_dash_c(self):
@@ -357,32 +357,9 @@ class TestSoul:
         # sourced -- including sports JSON that desks.md used to call a
         # "plain HTTP fetch" that "does not compete for the browser pass".
         soul = (AGENTS).read_text()
-        research = (ROOT / "memo-research" / "SKILL.md").read_text()
-        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
         # SOUL.md, loaded in every session, is the one statement of the rule.
         for name in ("plow__plow_browser_open", "Any other web tool runs in this container", "curl"):
             assert name in soul
-        assert "web_fetch" not in research, "the Latch-only rule is restated in memo-research"
-        assert "plain HTTP fetch" not in desks
-        assert "does not compete for the browser pass" not in desks
-        assert "plow_run_command can fetch this" not in desks
-        assert "plow_browser" in desks
-        assert "site.api.espn.com" in desks
-
-    def test_research_one_browser_session_does_not_retry_origin_errors(self):
-        # Measured live 2026-09-18: an on-demand paper spent ~30 minutes.
-        # ipapi.co NS_ERROR_UNKNOWN_HOST every run; then plow_browser_request
-        # with no origins ("needs origins and/or credential_items"); then
-        # goto techcrunch.com while only *.techcrunch.com was allowlisted;
-        # then MCP "Paused for ~44s" and the same call again. The contract:
-        # one open for the whole paper, apex+wildcard together, fail once.
-        research = (ROOT / "memo-research" / "SKILL.md").read_text()
-        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
-        assert "needs origins" in research
-        assert "apex" in research and "*.example.com" in research
-        assert "Paused" in research
-        assert "do not close" in desks or "Do not close" in desks
-        assert "do not retry ipapi" in desks or "never retry ipapi" in desks
 
     def test_setup_warns_against_wrapping_record_setup_in_python(self):
         # Measured live: with a real printer found (network:true worked),
@@ -407,12 +384,10 @@ class TestSoul:
         # (a real, unsandboxed browser on the owner's Mac) and hits
         # neither restriction.
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        desks = (ROOT / "memo-research" / "references" / "desks.md").read_text()
-        for text in (setup, desks):
-            assert "plow_browser_open" in text
-            assert "plow_browser_close" in text
-        assert "xcrun" in desks
-        assert "Could not resolve host" in desks
+        assert "plow_browser_open" in setup
+        assert "plow_browser_close" in setup
+        assert "xcrun" in setup
+        assert "Could not resolve host" in setup
         assert '"/usr/bin/python3"' not in setup
 
     def test_setup_location_lookup_falls_back_past_a_dead_domain(self):
@@ -484,7 +459,7 @@ class TestSoul:
         # SOUL.md's, loaded in every session, not restated per skill.
         soul = (AGENTS).read_text()
         assert "silent between tool calls" in soul
-        for skill in ("memo-research", "memo-render", "memo-print"):
+        for skill in ("memo-intake", "memo-render", "memo-print"):
             text = (ROOT / skill / "SKILL.md").read_text()
             for restated in ("run silently", "runs silently", "happen silently", "between tool calls"):
                 assert restated not in text.lower(), f"{skill} restates the silence rule"
@@ -539,13 +514,10 @@ class TestSoul:
                   + (ROOT / "memo-shared" / "scripts" / "owner_phrases.py").read_text())
         assert "CHAT_VOICE" in soul
         assert "emoji, then a space, then one or two short spoken lines" in soul
-        for mark in ("📰", "🕖", "🖨️", "⭐", "✉️", "⏳"):
+        for mark in ("📰", "🕐", "🖨️", "💤", "👂", "⏳"):
             assert mark in soul
-        assert "> 📰 " in setup
-        assert "> 🕖 " in setup
-        assert "> 🖨️ " in setup
-        assert "> ⭐ " in setup
-        assert "> ✉️ " in setup
+        for mark in ("📰", "🕐", "🖨️", "💤"):
+            assert f"> {mark} " in setup
         spoken = "\n".join(
             line for line in setup.splitlines() if line.startswith("> ")
         )
@@ -554,19 +526,23 @@ class TestSoul:
         assert '"⏳ ' in status
         assert "--busy" in status
 
-    def test_setup_asks_which_signal_sources_to_listen_to(self):
-        # Question 5 switches the priority-signal sources. Every source starts
-        # off; the owner names them, and the iMessage probe uses the scan's
-        # exact argv so the Mac's "always allow" covers the unattended scan.
+    def test_setup_leaves_signals_off_and_turns_them_on_through_their_script(self):
+        # No interview: every source starts off, and the owner turns one on later
+        # with set_signal_source.py, after the same probe the nightly scan relies on.
         soul = (AGENTS).read_text()
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "| Asking which signals to listen to | 👂 |" in soul
-        assert "> 👂 Quer que eu escute" in setup
-        assert "> 👂 Want me to listen" in setup
-        assert "NEXT_QUESTION=<hour|printer|priority|mail|signals|close>" in setup
-        for field in ("signals.group_chat", "signals.email", "signals.imessage"):
-            assert field in setup
+        assert "| Turning a signal source on or off | 👂 |" in soul
+        assert "NEXT_QUESTION=<hour|printer|awake|close>" in setup
+        assert "Every source starts off" in setup
         assert '"plow-messages", "search", "--limit", "200", "--order", "desc"' in setup
+        finalize = (ROOT / "memo-setup" / "scripts" / "finalize_setup.py").read_text()
+        assert "source: False for source in" in finalize
+
+    def test_setup_asks_whether_the_mac_stays_awake_and_says_why(self):
+        setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
+        step = setup[setup.index("**3a."):setup.index("## Close")]
+        assert "Keep Mac Awake" in step and "no memo" in step
+        assert "mac.awake=" in step and "not a reason to stop setup" in step
 
     def test_groups_are_listen_only_in_the_prompt(self):
         # A group chat is listen-only: the channel drops any reply, and the
@@ -615,19 +591,6 @@ class TestSoul:
         challenge = skill[skill.index("### 1. Challenge + research"):skill.index("### 2. Criticize")]
         criticize = skill[skill.index("### 2. Criticize"):skill.index("### 3. Cull")]
         assert "signal" in challenge and "unverified signal" in criticize
-
-    def test_a_failed_history_read_still_researches_with_a_caveat(self):
-        # A failed read of what a section printed loses de-duplication, not the
-        # ability to research: stopping there turned one connector failure
-        # into a blank news column. The error stays on record, the pass runs a
-        # fresh angle, and the page says a repeat is possible.
-        research = (ROOT / "memo-research" / "SKILL.md").read_text()
-        rule = research[research.index("An `error:` line is a failed read"):research.index("An assignment\n   has no history")]
-        assert "stop there" not in rule
-        assert "could_not_source" in rule
-        assert "fresh angle" in rule and "repeat is possible" in rule
-        assert "owner's language" in rule
-        assert "budget" in rule
 
     def test_fixed_lines_follow_any_owner_language(self):
         # owner.language is free-form; English and Portuguese are curated, and
@@ -695,11 +658,9 @@ class TestSoul:
         # handle, so it could never be a fact the advisor page rests on.
         priority = (ROOT / "memo-tournament" / "SKILL.md").read_text()
         intake = (ROOT / "memo-intake" / "SKILL.md").read_text()
-        setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
         definition = priority[priority.index("An **item** is a handle"):priority.index("is **unsupported**")]
         assert "plow_chat:<chat uid>:<message uid>" in definition and "chat_message_id.py read" in definition
         assert "chat_message_id.py" in intake and "HANDLE:none" in intake
-        assert "chat_message_id.py" in setup
 
     def test_signal_sources_change_later_only_through_their_script(self):
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
@@ -729,7 +690,7 @@ class TestSoul:
         # before. memo-setup/SKILL.md is the one place that rule lives.
         assert "record_setup.py" in soul and "NEXT_QUESTION" in soul
         assert '"yes"' in setup and '"sim"' in setup
-        assert "local_hour=01:00" in setup
+        assert "start=01:00" in setup
 
     def test_setup_writes_the_draft_only_through_record_setup(self):
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
@@ -741,7 +702,7 @@ class TestSoul:
         assert "never a hand-edited" in setup
         assert "record_setup.py" in setup
         assert "NEXT_QUESTION" in setup
-        for field in ("printer.configured", "mail.configured"):
+        for field in ("printer.configured", "mac.awake"):
             assert field in setup
 
     def test_soul_does_not_gate_the_hour_answer_behind_draft_none(self):
@@ -794,15 +755,6 @@ class TestSkills:
             assert head.startswith("---"), f"{d.name}/SKILL.md has no frontmatter"
             assert f"name: {d.name}" in head, f"{d.name}/SKILL.md frontmatter name mismatch"
 
-    def test_setup_asks_about_the_priority_file(self):
-        text = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "NEXT_QUESTION=priority" in text
-        assert "trying to make true" in text
-        assert not (ROOT / "memo-setup" / "assets" / "prioritization.template.md").exists()
-        section = text.split("## NEXT_QUESTION=priority", 1)[1].split("\n## ", 1)[0]
-        assert "stays as it was" in section.lower()
-        assert "leave it alone" not in section.lower()
-
     def test_no_skill_points_at_the_pre_wiki_homes(self):
         # The goals, the desk's Q&A and the owner's advisors moved into ~/Plow/wiki.
         # A skill still naming the old homes reads a file nothing writes any more.
@@ -835,11 +787,7 @@ class TestSkills:
         # test_priority_evolution_contract); SOUL.md only names the skill.
         soul = (AGENTS).read_text()
         assert "gap card" not in soul
-        assert "tournament" not in soul.replace("memo-tournament", ""), (
-            "SOUL.md restates desks.md's priority rule rather than naming its skill"
-        )
-        research = (ROOT / "memo-research" / "SKILL.md").read_text()
-        assert "whose `deliver_at` is that hour" in research
+        assert "tournament" not in soul.replace("memo-tournament", ""), "SOUL.md restates desk.md's priority rule"
         assert "the founder" in skill
         # The card's language is the owner's, read from config -- not inferred from this
         # file. A lone `você` exemplar was the only language signal the culler had, and it
@@ -955,13 +903,6 @@ class TestSkills:
         assert "CARD_LINES" not in recorder
         assert 'card.get("why")' not in recorder
 
-    def test_cross_skill_imports_resolve(self):
-        # register_crons.py imports topics from memo-intake/scripts at run time;
-        # both must be seeded side by side for that to work.
-        assert (ROOT / "memo-intake" / "scripts" / "topics.py").is_file()
-        assert (ROOT / "memo-schedule" / "scripts" / "register_crons.py").is_file()
-
-
 class TestDeployment:
     DOCKERFILE = REPO / "Dockerfile"
 
@@ -1072,14 +1013,14 @@ class TestDeployment:
         assert "plow-credentials" in (REPO / ".dockerignore").read_text()
         assert "plow-credentials" in (REPO / ".gitignore").read_text()
 
-    def test_dockerfile_bakes_every_pt_skill_root_owned(self):
+    def test_dockerfile_bakes_every_memo_skill_root_owned(self):
         text = self.DOCKERFILE.read_text()
         assert "COPY skills /opt/plow/skills" in text
         assert "chown -R root:root /opt/plow/skills" in text
         assert "install -d -o node -g node -m 0700 /var/lib/plow/pt" in text
         assert sorted(p.parent.name for p in ROOT.glob("memo-*/SKILL.md")) == [
-            "memo-intake", "memo-print", "memo-render", "memo-research",
-            "memo-schedule", "memo-setup", "memo-shared", "memo-tournament"]
+            "memo-intake", "memo-print", "memo-render", "memo-schedule",
+            "memo-setup", "memo-shared", "memo-tournament"]
 
     def test_dockerfile_installs_weasyprint_in_the_pinned_venv(self):
         # The base image has no HTML-to-PDF engine. The probe must RENDER (a
@@ -1131,3 +1072,61 @@ class TestImportability:
         with contextlib.redirect_stdout(buf):
             gate.main([str(path)])
         assert buf.getvalue().strip() == ""
+
+
+class TestMemoContract:
+    """The repo is the memo now: what ships names only what exists, and nothing of the paper."""
+
+    def test_every_script_a_skill_names_exists(self):
+        import re
+
+        named = set()
+        for md in ROOT.rglob("*.md"):
+            for ref in re.findall(r"/opt/plow/skills/(memo-[\w-]+/scripts/[\w.]+\.py)", md.read_text()):
+                named.add((md.relative_to(ROOT), ref))
+        assert named, "no script references found -- regex is wrong, test is vacuous"
+        for md, ref in sorted(named):
+            assert (ROOT / ref).exists(), f"{md}: {ref}"
+
+    def test_every_reference_a_skill_names_exists(self):
+        import re
+
+        for md in ROOT.rglob("*.md"):
+            for ref in re.findall(r"/opt/plow/skills/(memo-[\w-]+/(?:references|assets)/[\w./-]+\.md)", md.read_text()):
+                assert (ROOT / ref).exists(), f"{md.relative_to(ROOT)}: {ref}"
+
+    def test_no_newspaper_leftovers_in_what_ships(self):
+        import re
+
+        shipped = [p for base in ("skills", "prompt", "plugin", "boot") for p in (REPO / base).rglob("*")
+                   if p.is_file() and p.suffix in {".md", ".py", ".ts", ".json", ".html"}]
+        assert shipped
+        hits = [str(p.relative_to(REPO)) for p in shipped
+                if re.search(r"pt-(?:research|intake)|newspaper",
+                             p.read_text(encoding="utf-8", errors="ignore"), re.I)]
+        assert hits == []
+        # The old wiki root is named only where setup carries a Founder Times install over.
+        legacy = sorted(str(p.relative_to(REPO)) for p in shipped
+                        if "thefoundertimes" in p.read_text(encoding="utf-8", errors="ignore"))
+        assert legacy == ["skills/memo-shared/SKILL.md", "skills/memo-shared/scripts/wiki_setup.py"]
+
+    def test_no_model_id_in_skill_text(self):
+        import re
+
+        for md in ROOT.rglob("*.md"):
+            assert not re.search(r"(gpt-\d|claude-|gemini-)", md.read_text()), md.relative_to(ROOT)
+
+
+class TestNamesNeverReachAShell:
+    def test_entity_names_travel_in_the_dossier_file_never_on_a_command_line(self):
+        # A sender's or attendee's name is someone else's text; a command line is
+        # parsed by a shell before entity_page.py can refuse anything.
+        import re
+
+        command = "entity_page.py merge --dossier /var/lib/plow/pt/run/dossiers/<n>.json"
+        for rel in ("memo-shared/references/investigate.md", "memo-tournament/SKILL.md"):
+            assert command in (ROOT / rel).read_text(), rel
+        for md in ROOT.rglob("*.md"):
+            for line in md.read_text().splitlines():
+                if "entity_page.py merge" in line:
+                    assert not re.search(r"--(?:title|slug|kind)\b|--dossier -", line), f"{md.relative_to(ROOT)}: {line.strip()}"

@@ -9,7 +9,7 @@ needed = load_module("setup_needed", "memo-shared/scripts/setup_needed.py")
 
 VALID = {
     "owner": {"timezone": "America/Sao_Paulo"},
-    "delivery": {"hour": "07:00"},
+    "memo": {"start": "01:00", "window_minutes": 240, "max_usd": 100},
     "printer": {"configured": False, "name": None},
 }
 
@@ -44,9 +44,9 @@ class TestSetupNeeded:
 
     def test_cli_prints_draft_hour_when_present(self, tmp_path, capsys):
         config = tmp_path / "config.json"
-        (tmp_path / ".setup-draft.json").write_text(json.dumps({"local_hour": "07:00"}))
+        (tmp_path / ".setup-draft.json").write_text(json.dumps({"start": "01:00"}))
         needed.main(["setup_needed.py", str(config)])
-        assert capsys.readouterr().out.strip() == "SETUP_NEEDED\nDRAFT:local_hour\nLANG:unrecorded"
+        assert capsys.readouterr().out.strip() == "SETUP_NEEDED\nDRAFT:start\nLANG:unrecorded"
 
     def test_cli_prints_ready(self, tmp_path, capsys):
         path = tmp_path / "config.json"
@@ -75,11 +75,11 @@ class TestLanguageLine:
         return tmp_path / "config.json"
 
     def test_language_line_reports_the_recorded_language(self, tmp_path):
-        config = self.write(tmp_path, {"local_hour": "07:00", "owner": {"language": "English"}})
+        config = self.write(tmp_path, {"start": "01:00", "owner": {"language": "English"}})
         assert needed.language_line(config) == "LANG:English"
 
     def test_language_line_says_unrecorded_when_absent(self, tmp_path):
-        config = self.write(tmp_path, {"local_hour": "07:00"})
+        config = self.write(tmp_path, {"start": "01:00"})
         assert needed.language_line(config) == "LANG:unrecorded"
 
     def test_language_line_with_no_draft_at_all(self, tmp_path):
@@ -90,7 +90,7 @@ class TestLanguageLine:
         assert needed.language_line(config) == "LANG:unrecorded"
 
     def test_main_prints_the_language_line_on_every_unfinished_reply(self, tmp_path, capsys):
-        config = self.write(tmp_path, {"local_hour": "07:00", "owner": {"language": "Portuguese"}})
+        config = self.write(tmp_path, {"start": "01:00", "owner": {"language": "Portuguese"}})
         needed.main(["needed.py", str(config)])
         lines = capsys.readouterr().out.splitlines()
         assert lines[0] == "SETUP_NEEDED"
@@ -127,5 +127,5 @@ class TestLanguageLine:
 
     def test_draft_line_format_is_unchanged(self, tmp_path):
         # The LANG line is additive: DRAFT: keeps its exact old contract.
-        config = self.write(tmp_path, {"local_hour": "07:00", "owner": {"language": "English"}})
-        assert needed.draft_line(config) == "DRAFT:local_hour"
+        config = self.write(tmp_path, {"start": "01:00", "owner": {"language": "English"}})
+        assert needed.draft_line(config) == "DRAFT:start"

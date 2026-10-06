@@ -154,7 +154,7 @@ test("MCP sessions share the loopback bridge and expire after five idle minutes"
   } } });
 });
 
-test("the Plow MCP filter exposes only the Latch tools used by newspaper research", () => {
+test("the Plow MCP filter exposes only the Latch tools used by the memo research", () => {
   const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
   assert.deepEqual(config.mcp?.servers?.plow?.toolFilter?.include, [
     "plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file", "plow_read_skill",
@@ -222,7 +222,7 @@ test("native messaging retains local workspace and memory file tools", () => {
   });
 });
 
-test("exec resolves python3 to the newspaper venv", () => {
+test("exec resolves python3 to the memo venv", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools.exec, { pathPrepend: ["/opt/plow/pt-venv/bin"] });
 });
 

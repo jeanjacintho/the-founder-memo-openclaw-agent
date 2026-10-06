@@ -205,9 +205,11 @@ the `ref`.
 Gather runs once. One spawn set (split at ten) of:
 
 - **One investigator per key name**, per `/opt/plow/skills/memo-shared/references/investigate.md`.
-  Each one owns its entity's page for this run: it merges its dossier with
-  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier -`
-  and returns the dossier and the merge's exit. A non-zero merge fails that investigator loudly;
+  Each one owns its entity's page for this run. Its task names the key name by its number on
+  `## Key names` (`<n>`), never by the name itself; it writes its dossier to
+  `/var/lib/plow/pt/run/dossiers/<n>.json` and merges it with
+  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier /var/lib/plow/pt/run/dossiers/<n>.json`
+  — a name never appears on a command line — and returns the dossier and the merge's exit. A non-zero merge fails that investigator loudly;
   the coordinator re-runs it, and never hand-writes the page.
 - **Customer Investigator.** The same charter with the entity “the owner's customers and users”:
   who they are, usage evidence, relationship, and whether they would vouch, from messages with
@@ -430,6 +432,31 @@ then gate and publish its candidate (§ Candidate).
 3. Run argv `["wiki", "snapshot", "--author", "founder-memo"]` through `plow__plow_run_command` with
    `write_paths` `["~/Plow/wiki"]`: the night's diff and its revert point.
 4. Release the lock.
+
+## Bootstrap
+
+The `memo-bootstrap` job runs once, a minute after setup: the first read of the company, so the
+first night starts from what the owner can already correct. It is not a night: no generations, no
+memo, no print.
+
+1. Start, steps 1, 3, 4, 5 and 6 (no attempts count): the lock, `RUN_STARTED`, the Mac, a clean
+   workspace and `wiki_setup.py --desk`, the owner's language.
+2. Orient, without signals and without history (there is none yet): create `RUN_PAGE`, run the
+   Stage Analyst, pick the key names.
+3. Gather, every investigator searching **full history** — each entity page is being created, so
+   `investigate.md`'s first-creation rule already says so. Skip the outcome check.
+4. One leaf (`model`: the writer model) writes what the run inferred into the owner's wiki, each
+   inferred line ending `^[inferred]` so the owner can tell it from what they wrote:
+   the stage and the agenda's top three items under `## Notes` in `entities/owner/goals.md`, the
+   goals the evidence shows under `## Goals`, and one line per customer organization (its page is
+   already merged). Re-read the page immediately before writing and fold owner edits in; then run
+   argv `["wiki", "validate", "--writer", "shared"]` through `plow__plow_run_command` and fix what it
+   names on that page.
+5. Send the owner one message in their language (message(action=send), channel plow, accountId chat,
+   target plow-owner): here is what I think your company is — its stage, its three most pressing
+   things, its customers as far as the evidence goes — and "correct me: anything you text back
+   lands before tonight's run". At most eight short lines; no paths, no tool names.
+6. `["wiki", "snapshot", "--author", "founder-memo"]`, then release the lock.
 
 ## Accepted checkpoint consistency
 

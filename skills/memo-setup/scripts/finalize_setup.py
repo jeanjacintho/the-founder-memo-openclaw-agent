@@ -19,10 +19,12 @@ Usage:
 
     finalize_setup.py <config.json path> --owner-tz <IANA zone>
 
-The zone is step 1's answer (from the browser). The start hour is the draft's, on the owner's wall clock. The scheduler
-registers in that timezone. Prints CONFIG:written
-plus the start line on success; on failure prints why, on stderr, and
-writes nothing.
+The zone is step 1's answer (from the browser). The start hour is the
+draft's, the owner's own wall clock; the window (240 minutes) and the night's
+ceiling ($100) are the defaults. Prints CONFIG:written plus the start line on
+success; on failure prints why, on stderr, and writes nothing. Then it queues
+the one-off memo-bootstrap job a minute out -- once per install
+(register_crons.queue_bootstrap) -- and prints `queued:` or `already queued:`.
 """
 from __future__ import annotations
 
@@ -35,42 +37,41 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parent.parent / "memo-shared" / "scripts"))
+sys.path.insert(0, str(_HERE.parent.parent / "memo-schedule" / "scripts"))
 import pt_config_gate as _gate  # noqa: E402 -- the contract this must satisfy
 import record_setup as _record  # noqa: E402 -- next_question, the completeness rule
+import register_crons as _crons  # noqa: E402 -- the bootstrap job's spec
 
 
 def build(draft, owner_tz):
     """The config.json body for a completed draft. Pure: no I/O."""
     printer = draft.get("printer") or {}
-    # owner.language is gate check 7 and what a SCHEDULED edition writes in.
-    # memo-intake keeps it current from live chat, but the first paper can land
-    # before memo-intake ever runs, so setup plants what it recorded. Absent
-    # stays absent -- the gate allows that, and an invented default would be
-    # a language nobody chose.
+    # owner.language is what a SCHEDULED run writes in. memo-intake keeps it
+    # current from live chat, but the first night can run before memo-intake
+    # ever does, so setup plants what it recorded. Absent stays absent -- the
+    # gate allows that, and an invented default would be a language nobody chose.
     language = (draft.get("owner") or {}).get("language")
     owner = {"timezone": owner_tz}
     if isinstance(language, str) and language.strip():
         owner["language"] = language.strip()
-    priority = draft.get("priority") or {}
-    config = {
+    return {
         "owner": owner,
-        "memo": {"start": draft["local_hour"], "window_minutes": 240, "max_usd": 100},
+        "memo": {"start": draft["start"], "window_minutes": WINDOW_MINUTES, "max_usd": MAX_USD},
         "printer": {
             "configured": bool(printer.get("configured")),
             "name": printer.get("name") if printer.get("configured") else None,
         },
-        "mail": {"configured": bool((draft.get("mail") or {}).get("configured"))},
-        # Priority-signal sources: next_question() only reaches close once all
-        # three are real booleans, so this is a copy, never a default.
-        "signals": {source: draft["signals"][source] is True for source in _record.SIGNAL_SOURCES},
+        "priority": {"configured": True},
+        # Every source starts off; the owner turns one on later (memo-intake).
+        "signals": {source: False for source in _record.SIGNAL_SOURCES},
     }
-    if isinstance(priority.get("configured"), bool):
-        config["priority"] = {"configured": bool(priority.get("configured"))}
-    return config
 
 
+WINDOW_MINUTES = 240
+MAX_USD = 100
 
-def main(argv=None):
+
+def main(argv=None, backend=None):
     argv = sys.argv if argv is None else argv
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("config_path")
@@ -113,6 +114,14 @@ def main(argv=None):
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     print("CONFIG:written")
     print(f"memo.start={config['memo']['start']} ({args.owner_tz})")
+    # The first full-history read of the company, a minute from now, once.
+    if backend is None:
+        backend = _crons.CronBackend()
+    try:
+        _crons.queue_bootstrap(backend, args.owner_tz, WINDOW_MINUTES, home=config_path.parent)
+    except SystemExit as exc:
+        print(f"error: the config is written, but {exc}", file=sys.stderr)
+        return 1
     return 0
 
 

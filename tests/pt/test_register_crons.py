@@ -17,7 +17,7 @@ CONFIG = {
     "delivery": {"hour": "07:00"},
     "printer": {"configured": False, "name": None},
     "priority": {"configured": True},
-    "memo": {"start": "01:00", "window_minutes": 240},
+    "memo": {"start": "01:00", "window_minutes": 240, "max_usd": 100},
 }
 
 

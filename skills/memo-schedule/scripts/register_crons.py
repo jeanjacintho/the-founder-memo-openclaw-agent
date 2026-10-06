@@ -17,6 +17,9 @@ The spec:
                                                    finalizers that failed
   memo-now       one-shot, a minute out            --now: tonight's run on
                                                    demand, same prompt
+  memo-bootstrap one-shot, a minute out            once, right after setup
+                                                   (finalize_setup.py): the
+                                                   first full-history read
 
 The cron job carries `--tz owner.timezone`: memo.start is the owner's wall
 clock, and the scheduler fires on it directly, daylight saving included. The
@@ -54,7 +57,7 @@ _SKILLS = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..")
 sys.path.insert(0, os.path.join(_SKILLS, "memo-shared", "scripts"))
 import pt_config_gate as _gate
 from record_owner_language import _write_json
-from pt_paths import config_file, skills  # noqa: E402
+from pt_paths import config_file, pt_home, skills  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 from cron_backend import MODEL, OPENCLAW, PAPER_TIMEOUT_SECONDS, CronBackend  # noqa: E402 -- sibling module
 
@@ -63,6 +66,9 @@ NIGHTLY_NAME = "memo-nightly"
 # The on-demand run (--now): a one-shot the sweep never removes, so a queued
 # run survives a registration; the next --now replaces it unless it is running.
 NOW_NAME = "memo-now"
+# The first read of the owner's company, once, right after setup: never swept,
+# never re-queued (pt/bootstrap.json records that it was).
+BOOTSTRAP_NAME = "memo-bootstrap"
 # Resumes post_to_chat.py's recovery tickets: a memo posted whose print or
 # record failed is finished the next minute without posting it again. No
 # model, no tokens; drifts only on its command. The venv's python: a command
@@ -126,6 +132,36 @@ def memo_prompt(window_minutes=DEFAULT_WINDOW_MINUTES, scheduled=True):
         f"(stale lock after {stale_run_minutes(window_minutes)} minutes). "
         f"{DELIVERY_FAILURE_NOTICE}"
     )
+
+
+def bootstrap_prompt(window_minutes=DEFAULT_WINDOW_MINUTES):
+    return (
+        f"{SKILL_LOADING}"
+        f"Run the memo's bootstrap now, in one session: follow "
+        f"{skills() / 'memo-tournament' / 'SKILL.md'} § Bootstrap. "
+        f"The window is {window_minutes} minutes from when this run starts "
+        f"(stale lock after {stale_run_minutes(window_minutes)} minutes). "
+        "If it stops before its summary is posted, release the paper-workspace lock if you hold "
+        "it, then send exactly one short message to the owner with message(action=send), channel "
+        "plow, accountId chat, target plow-owner, saying the first read of their company did not "
+        "finish and tonight's run will read it instead."
+    )
+
+
+def queue_bootstrap(backend, owner_tz, window_minutes=DEFAULT_WINDOW_MINUTES, clock=None, home=None):
+    """memo-bootstrap a minute out, once per install. Prints what it did."""
+    marker = (home or pt_home()) / "bootstrap.json"
+    if marker.exists() or any(j.name == BOOTSTRAP_NAME for j in backend.list()):
+        print(f"already queued: {BOOTSTRAP_NAME}")
+        return
+    at = (clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
+    job = {"name": BOOTSTRAP_NAME, "schedule": at.isoformat(timespec="seconds"), "tz": None,
+           "prompt": bootstrap_prompt(window_minutes), "timeout": run_timeout_seconds(window_minutes),
+           "keep_after_run": True}
+    _check(backend.create(job), f"could not queue {BOOTSTRAP_NAME}")
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(json.dumps({"queued_for": job["schedule"]}) + "\n")
+    print(f"queued: {BOOTSTRAP_NAME} ({job['schedule']})")
 
 
 def _config(config_path):
@@ -211,7 +247,7 @@ def registered_jobs(listing):
     """
     registered = {}
     for job in listing:
-        if not job.name.startswith("memo-") or job.name == NOW_NAME:
+        if not job.name.startswith("memo-") or job.name in (NOW_NAME, BOOTSTRAP_NAME):
             continue
         if job.name in registered:
             raise SystemExit(
@@ -289,6 +325,9 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
     start, window = load_memo(config_path)
     if args.start is not None or args.enabled is not None:
         path, config = _config(config_path)
+        # A memo block written before the ceiling existed gets the defaults it lacks.
+        config["memo"].setdefault("window_minutes", DEFAULT_WINDOW_MINUTES)
+        config["memo"].setdefault("max_usd", 100)
         if args.start is not None:
             config["memo"]["start"] = args.start
         if args.enabled is not None:
