@@ -86,7 +86,9 @@ def send_to_url(pdf_path, url, key):
         data = fh.read()
     request = urllib.request.Request(url, data=data, method="POST", headers={
         "Authorization": f"Bearer {key}", "Content-Type": "application/pdf",
-        "X-Plow-Agent": str(identity.get("uid") or (identity.get("line") or {}).get("uid") or "unknown")})
+        # The server's per-agent cap keys on this: agent.uid is unique across accounts
+        # (a line uid like ln_p7 is not).
+        "X-Plow-Agent": identity["agent"]["uid"]})
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             return json.loads(response.read() or b"{}")
