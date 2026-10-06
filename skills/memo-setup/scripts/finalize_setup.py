@@ -25,6 +25,7 @@ ceiling ($100) are the defaults. Prints CONFIG:written plus the start line on
 success; on failure prints why, on stderr, and writes nothing. Then it queues
 the one-off memo-bootstrap job a minute out -- once per install
 (register_crons.queue_bootstrap) -- and prints `queued:` or `already queued:`.
+An event install (MEMO_EVENT) queues its first memo now instead.
 """
 from __future__ import annotations
 
@@ -60,6 +61,8 @@ def build(draft, owner_tz):
         "printer": {
             "configured": bool(printer.get("configured")),
             "name": printer.get("name") if printer.get("configured") else None,
+            # An event install prints on the event's shared printer line, at 72 mm.
+            **({"line": printer["line"], "paper": printer["paper"]} if printer.get("line") else {}),
         },
         "priority": {"configured": True},
         # Every source starts off; the owner turns one on later (memo-intake).
@@ -75,7 +78,7 @@ def main(argv=None, backend=None):
     argv = sys.argv if argv is None else argv
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("config_path")
-    parser.add_argument("--owner-tz", required=True, help="IANA zone from step 1")
+    parser.add_argument("--owner-tz", help="IANA zone from step 1; an event install uses its event's zone")
     args = parser.parse_args(argv[1:])
 
     config_path = Path(args.config_path)
@@ -96,6 +99,11 @@ def main(argv=None, backend=None):
         )
         return 1
 
+    if not args.owner_tz and draft.get("event"):
+        args.owner_tz = json.loads(_record.EVENTS.read_text(encoding="utf-8"))[draft["event"]]["timezone"]
+    if not args.owner_tz:
+        print("error: --owner-tz is required", file=sys.stderr)
+        return 1
     try:
         ZoneInfo(args.owner_tz)
     except (ZoneInfoNotFoundError, ValueError):
@@ -114,11 +122,17 @@ def main(argv=None, backend=None):
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     print("CONFIG:written")
     print(f"memo.start={config['memo']['start']} ({args.owner_tz})")
-    # The first full-history read of the company, a minute from now, once.
+    # The first full-history read of the company, a minute from now, once. An
+    # event install runs its first memo instead: the owner is at the event, by
+    # the printer, now (the bootstrap prints nothing, and both would want the
+    # workspace in the same minute).
     if backend is None:
         backend = _crons.CronBackend()
     try:
-        _crons.queue_bootstrap(backend, args.owner_tz, WINDOW_MINUTES, home=config_path.parent)
+        if draft.get("event"):
+            _crons.queue_now(backend, _crons.EVENT_WINDOW_MINUTES, args.owner_tz, prompt=_crons.event_prompt())
+        else:
+            _crons.queue_bootstrap(backend, args.owner_tz, WINDOW_MINUTES, home=config_path.parent)
     except SystemExit as exc:
         print(f"error: the config is written, but {exc}", file=sys.stderr)
         return 1

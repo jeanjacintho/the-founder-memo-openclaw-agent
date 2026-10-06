@@ -27,7 +27,8 @@ export type Account = { accountId: string; apiBase: string; lineUid: string; ema
 
 export class HttpError extends Error {
   status: number;
-  constructor(status: number) { super(`Plow HTTP ${status}`); this.status = status; }
+  detail?: string;
+  constructor(status: number, detail?: string) { super(`Plow HTTP ${status}`); this.status = status; this.detail = detail; }
 }
 
 export class DeliveryUnknownError extends Error {
@@ -43,7 +44,11 @@ export async function request<T>(account: Pick<Account, "apiBase">, path: string
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     signal: signal ?? AbortSignal.timeout(40_000),
   });
-  if (!response.ok) throw new HttpError(response.status);
+  if (!response.ok) {
+    // Plow's refusals name the rule and never quote the caller, so the detail can be shown as-is.
+    const refusal = await response.json().catch(() => ({})) as { detail?: unknown };
+    throw new HttpError(response.status, typeof refusal.detail === "string" ? refusal.detail : undefined);
+  }
   return await response.json() as T;
 }
 
@@ -118,7 +123,7 @@ async function earliestUnansweredMessage(account: Account, chat: string, newest:
   return earliest;
 }
 
-export async function listen(account: Account, signal: AbortSignal, log: (text: string) => void, turn: (chat: Chat, message: Message, firstContact: boolean, history: Message[], ingress: TurnIngress) => Promise<TurnOutcome>) {
+export async function listen(account: Account, signal: AbortSignal, log: (text: string) => void, turn: (chat: Chat, message: Message, firstContact: boolean, history: Message[], ingress: TurnIngress) => Promise<TurnOutcome>, onConnectorsChanged?: () => void) {
   const root = process.env.OPENCLAW_STATE_DIR;
   if (!root) throw new Error("OPENCLAW_STATE_DIR is required");
   const dir = `${root}/plow-checkpoints`;
@@ -365,6 +370,12 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
       for (const chat of chats) enqueue(chat.uid, () => replay(chat.uid));
       for await (const [raw] of frames) {
         const event = JSON.parse(raw.toString());
+        // A shallow notice that the owner's Google or Slack connections changed.
+        if (event.event_type === "connectors.changed") {
+          log(`connectors changed account=${account.accountId}`);
+          onConnectorsChanged?.();
+          continue;
+        }
         if (event.event_type !== "message_received" || !validChatId(event.chat_id) || seen.has(event.data.message.uid) || replayed.has(event.data.message.uid)) continue;
         // Persist discovery before queueing: a dropped connection discards unstarted work.
         if (!checkpoints.has(event.chat_id)) {

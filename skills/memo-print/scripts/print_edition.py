@@ -65,6 +65,32 @@ def printer_name(config_path):
     return name.strip()
 
 
+def printer_line(config_path):
+    """An event install's shared printer: the E.164 Plow line its receipt is sent to."""
+    printer = _printer(config_path)
+    line = printer.get("line") if printer.get("configured") is True else None
+    return line if isinstance(line, str) and re.fullmatch(r"\+[1-9]\d{1,14}", line) else None
+
+
+def send_to_line(pdf_path, line, date):
+    """Hand the receipt to the event's printer line over Plow: this agent's chat
+    with that line alone (untrusted, so nothing the printer side says can steer
+    this agent), one message carrying the PDF. No Mac, no Latch."""
+    from bearer_http import post_json, post_json_read, require  # noqa: PLC0415
+    from owner_chat import fetch_identity  # noqa: PLC0415
+    from post_to_chat import declare_and_upload  # noqa: PLC0415
+
+    base, token = require("PLOW_API_BASE").rstrip("/"), require("PLOW_AGENT_TOKEN")
+    # Always the idempotent POST with exactly this roster: a chat merely *containing*
+    # the printer line could be a group with other people, who would get the receipt.
+    chat = post_json_read(base, "/v1/chats", token, "Plow Chat printer thread", {
+        "line_uid": fetch_identity(base, token)["line"]["uid"], "members": [line], "body": "The Founder Memo",
+        "trusted": False, "idempotency_key": f"memo-print-{line}"})["uid"]
+    attachment = declare_and_upload(base, chat, token, pdf_path, filename=f"The-Founder-Memo-{date}.pdf")
+    post_json(base, f"/v1/chats/{chat}/messages", token, "Plow Chat printer receipt",
+              {"body": "", "attachment_uids": [attachment]})
+
+
 def receipt_paper(config_path):
     """printer.paper "72mm": a thermal roll, which gets the receipt page."""
     return _printer(config_path).get("paper") == "72mm"
@@ -181,7 +207,7 @@ def ship(pdf_path, printer, date, call_tool, lp_options=()):
             "argv": ["lp", "-d", printer, *lp_options, abs_pdf],
             "network": True,
             "read_paths": [abs_pdf],
-            "goal": "Print today's Founder Times edition",
+            "goal": "Print today's Founder Memo",
         },
     )
     lp = finish_command(call_tool, lp, "lp")  # a running lp can still fail with BFD
@@ -192,7 +218,7 @@ def ship(pdf_path, printer, date, call_tool, lp_options=()):
             {
                 "app": "System Events",
                 "script": f"do shell script {json.dumps(cmd)}",
-                "goal": "Print today's Founder Times edition (sandboxed lp failed)",
+                "goal": "Print today's Founder Memo (sandboxed lp failed)",
             },
         )
     require_exit_zero(call_tool, lp, "lp")
@@ -209,10 +235,18 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     printer = printer_name(args.config)
-    if not printer:
+    line = printer_line(args.config)
+    if not printer and not line:
         print("skipped: printer.configured is not true")
         return
     date = args.date or edition_date(args.pdf)
+    if line:  # an event install: the receipt goes to the event's shared printer
+        if args.dry_run:
+            print(f"dry-run: would send the receipt to the event printer {line}")
+            return
+        send_to_line(write_receipt(args.pdf) if receipt_paper(args.config) else args.pdf, line, date)
+        print(f"page sent to the event printer {line}")
+        return
     lp_options = ["-o", f"media={RECEIPT_MEDIA}"] if receipt_paper(args.config) else []
     if args.dry_run:
         print(f"dry-run: would write {mac_pdf_path(date)} and {shlex.join(['lp', '-d', printer, *lp_options])}")

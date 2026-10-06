@@ -136,6 +136,21 @@ def memo_prompt(window_minutes=DEFAULT_WINDOW_MINUTES, scheduled=True):
     )
 
 
+# An event install's first memo: one short read, printed while its owner is still in the room.
+EVENT_WINDOW_MINUTES = 30
+
+
+def event_prompt():
+    return (
+        f"{PAPER_RUN_MARKER} {SKILL_LOADING}"
+        f"Run the event memo now, in one session: follow "
+        f"{skills() / 'memo-tournament' / 'SKILL.md'} § Event. "
+        f"The window is {EVENT_WINDOW_MINUTES} minutes from when this run starts "
+        f"(stale lock after {stale_run_minutes(EVENT_WINDOW_MINUTES)} minutes). "
+        f"{DELIVERY_FAILURE_NOTICE}"
+    )
+
+
 def bootstrap_prompt(window_minutes=DEFAULT_WINDOW_MINUTES):
     return (
         f"{SKILL_LOADING}"
@@ -277,7 +292,7 @@ def job_drift(job, spec):
     return False
 
 
-def queue_now(backend, window_minutes, owner_tz, clock=None):
+def queue_now(backend, window_minutes, owner_tz, clock=None, prompt=None):
     """Tonight's run on demand: the nightly prompt as a one-shot a minute out.
 
     Previous copies are removed by id only after the new one is created, so a
@@ -310,7 +325,7 @@ def queue_now(backend, window_minutes, owner_tz, clock=None):
         return
     at = (clock or datetime.now(ZoneInfo(owner_tz))) + timedelta(minutes=1)
     job = {"name": NOW_NAME, "schedule": at.isoformat(timespec="seconds"), "tz": None,
-           "prompt": memo_prompt(window_minutes, scheduled=False),
+           "prompt": prompt or memo_prompt(window_minutes, scheduled=False),
            "timeout": run_timeout_seconds(window_minutes), "keep_after_run": True}
     previous = [j.id for j in listing if j.name == NOW_NAME]
     _check(backend.create(job), f"could not queue {NOW_NAME}")

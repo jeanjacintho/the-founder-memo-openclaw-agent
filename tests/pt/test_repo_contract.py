@@ -524,7 +524,7 @@ class TestSoul:
         soul = (AGENTS).read_text()
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
         assert "| Turning a signal source on or off | 👂 |" in soul
-        assert "NEXT_QUESTION=<hour|printer|awake|close>" in setup
+        assert "NEXT_QUESTION=<hour|printer|awake|connect|close>" in setup  # connect: event installs only
         assert "Every source starts off" in setup
         assert '"plow-messages", "search", "--limit", "200", "--order", "desc"' in setup
         finalize = (ROOT / "memo-setup" / "scripts" / "finalize_setup.py").read_text()

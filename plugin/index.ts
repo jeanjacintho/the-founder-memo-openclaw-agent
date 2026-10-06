@@ -11,9 +11,10 @@ import { hasVisibleChannelTurnDispatch } from "openclaw/plugin-sdk/channel-messa
 import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
 import { request, listen, accepts, findOwnerChat, ownerChat, invalidateContextualizedHistory, HttpError, DeliveryUnknownError, type Account, type Chat, type Message, type Page, type TurnOutcome, type TurnIngress } from "./transport.ts";
 import { emailFooter, emailLabel, emailTurnPrompt, originOf, recordOrigin } from "./email.ts";
-import { gateContext, isOwnerDmTurn, runGate } from "./setup-gate.ts";
+import { gateContext, isOwnerDmTurn, runGate, OWNER_DM_SESSION } from "./setup-gate.ts";
 import { CATEGORIES, GroupInbox, isGroupTurn, isListeningGroup, listeningContext, recordSignal, type Category } from "./group-listen.ts";
 import { notifyFailedPaperRun } from "./cron-failure-notice.ts";
+import { connectLink, latchContext, onConnectorsChanged, runConnector, type Provider } from "./connectors.ts";
 
 let runtime: PluginRuntime;
 // OpenClaw 2026.9.6 receives channel messages and runs tools in separate plugin
@@ -322,7 +323,10 @@ const plugin: ChannelPlugin<Account> = {
   gateway: {
     startAccount: async ctx => {
       const log = (text: string) => ctx.log?.info(text);
-      await listen(ctx.account, ctx.abortSignal, log, (chat, message, firstContact, history, ingress) => receive(ctx.account, ctx.cfg, chat, message, firstContact, history, ingress, log));
+      await listen(ctx.account, ctx.abortSignal, log, (chat, message, firstContact, history, ingress) => receive(ctx.account, ctx.cfg, chat, message, firstContact, history, ingress, log),
+        ctx.account.accountId === "chat"
+          ? () => void onConnectorsChanged(runtime.system, OWNER_DM_SESSION).catch(error => log(`connectors changed: ${(error as Error).name}`))
+          : undefined);
     },
   },
   outbound: {
@@ -349,12 +353,18 @@ export default defineChannelPluginEntry({
     api.on("before_prompt_build", async (_event, ctx) => {
       // A group only ever listens: it gets the listening rules, never setup.
       if (isGroupTurn(ctx)) return { prependContext: await listeningContext() };
-      if (!isOwnerDmTurn(ctx)) return;
+      // Owner turns and paper runs learn, per turn, whether Google is on the Mac or on Plow.
+      if (!isOwnerDmTurn(ctx)) {
+        const connectors = ctx.sessionKey?.includes(":cron:") ? await latchContext() : undefined;
+        return connectors ? { prependContext: connectors } : undefined;
+      }
       const output = await runGate();
       // One line per owner turn: the trace keeps only the owner's own text, so
       // this is how a live run shows the gate reached the prompt.
       api.logger.info(output ? `plow setup gate prepended: ${output.split("\n")[0]}` : "plow setup gate unavailable; prompt fallback applies");
-      return output ? { prependContext: gateContext(output) } : undefined;
+      const connectors = await latchContext();
+      const context = [output ? gateContext(output) : undefined, connectors].filter(Boolean).join("\n\n");
+      return context ? { prependContext: context } : undefined;
     });
   },
   registerCapabilities(api) {
@@ -559,5 +569,41 @@ export default defineChannelPluginEntry({
         },
       };
     });
+    const argvParameter = {
+      type: "array", minItems: 1, items: { type: "string" },
+      description: "The command and its flags, one element per word, command path first. [\"--help\"] at any depth lists what is there.",
+    };
+    const connector = (provider: Provider, description: string, extra: Record<string, unknown> = {}) => api.registerTool(context => ({
+      name: `plow_${provider}`, label: provider === "google" ? "Gmail and Calendar" : "Slack", description,
+      parameters: { type: "object", required: ["argv"], additionalProperties: false, properties: { argv: argvParameter, ...extra } },
+      async execute(_id, args: { argv: string[]; timezone?: string }) {
+        if (!context.config) return { isError: true, content: [{ type: "text", text: "Plow configuration is unavailable." }], details: {} };
+        return runConnector(plugin.config.resolveAccount(context.config, "chat"), provider, args.argv, args.timezone);
+      },
+    }));
+    connector("google",
+      "Your owner's Gmail and Google Calendar, run by Plow with their connected Google accounts (plow-gog). " +
+      "Pass argv without a leading command name, e.g. [\"gmail\",\"search\",\"newer_than:1d\"]; learn commands from [\"--help\"] and [\"gmail\",\"--help\"]. " +
+      "[\"accounts\"] lists the connected accounts and the default. Reads fan out across every account; anything that changes mail or the calendar " +
+      "runs on one account and needs --account when more than one is connected. Read threads with --sanitize-content. Before a timed calendar create, " +
+      "a conflict refusal lists the busy times: tell the owner, and only re-send with --confirm-conflict when they say to. " +
+      "`gmail attachment MSG ATT` saves the file to your workspace and returns saved_to. Pass timezone (IANA, e.g. America/Los_Angeles) for calendar day bounds. If Google is not connected, call plow_connect.",
+      { timezone: { type: "string", description: "The owner's IANA time zone, for calendar day bounds. UTC when omitted." } });
+    connector("slack",
+      "Your owner's Slack workspaces, run by Plow with their connected Slack accounts. Pass argv without a leading command name; " +
+      "learn commands from [\"--help\"] and [\"messages\",\"--help\"]. [\"status\"] lists the connected workspaces. Messages you post " +
+      "appear as your owner, not as you. If Slack is not connected, call plow_connect.");
+    api.registerTool(context => ({
+      name: "plow_connect", label: "Connect Google or Slack",
+      description: "Get the link your owner opens to connect Google or Slack to Plow. Send it to them in your chat as is; it is single-use and expires " +
+        "in minutes. When they finish, Plow tells you and you re-check with plow_google [\"accounts\"] or plow_slack [\"status\"]. " +
+        "If they have not connected by expires_at, or say the link failed or expired, call plow_connect again and send them the new link.",
+      parameters: { type: "object", required: ["provider"], additionalProperties: false,
+        properties: { provider: { type: "string", enum: ["google", "slack"] } } },
+      async execute(_id, args: { provider: Provider }) {
+        if (!context.config) return { isError: true, content: [{ type: "text", text: "Plow configuration is unavailable." }], details: {} };
+        return connectLink(plugin.config.resolveAccount(context.config, "chat"), args.provider);
+      },
+    }));
   },
 });

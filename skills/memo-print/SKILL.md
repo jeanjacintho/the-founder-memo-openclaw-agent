@@ -32,6 +32,12 @@ cost line, or the night's reasons when there is no card, at 72 mm, sent with
 driver's variable length cuts after the ink). No `paper` key is the Letter
 page, unchanged.
 
+An event install has no Mac: its `printer.line` is the E.164 Plow line of the
+event's shared printer. The script renders the 72 mm receipt and sends it to that
+line instead of running `lp`. It uses this agent's chat with the line (started
+once, untrusted, so nothing the printer side says can steer this agent), one
+message carrying the PDF. The event's own relay prints it.
+
 ## When it fails — and it is allowed to
 
 Any failure — the Mac unreachable, the write denied, `lp` non-zero, "no

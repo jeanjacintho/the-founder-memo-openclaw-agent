@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import JSON5 from "json5";
 import { fileURLToPath } from "node:url";
-import { renderConfig, syncConfig, type Identity } from "../boot/config.ts";
+import { LOCAL_LATCH_URL, renderConfig, syncConfig, withEvent, type Identity } from "../boot/config.ts";
 import { llmRoute, roleModels } from "../boot/llm.ts";
 
 const identity: Identity = {
@@ -110,7 +110,7 @@ for (const [label, env] of [["without", {}], ["with", {
 });
 
 test("a one-click install runs on Plow's Sol, with Plow's Luna as its fallback", () => {
-  const config = renderConfig(identity, "http://api:8000");
+  const config = renderConfig(identity, "http://api:8000", undefined, {});
   assert.deepEqual(config.agents.defaults.model, {
     primary: "plow/openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-luna"],
   });
@@ -127,7 +127,7 @@ test("a one-click install runs on Plow's Sol, with Plow's Luna as its fallback",
 });
 
 test("an OpenAI route falls back to Plow and runs on OpenClaw's own runtime", () => {
-  const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route);
+  const config = renderConfig(identity, "http://api:8000", llmRoute({}, "openai").route, {});
   assert.deepEqual(config.agents.defaults.model,
     { primary: "openai/gpt-6-sol", fallbacks: ["plow/openai/gpt-6-sol", "plow/openai/gpt-6-luna"] });
   assert.deepEqual(config.agents.defaults.models, { "openai/*": { agentRuntime: { id: "openclaw" } } });
@@ -221,7 +221,7 @@ test("native messaging retains local workspace and memory file tools", () => {
     message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } },
     profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
       "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
-      "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
+      "plow_set_thread_trust", "plow_reply_to", "plow_send_email", "plow_google", "plow_slack", "plow_connect",
       "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
       "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
     ], deny: ["ask_user", "secrets"],
@@ -355,4 +355,15 @@ test("MCP Plow server include disappears without a relay while owner MCP setting
   assert.equal(again.mcp.servers.plow, undefined);
   assert.deepEqual(again.mcp.servers.other, { url: "https://other.example" });
   assert.equal(again.mcp.sessionIdleTtlMs, 300_000);
+});
+
+test("an event install's MCP server is the local wiki stand-in, never the owner's relay", () => {
+  const owner = { ...identity, mcp_url: "https://relay.internal/mcp" };
+  assert.equal(withEvent(owner, {}).mcp_url, "https://relay.internal/mcp");
+  const event = withEvent(owner, { MEMO_EVENT: "EV-PLOW" });
+  assert.equal(event.mcp_url, LOCAL_LATCH_URL);
+  assert.equal(withEvent({ ...identity, mcp_url: null }, { MEMO_EVENT: "EV-PLOW" }).mcp_url, LOCAL_LATCH_URL,
+    "no relay at all still gets the local wiki, so the memo's Mac gate and wiki run");
+  const servers = (renderConfig(event, "http://api:8000") as { mcp: { servers: Record<string, { url: string }> } }).mcp.servers;
+  assert.deepEqual(Object.values(servers).map(s => s.url), ["http://127.0.0.1:18790/mcp"]);
 });

@@ -39,7 +39,7 @@ JSON off argv, so there is no `{`/`}`/inner-quote escaping to get wrong.
 Prints two lines on success:
 
     DRAFT:<comma-joined fields already recorded, or "none">
-    NEXT_QUESTION=<hour|printer|awake|close>
+    NEXT_QUESTION=<hour|printer|awake|connect|close>
 
 memo-setup's SKILL.md reads NEXT_QUESTION to decide what to ask -- never by
 re-deriving "what's next" from the draft's shape itself, and never from
@@ -54,6 +54,7 @@ stays satisfied even when this fails.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -67,6 +68,25 @@ DEFAULT_CONFIG = str(config_file())
 QUESTION_ORDER = ("hour", "printer", "awake")
 # The priority-signal sources; setup leaves every one off (memo-intake turns them on).
 SIGNAL_SOURCES = ("group_chat", "email", "imessage")
+# An event build of the image sets MEMO_EVENT to a code in this file, which names
+# the shared printer its memos print on. The code comes from the image, never from
+# chat, so nothing typed can point an owner's memo at a number of its choosing.
+EVENTS = Path(__file__).resolve().parents[2] / "memo-setup" / "assets" / "events.json"
+
+
+def apply_event(draft):
+    """An event install prints on the event's shared printer, not one of its own:
+    nothing to ask about a printer or a Mac. No-op without MEMO_EVENT."""
+    code = os.environ.get("MEMO_EVENT", "").strip().upper()
+    if not code or "event" in draft:
+        return
+    event = json.loads(EVENTS.read_text(encoding="utf-8")).get(code)
+    if not event:
+        raise ValueError(f"MEMO_EVENT {code!r} is not in {EVENTS.name}")
+    draft["event"] = code
+    draft["printer"] = {"configured": True, "line": event["printer_line"], "paper": event["paper"]}
+    draft["mac"] = {"awake": False}
+    draft.setdefault("start", event["start"])  # the first memo runs now; later nights at the event's hour
 
 
 def _coerce(raw_value):
@@ -121,6 +141,10 @@ def next_question(draft):
     mac = draft.get("mac")
     if not (isinstance(mac, dict) and isinstance(mac.get("awake"), bool)):
         return "awake"
+    # An event install reads mail, calendar and Slack only through the owner's Plow
+    # connections: setup sends the connect links and waits for their "done".
+    if draft.get("event") and draft.get("connected") is not True:
+        return "connect"
     return "close"
 
 
@@ -161,6 +185,7 @@ def main(argv=None):
         return 0
     draft = load_draft(draft_path)
     try:
+        apply_event(draft)
         apply_pairs(draft, argv[2:])
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)

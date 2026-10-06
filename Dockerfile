@@ -33,6 +33,10 @@ ARG UV_VERSION=0.11.19
 ARG UV_SHA256_AMD64=7035608168e106375b36d0c818d537a889c51a8625fe7f8f7cad5e62b947c368
 ARG UV_SHA256_ARM64=83b13ab184a45b7d9a3b0e4b10eaebd50ad41e66cb16dcce8e60aa7be13ae399
 ARG PT_PYTHON_VERSION=3.13.13
+# The wiki CLI an event install runs on its own wiki (boot/local-latch.ts); the same
+# commit the test suite pins.
+ARG PLOW_WIKI_REF=de844bd3ef81adda8cf10b7fa8cd6023b21f6a74
+ARG OBSIDIAN_WIKI_VERSION=2026.10.1
 ARG WEASYPRINT_VERSION=62.3
 ARG PYDYF_VERSION=0.10.0
 ARG PYYAML_VERSION=6.0.3
@@ -51,6 +55,8 @@ RUN case "${TARGETARCH:-amd64}" in \
  && /tmp/uv/uv venv --python "${PT_PYTHON_VERSION}" --no-python-downloads /opt/plow/pt-venv \
  && /tmp/uv/uv pip install --python /opt/plow/pt-venv/bin/python3 \
       "weasyprint==${WEASYPRINT_VERSION}" "pydyf==${PYDYF_VERSION}" "PyYAML==${PYYAML_VERSION}" \
+      "plow-wiki @ https://github.com/plow-pbc/plow-wiki/archive/${PLOW_WIKI_REF}.tar.gz" \
+      "obsidian-wiki==${OBSIDIAN_WIKI_VERSION}" \
  && rm -rf /tmp/uv /tmp/uv.tgz /tmp/uv-cache \
  && chmod -R a+rX,go-w /opt/plow/python /opt/plow/pt-venv
 
@@ -129,9 +135,13 @@ RUN cd /opt/plow && npm ci --omit=dev --omit=peer --omit=optional --ignore-scrip
 ENV OPENCLAW_STATE_DIR=/var/lib/plow OPENCLAW_CONFIG_PATH=/var/lib/plow/openclaw.json OPENCLAW_INCLUDE_ROOTS=/etc/plow/openclaw OPENCLAW_NO_RESPAWN=1 NODE_DISABLE_COMPILE_CACHE=1
 # Agent Index listing. Compose (and a host that injects env) can override without rebuild.
 ENV AGENT_ID=thefoundertimes \
-    AGENT_NAME="The Founder Times" \
+    AGENT_NAME="The Founder Memo" \
     AGENT_BLURB="Your day's priorities, printed. Inspired by Mayfield's Patrick Salyer, it learns what you're working on from your Mac and prints what to focus on today, with sources, or sends a PDF to chat." \
     AGENT_RUNTIME="OpenClaw 2.0"
+ENV MEMO_MODEL_WRITER=plow/anthropic/claude-opus-5 \
+    MEMO_MODEL_WRITER_PRICE=5,25,0.5,6.25 \
+    MEMO_MODEL_CRITIC=plow/openai/gpt-6-sol \
+    MEMO_MODEL_CRITIC_PRICE=1.25,10,0.125,1.25
 # The inherited healthcheck loads config and can race the boot state lock.
 HEALTHCHECK NONE
 USER node

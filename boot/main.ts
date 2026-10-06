@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { readFile, mkdir, writeFile, rm, chmod } from "node:fs/promises";
 import { startAgentIndex } from "./agent-index.js";
-import { renderConfig, syncConfig } from "./config.js";
+import { renderConfig, syncConfig, withEvent } from "./config.js";
 import { identityFromApi } from "./identity.js";
 import { llmRoute, modelName, roleModels } from "./llm.js";
 import { installBootLog } from "./log.js";
@@ -17,7 +17,7 @@ try {
   delete process.env.OPENCLAW_GATEWAY_TOKEN;
   process.env.OPENCLAW_GATEWAY_PASSWORD = randomBytes(32).toString("hex");
   process.env.PLOW_MCP_BRIDGE_TOKEN = randomBytes(32).toString("hex");
-  const identity = await identityFromApi(base, process.env.PLOW_AGENT_TOKEN);
+  const identity = withEvent(await identityFromApi(base, process.env.PLOW_AGENT_TOKEN));
   const { route, problem } = llmRoute();
   if (problem) console.error(`plow-boot: llm: ${problem}`);
   console.log(`plow-boot: llm ${route.provider} ${route.primary}${route.fallbacks.length ? ` (fallback ${route.fallbacks.join(", ")})` : ""}`);

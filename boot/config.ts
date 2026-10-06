@@ -16,6 +16,13 @@ export type Identity = {
 
 type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
 
+// An event install has no owner Mac: the memo's "Mac" is local-latch.ts, which keeps
+// its wiki on this machine. Never the owner's relay, so nothing reaches anyone's Mac.
+export const LOCAL_LATCH_URL = "http://127.0.0.1:18790/mcp";
+export function withEvent<T extends { mcp_url?: string | null }>(identity: T, env: NodeJS.ProcessEnv = process.env): T {
+  return env.MEMO_EVENT ? { ...identity, mcp_url: LOCAL_LATCH_URL } : identity;
+}
+
 export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
   const threadTrust = env.PLOW_THREAD_TRUST ?? "ask";
   if (!["ask", "trusted", "untrusted"].includes(threadTrust)) throw new Error("PLOW_THREAD_TRUST must be ask, trusted, or untrusted");
@@ -117,6 +124,7 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
         "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
         "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
+        "plow_google", "plow_slack", "plow_connect",
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
       ], deny: ["ask_user", "secrets"],
