@@ -9,8 +9,8 @@ import pytest
 
 from conftest import ROOT, load_module
 
-sys.path.insert(0, str(ROOT / "pt-shared" / "scripts"))
-pe = load_module("print_edition", "pt-print/scripts/print_edition.py")
+sys.path.insert(0, str(ROOT / "memo-shared" / "scripts"))
+pe = load_module("print_edition", "memo-print/scripts/print_edition.py")
 
 
 def _config(tmp_path, configured=True, name="HP_LaserJet", language=None):

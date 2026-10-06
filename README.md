@@ -108,7 +108,7 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
   the owner's turns the Plow channel runs the setup gate and hands the model
   its answer; groups get answers, never setup questions.
 - **Schedule.** Every paper is an OpenClaw scheduler job
-  (`openclaw cron`), registered by `pt-dashboard/scripts/register_crons.py`
+  (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
   from your topics: an isolated turn on the chat's own model, in **your**
   timezone (`--tz`), with no automatic delivery — the paper posts itself as a
   PDF. Jobs live in the state volume and survive restarts and
@@ -116,9 +116,9 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
   change in chat) registers them again. They also keep the prompt they were
   registered with: after updating the image of an existing install, register
   again so they pick up its changes (the model-switch command does it too):
-  `docker compose exec agent bash -l -c /opt/plow/skills/pt-dashboard/scripts/register_crons.py`
+  `docker compose exec agent bash -l -c /opt/plow/skills/memo-schedule/scripts/register_crons.py`
   (on a VM, the same in an SSH session).
-- **Scripts.** The `pt-*` skills' Python scripts run on Python 3.13 with
+- **Scripts.** The `memo-*` skills' Python scripts run on Python 3.13 with
   WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The paper's state is
   `/var/lib/plow/pt` (config, topics, run scratch).
 
@@ -170,7 +170,7 @@ docker compose cp agent:/var/lib/hermes/pt ./hermes-pt
 # From this checkout, with this agent running:
 docker compose cp ./hermes-pt agent:/tmp/hermes-pt
 docker compose exec -u root agent chown -R node:node /tmp/hermes-pt
-docker compose exec agent /opt/plow/skills/pt-setup/scripts/import_state.py \
+docker compose exec agent /opt/plow/skills/memo-setup/scripts/import_state.py \
   --from /tmp/hermes-pt --previous-tz America/Sao_Paulo
 ```
 
@@ -194,7 +194,7 @@ and the old scheduler's jobs stay behind.
 
 - `boot/`, `plugin/`, `prompt/` — the OpenClaw base: identity, gateway config,
   Plow channel (with the setup-gate hook) and the agent prompt.
-- `skills/pt-*` — setup, intake, research, priority, edition, print, dashboard
+- `skills/memo-*` — setup, intake, research, tournament, render, print, schedule
   and the shared scripts behind them. `skills/owners-mac`,
   `skills/google-workspace` come from the base.
 - `tests/*.test.ts` — boot and plugin tests (`node --test`); `tests/pt/` —

@@ -9,7 +9,7 @@ themselves and is deliberately not restated here.
 **One agent**: The Founder Times on OpenClaw. It is a morning paper
 researched on the owner's Mac and printed there, or sent as a PDF in chat. It
 is the OpenClaw port of `jeanjacintho/the-plow-times-hermes-agent`, the same
-paper on Hermes. This repo is the prompt, the `pt-*` skills and their
+paper on Hermes. This repo is the prompt, the `memo-*` skills and their
 scripts, a plugin, and its own `boot/`, built directly on the upstream
 OpenClaw image rather than on `plow-pbc/plow-openclaw-agent`. `README.md` owns
 the product prose and this file does not repeat it. Flag drift between that
@@ -43,7 +43,7 @@ under `index/`: their owner data is synthetic, and the public, sourced
 advisor quotes in them are intended.
 
 Skills, prompts and comments are in English. The paper is written in the
-owner's language, which `pt-intake` records. Owner-facing text that hard-codes
+owner's language, which `memo-intake` records. Owner-facing text that hard-codes
 a language around that is a finding.
 
 ## Review priority

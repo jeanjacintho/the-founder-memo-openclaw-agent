@@ -7,7 +7,7 @@ import pytest
 
 from conftest import load_module
 
-importer = load_module("import_state", "pt-setup/scripts/import_state.py")
+importer = load_module("import_state", "memo-setup/scripts/import_state.py")
 
 CONFIG = {
     "owner": {"timezone": "America/Sao_Paulo", "language": "Português"},

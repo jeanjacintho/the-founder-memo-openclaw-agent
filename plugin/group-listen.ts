@@ -55,8 +55,8 @@ export class GroupInbox {
   }
 }
 
-export const signalScript = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/pt-shared/scripts/signal_intake.py`;
-export const triageRubric = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/pt-shared/references/signal-triage.md`;
+export const signalScript = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/memo-shared/scripts/signal_intake.py`;
+export const triageRubric = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/memo-shared/references/signal-triage.md`;
 const VENV_BIN = "/opt/plow/pt-venv/bin";
 
 export type IntakeRunner = (file: string, input: string, env: NodeJS.ProcessEnv) => Promise<string>;

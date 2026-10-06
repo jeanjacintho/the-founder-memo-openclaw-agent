@@ -7,7 +7,7 @@ import pytest
 
 from conftest import load_module
 
-gate_mod = load_module("pt_config_gate", "pt-shared/scripts/pt_config_gate.py")
+gate_mod = load_module("pt_config_gate", "memo-shared/scripts/pt_config_gate.py")
 
 
 def run_gate(config, tmp_path):
@@ -259,7 +259,7 @@ class TestExample:
         import pathlib
         from conftest import ROOT
 
-        example = (ROOT / "pt-shared/references/config.example.json").read_text()
+        example = (ROOT / "memo-shared/references/config.example.json").read_text()
         filled = (
             example.replace("[OWNER_TZ]", "America/Los_Angeles")
             .replace("[DELIVERY_HOUR]", "07:00")
@@ -273,7 +273,7 @@ class TestExample:
         from conftest import ROOT
 
         example = json.loads(
-            (ROOT / "pt-shared/references/config.example.json").read_text()
+            (ROOT / "memo-shared/references/config.example.json").read_text()
         )
         out, _ = run_gate(example, tmp_path)
         assert "placeholder" in out

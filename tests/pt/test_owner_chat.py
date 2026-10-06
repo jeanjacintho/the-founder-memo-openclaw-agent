@@ -5,7 +5,7 @@ import pytest
 
 from conftest import load_module
 
-owner_chat = load_module("owner_chat", "pt-shared/scripts/owner_chat.py")
+owner_chat = load_module("owner_chat", "memo-shared/scripts/owner_chat.py")
 
 SELF = {"type": "agent", "relationship": "self", "line": {"uid": "ln_phone"}}
 OWNER = {"type": "member", "role": "owner", "uid": "mem_owner"}

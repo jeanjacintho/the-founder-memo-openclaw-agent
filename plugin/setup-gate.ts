@@ -6,7 +6,7 @@ import type { Chat } from "./transport.ts";
 // to ask. The prompt keeps "run the gate first" as the fallback: nothing is
 // injected when the gate cannot run, and the model then runs it itself.
 // PT_SKILLS and PT_HOME override the image paths, as they do for pt_paths.py.
-export const gateScript = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/pt-shared/scripts/setup_needed.py`;
+export const gateScript = () => `${process.env.PT_SKILLS || "/opt/plow/skills"}/memo-shared/scripts/setup_needed.py`;
 export const gateConfig = () => `${process.env.PT_HOME || "/var/lib/plow/pt"}/config.json`;
 const VENV_BIN = "/opt/plow/pt-venv/bin";
 

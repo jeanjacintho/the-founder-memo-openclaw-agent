@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 // The one fixed line the channel writes itself: the notice after a turn that
 // could not finish. Its words come from the same place as every script's fixed
-// line (skills/pt-shared/scripts/owner_phrases.py): the owner's own language
+// line (skills/memo-shared/scripts/owner_phrases.py): the owner's own language
 // when the paper has written its phrases, curated Portuguese or English
 // otherwise. The curated texts must match owner_phrases.py (a contract test
 // holds them together).

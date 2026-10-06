@@ -6,7 +6,7 @@ import pytest
 from conftest import load_module
 from wiki import GOALS, OVERVIEW, QA, RESOURCES, ROOT, SCHEMA, Wiki, join_page
 
-ws = load_module("wiki_setup", "pt-shared/scripts/wiki_setup.py")
+ws = load_module("wiki_setup", "memo-shared/scripts/wiki_setup.py")
 
 
 def wiki_dir(mac):

@@ -6,7 +6,7 @@ import stat
 
 from conftest import ROOT, load_module
 
-rec = load_module("record_owner_language", "pt-shared/scripts/record_owner_language.py")
+rec = load_module("record_owner_language", "memo-shared/scripts/record_owner_language.py")
 
 READY = {
     "owner": {"timezone": "America/Sao_Paulo", "language": "Portuguese"},
@@ -16,7 +16,7 @@ READY = {
 
 
 def test_script_is_executable():
-    path = ROOT / "pt-shared" / "scripts" / "record_owner_language.py"
+    path = ROOT / "memo-shared" / "scripts" / "record_owner_language.py"
     assert path.stat().st_mode & stat.S_IXUSR
 
 

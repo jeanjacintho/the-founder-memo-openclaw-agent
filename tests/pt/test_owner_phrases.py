@@ -9,7 +9,7 @@ import pytest
 
 from conftest import load_module
 
-phrases = load_module("owner_phrases", "pt-shared/scripts/owner_phrases.py")
+phrases = load_module("owner_phrases", "memo-shared/scripts/owner_phrases.py")
 
 
 @pytest.fixture

@@ -106,7 +106,7 @@ test("paper job names in the real cron envelope include numbered daily editions"
 const jobId = "9a1f1c1a-0b8f-4c52-8e0b-5f0b4a7f2d11";
 const spentDay = (callId: string, resultId: string, resultRole = "toolResult", text = "stop\n", subcommand = "begin") => ({ runId: `run-${callId}-${resultId}-${resultRole}-${subcommand}-${text.trim()}`, success: true, messages: [
   { role: "user", content: [{ type: "text", text: `[cron:${jobId} pt-daily-edition-now] Run the daily edition. On 'stop' release the lock and stop.` }] },
-  { role: "assistant", content: [{ type: "toolCall", id: callId, name: "exec", arguments: { command: `/opt/plow/skills/pt-shared/scripts/run_attempts.py ${subcommand}` } }] },
+  { role: "assistant", content: [{ type: "toolCall", id: callId, name: "exec", arguments: { command: `/opt/plow/skills/memo-shared/scripts/run_attempts.py ${subcommand}` } }] },
   { role: resultRole, toolCallId: resultId, toolName: "exec", content: [{ type: "text", text }] },
   { role: "assistant", content: [{ type: "text", text: "NO_REPLY" }] },
 ] });

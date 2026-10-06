@@ -7,7 +7,7 @@ import pytest
 
 from conftest import load_module
 
-status = load_module("chat_status", "pt-shared/scripts/chat_status.py")
+status = load_module("chat_status", "memo-shared/scripts/chat_status.py")
 
 
 class TestCopy:
@@ -119,7 +119,7 @@ class TestLanguageFromConfig:
 
 def test_a_written_language_waits_in_its_own_words(tmp_path, monkeypatch):
     monkeypatch.setenv("PT_HOME", str(tmp_path))
-    phrases = load_module("owner_phrases", "pt-shared/scripts/owner_phrases.py")
+    phrases = load_module("owner_phrases", "memo-shared/scripts/owner_phrases.py")
     table = {k: "ZH " + v for k, v in phrases.SOURCE.items()}
     (tmp_path / "owner-phrases.json").write_text(json.dumps({"language": "Mandarin Chinese", "phrases": table}))
     assert status.status_text("busy", "Mandarin Chinese") == "ZH ⏳ Hang on a sec — still setting up."

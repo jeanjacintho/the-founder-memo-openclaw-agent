@@ -13,8 +13,8 @@ import pytest
 
 from conftest import ROOT, load_module
 
-sys.path.insert(0, str(ROOT / "pt-shared" / "scripts"))
-post = load_module("post_to_chat", "pt-shared/scripts/post_to_chat.py")
+sys.path.insert(0, str(ROOT / "memo-shared" / "scripts"))
+post = load_module("post_to_chat", "memo-shared/scripts/post_to_chat.py")
 
 MORNING = datetime(2026, 9, 19, 6, 4, tzinfo=ZoneInfo("America/Sao_Paulo"))
 AFTERNOON = datetime(2026, 9, 19, 14, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
@@ -310,7 +310,7 @@ class TestHoldUntil:
         # A session sleeping until the hour is killed (synchronous exec, 30-min
         # ceiling); the send clock is the outbox's, see TestOutboxDelivery.
         assert not hasattr(post, "hold_until")
-        assert "time.sleep" not in (ROOT / "pt-shared" / "scripts" / "post_to_chat.py").read_text()
+        assert "time.sleep" not in (ROOT / "memo-shared" / "scripts" / "post_to_chat.py").read_text()
 
     def test_the_owner_zone_wins_over_the_container_tz(self, monkeypatch, tmp_path):
         owner_zone(monkeypatch, tmp_path, "America/Sao_Paulo")
@@ -331,7 +331,7 @@ class TestPrintMissInTheOwnersLanguage:
           "print.timeout": "结果未知：{seconds}秒后仍在运行", "print.no_pdf": "{path} 没有可打印的 PDF"}
 
     def _write_phrases(self, tmp_path, language):
-        phrases = load_module("owner_phrases", "pt-shared/scripts/owner_phrases.py")
+        phrases = load_module("owner_phrases", "memo-shared/scripts/owner_phrases.py")
         table = {**{k: "ZH " + v for k, v in phrases.SOURCE.items()}, **self.ZH}
         home = tmp_path / "pt"
         home.mkdir(exist_ok=True)

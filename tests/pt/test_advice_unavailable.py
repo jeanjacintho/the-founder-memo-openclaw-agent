@@ -7,7 +7,7 @@ import pytest
 
 from conftest import load_module
 
-adv = load_module("advice_unavailable", "pt-priority/scripts/advice_unavailable.py")
+adv = load_module("advice_unavailable", "memo-tournament/scripts/advice_unavailable.py")
 
 DAY = "2026-09-30"
 TZ = "America/Sao_Paulo"

@@ -7,8 +7,8 @@ import pytest
 
 from conftest import ROOT, load_module
 
-crons = load_module("pt_crons", "pt-dashboard/scripts/register_crons.py")
-backend_mod = load_module("cron_backend", "pt-dashboard/scripts/cron_backend.py")
+crons = load_module("pt_crons", "memo-schedule/scripts/register_crons.py")
+backend_mod = load_module("cron_backend", "memo-schedule/scripts/cron_backend.py")
 
 TZ = "America/Los_Angeles"
 FUTURE = "2099-01-01T07:03:00-03:00"
@@ -856,17 +856,17 @@ class TestDriftMain:
 
 
 def test_recipe_names_run_lock_as_a_bare_absolute_path():
-    # "pt-shared's run_lock.py" with no path sent the model looking for an
+    # "memo-shared's run_lock.py" with no path sent the model looking for an
     # invocation, then wrapping a shell.
     printed = crons.paper_prompt()
     assert (
-        "/opt/plow/skills/pt-shared/scripts/run_lock.py acquire"
+        "/opt/plow/skills/memo-shared/scripts/run_lock.py acquire"
     ) in printed
     assert (
-        "/opt/plow/skills/pt-shared/scripts/run_lock.py release"
+        "/opt/plow/skills/memo-shared/scripts/run_lock.py release"
     ) in printed
     assert (
-        "/opt/plow/skills/pt-shared/scripts/prepare_daily_run.py"
+        "/opt/plow/skills/memo-shared/scripts/prepare_daily_run.py"
     ) in printed
     assert "python3" not in printed
 
@@ -878,7 +878,7 @@ class TestCliPassesItsArguments:
         # sys.argv[1:] explicitly, or no flag can ever be passed from a
         # terminal. Caught in the container: a flag was silently ignored and
         # the run fell through to plain registration.
-        source = (ROOT / "pt-dashboard" / "scripts" / "register_crons.py").read_text()
+        source = (ROOT / "memo-schedule" / "scripts" / "register_crons.py").read_text()
         assert "main(sys.argv[1:])" in source, "the CLI entry drops its arguments"
 
 
@@ -955,7 +955,7 @@ class TestScheduledHold:
 
 class TestRunPromptsDelegateDelivery:
     """post_to_chat.py prints, records and finalizes after its POST, so the
-    model has no print step to skip. The prompts point at pt-edition step 2
+    model has no print step to skip. The prompts point at memo-render step 2
     for delivery and never tell the model to print (that would double-print).
     """
 
@@ -965,9 +965,9 @@ class TestRunPromptsDelegateDelivery:
         crons.topic_prompt("t_1", "quick", scheduled=False),
     ])
     def test_prompt_delegates_delivery_to_the_edition_skill(self, p):
-        assert "pt-edition/SKILL.md step 2" in p
+        assert "memo-render/SKILL.md step 2" in p
         assert "post_to_chat.py" in p
-        assert "pt-print" not in p and "print_edition" not in p
+        assert "memo-print" not in p and "print_edition" not in p
         # Jobs have no delivery arm (--no-deliver): the final text goes nowhere.
         assert "Do not finish the run before post_to_chat.py confirms" in p
         assert "NO_REPLY" not in p
@@ -1021,7 +1021,7 @@ class TestRunPromptsDelegateDelivery:
         assert "before research" in prompt
         refusal = prompt.index("If it refuses")
         release = prompt.index("run_lock.py release", refusal)
-        research = prompt.index("Then run pt-research")
+        research = prompt.index("Then run memo-research")
         assert refusal < release < research
 
 
@@ -1069,7 +1069,7 @@ class TestDeliverJob:
 
     def test_it_posts_with_the_venv_python_the_flush_flag(self):
         assert crons.DELIVER_ARGV == ["/opt/plow/pt-venv/bin/python3",
-                                      "/opt/plow/skills/pt-shared/scripts/post_to_chat.py", "--flush-outbox"]
+                                      "/opt/plow/skills/memo-shared/scripts/post_to_chat.py", "--flush-outbox"]
 
     def test_a_present_job_is_left_alone(self, tmp_path, monkeypatch):
         sched = FakeScheduler(registered_like_spec([]))
@@ -1134,7 +1134,7 @@ def test_a_topic_edition_counts_its_own_starts_under_its_own_key():
     assert "run_attempts.py begin --key t_9f2a --scheduled" in nightly
     assert "run_attempts.py begin --key t_0c11:" in one_off and "--scheduled" not in one_off
     for prompt, tid in ((nightly, "t_9f2a"), (one_off, "t_0c11")):
-        assert prompt.index("begin --key") < prompt.index("pt-research on topic")
+        assert prompt.index("begin --key") < prompt.index("memo-research on topic")
         assert f"--clear-attempts {tid}" in prompt
         assert "'stop-untold'" in prompt and "writing nothing to the owner" in prompt
     jobs = crons.desired_jobs([topic("t_9f2a")], "07:00", TZ)
@@ -1146,7 +1146,7 @@ def test_jobs_follow_the_model_boot_exports(monkeypatch):
     # owner's OpenAI account registers the paper there too, and a job still
     # registered under Plow reads as drift, so the next register moves it.
     monkeypatch.setenv("PT_MODEL", "openai/gpt-6-sol")
-    moved = load_module("cron_backend_moved", "pt-dashboard/scripts/cron_backend.py")
+    moved = load_module("cron_backend_moved", "memo-schedule/scripts/cron_backend.py")
     assert moved.MODEL == "openai/gpt-6-sol"
     monkeypatch.setattr(crons, "MODEL", moved.MODEL)
     job = {"name": "pt-daily-edition", "schedule": "15 6 * * *", "tz": TZ, "prompt": "same"}
@@ -1166,4 +1166,4 @@ def test_a_job_without_a_run_budget_drifts_so_the_next_register_sets_it():
 
 def test_without_pt_model_jobs_stay_on_plow(monkeypatch):
     monkeypatch.delenv("PT_MODEL", raising=False)
-    assert load_module("cron_backend_default", "pt-dashboard/scripts/cron_backend.py").MODEL == "plow/openai/gpt-6-sol"
+    assert load_module("cron_backend_default", "memo-schedule/scripts/cron_backend.py").MODEL == "plow/openai/gpt-6-sol"
