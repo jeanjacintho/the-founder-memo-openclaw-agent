@@ -10,8 +10,8 @@ named, in the language you write.
 
 ## What it is
 
-The product is a **compact Letter paper**. It can open with **what Patrick
-Salyer would tell you** after watching your last day, learned from your Mac,
+The product is a **compact Letter paper**. It can open with **stage-appropriate advice from Patrick Salyer, Paul Graham and Ben Horowitz**
+after watching your last day, learned from your Mac,
 then weather, one calendar rail, and up to three stories you told it to cover.
 The longest story leads; the other two sit side by side. A dense edition may
 continue onto a second sheet. It goes to a printer on your Mac when one is

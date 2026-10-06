@@ -5,11 +5,15 @@ sources:
   - https://patricksalyer.substack.com/p/the-3-phases-of-enterprise-software
   - https://patricksalyer.substack.com/p/sales-playbook-what-is-it-and-how
   - https://patricksalyer.substack.com/p/the-new-series-a-is-the-old-series
+  - https://patricksalyer.substack.com/p/finding-product-go-to-market-fit
+  - https://patricksalyer.substack.com/p/sales-methodology-simplified-ditch
+  - https://patricksalyer.substack.com/p/the-ceo-job-changes-after-product
+  - https://patricksalyer.substack.com/p/the-saaspocalypse-ceo-survival-guide
 ---
 # Patrick Salyer — enterprise software from discovery to scale
 
 ## Limits of this advice
-Salyer's record is mostly enterprise/B2B SaaS, from founder-led selling and category creation through Fortune 500 buyers. His benchmarks are B2B-sales benchmarks. For consumer or bottoms-up developer businesses, state the limitation rather than forcing his numbers onto them. His published record is thin on international expansion and board management.
+Salyer's record is mostly enterprise/B2B SaaS, from founder-led selling and category creation through Fortune 500 buyers. His benchmarks are B2B-sales benchmarks. For consumer or bottoms-up developer businesses, state the limitation rather than forcing his numbers onto them. His published record is thin on international expansion and board management; for the first users and product before product-market fit argue from Graham, and for executives, boards, layoffs and crises from Horowitz.
 
 ## Questions that change the advice
 - What pain makes the product a painkiller rather than a vitamin?
@@ -81,7 +85,16 @@ Salyer's record is mostly enterprise/B2B SaaS, from founder-led selling and cate
 - A sourced narrative connecting present traction, use of funds, and the next fundable milestone.
 
 ## Sourced words
-- “You'll know you're on the right track when you have a handful of referenceable customers ... and a "painkiller" solution.” — [The 3 Phases of Enterprise Software](https://patricksalyer.substack.com/p/the-3-phases-of-enterprise-software)
-- “it's crucial for founders to be involved in establishing a sales playbook.” — [Sales Playbook — What Is It and How Do You Build One?](https://patricksalyer.substack.com/p/sales-playbook-what-is-it-and-how)
-- “Forget the naming (seed / A / B).” — [The New Series A Is the Old Series B](https://patricksalyer.substack.com/p/the-new-series-a-is-the-old-series)
-- “Raise the right amount of money, at a stage appropriate valuation, to hit the milestones that unlock the next stage.” — [The New Series A Is the Old Series B](https://patricksalyer.substack.com/p/the-new-series-a-is-the-old-series)
+- “You'll know you're on the right track when you have a handful of referenceable customers (usually 5-10, depending on the Go to market model and target customer) and a "painkiller" solution.” — [The 3 Phases of Enterprise Software Sales Maturity: A Founder's Guide](https://patricksalyer.substack.com/p/the-3-phases-of-enterprise-software)
+- “it's crucial for founders to be involved in establishing a sales playbook.” — [Sales Playbook: What is it and How to Establish it](https://patricksalyer.substack.com/p/sales-playbook-what-is-it-and-how)
+- “As a startup, you should clearly understand the need(s) your product or service addresses for potential prospects.” — [Sales Playbook: What is it and How to Establish it](https://patricksalyer.substack.com/p/sales-playbook-what-is-it-and-how)
+- “Forget the naming (seed / A / B).” — [The new Series A is the old Series B.](https://patricksalyer.substack.com/p/the-new-series-a-is-the-old-series)
+- “Raise the right amount of money, at a stage appropriate valuation, to hit the milestones that unlock the next stage.” — [The new Series A is the old Series B.](https://patricksalyer.substack.com/p/the-new-series-a-is-the-old-series)
+- “It's not enough to achieve product market fit - you must figure out your product-go to market fit (PGMF).” — [Finding Product-Go-to-Market Fit (PGMF)](https://patricksalyer.substack.com/p/finding-product-go-to-market-fit)
+- “The challenge for early-stage founders is deciding which segment to target first.” — [Finding Product-Go-to-Market Fit (PGMF)](https://patricksalyer.substack.com/p/finding-product-go-to-market-fit)
+- “As a founder, you should have unique insights into the problem your technology solves.” — [Sales Methodology Simplified: Ditch the Questions, Teach and Share Insights](https://patricksalyer.substack.com/p/sales-methodology-simplified-ditch)
+- “By focusing on teaching and sharing insights, founders are well-positioned to excel in sales.” — [Sales Methodology Simplified: Ditch the Questions, Teach and Share Insights](https://patricksalyer.substack.com/p/sales-methodology-simplified-ditch)
+- “The biggest trap they face isn't strategy or market timing—it's that they don't realize their role as CEO has to change.” — [The CEO Job Changes After Product-Market Fit](https://patricksalyer.substack.com/p/the-ceo-job-changes-after-product)
+- “The CEO should remain deeply engaged in the highest-leverage work.” — [The CEO Job Changes After Product-Market Fit](https://patricksalyer.substack.com/p/the-ceo-job-changes-after-product)
+- “Don't optimize for the upsell—optimize for the transition.” — [The SaaSpocalypse CEO Survival Guide](https://patricksalyer.substack.com/p/the-saaspocalypse-ceo-survival-guide)
+- “You're free to take extreme action—and you should.” — [The SaaSpocalypse CEO Survival Guide](https://patricksalyer.substack.com/p/the-saaspocalypse-ceo-survival-guide)

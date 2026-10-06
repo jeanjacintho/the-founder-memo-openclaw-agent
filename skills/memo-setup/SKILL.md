@@ -254,15 +254,15 @@ Send only the `NEXT_QUESTION` it prints (question 3a), then stop.
 
 ## NEXT_QUESTION=priority
 
-This is the advisor desk (`priority.configured`) — a Salyer-style
-adversarial tournament, not the signal-listening feature below
+This is the advisor desk (`priority.configured`) — a stage-appropriate
+adversarial tournament grounded in Patrick Salyer, Paul Graham and Ben Horowitz, not the signal-listening feature below
 (`signals.*`, question 5). The two share the English word "priority" and
 nothing else; `priority.configured=true` implies nothing about whether any
 signal source is on.
 
 Copy the question (CHAT_VOICE), in the owner's language:
 
-> ⭐ Every morning the paper can open with what Patrick Salyer would tell you after watching your last day. What are you trying to make true over the next few quarters? (or "no" to skip the advisor desk)
+> ⭐ Every morning the paper can open with advice grounded in Patrick Salyer, Paul Graham and Ben Horowitz, matched to your company's stage and your last day. What are you trying to make true over the next few quarters? (or "no" to skip the advisor desk)
 
 Stop. On their next message:
 
