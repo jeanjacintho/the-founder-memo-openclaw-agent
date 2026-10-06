@@ -61,7 +61,7 @@ def build(draft, owner_tz):
         "printer": {
             "configured": bool(printer.get("configured")),
             "name": printer.get("name") if printer.get("configured") else None,
-            # An event install prints on the event's shared printer line, at 72 mm.
+            # An event install prints on the event's print server, at 72 mm.
             **({"url": printer["url"], "key": printer["key"], "paper": printer["paper"]} if printer.get("url") else {}),
         },
         "priority": {"configured": True},

@@ -111,7 +111,7 @@ An event build of this image sets `MEMO_EVENT` (a code in
 `memo-setup/assets/events.json`). There is no Mac: the memo's wiki lives on this
 machine, and mail, calendar and Slack come only through the owner's Plow
 connections. `record_setup.py` fills the start hour (the event's), the printer (the
-event's shared printer line, 72 mm) and the Mac fields itself, so the first
+event's print server, 72 mm) and the Mac fields itself, so the first
 `NEXT_QUESTION` is `connect`: never ask about an hour, a printer, a Mac or a city.
 The gate's `DRAFT:` line already reads `start,printer,awake` on the very first
 turn, whatever the owner wrote: the question is **connect**, never the hour, until
