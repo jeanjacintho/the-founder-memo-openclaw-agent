@@ -76,6 +76,10 @@ choose the next phase. The conductor never sees dossiers, receipts or verdicts, 
 stays flat however many generations run. A coordinator that dies or returns incomplete loses
 only its phase: the conductor re-runs that phase from `RUN_PAGE`.
 
+Before every spawn set, the conductor or coordinator checks § Budget, including Orient, Gather,
+the first three generations, Freshness and bootstrap. A failed check returns the
+budget stop to the conductor; it never spawns another child to repair that failure.
+
 A spawn set is every child of one step, spawned back to back, **at most ten children per spawn
 set** — a larger step is split into several sets — then `sessions_yield` until every child in the
 set has returned. Every child returns compact structured JSON with no narrative preface.
@@ -406,21 +410,43 @@ Only after it prints `RENDERED`, atomically move `tournament.candidate.json` ove
 checkpoint untouched; run one Cull leaf on the refusal and gate again. Never split the card and
 tournament metadata across separate canonical files.
 
+## Budget
+
+The budget takes precedence over finishing three generations. Before every spawn set, and
+before starting each generation, run
+`/opt/plow/skills/memo-shared/scripts/run_cost.py total --started <RUN_STARTED>`.
+Keep its `usd` and the costliest completed spawn set's cost on `RUN_PAGE` (0 before the first set).
+Then run
+`/opt/plow/skills/memo-shared/scripts/run_cost.py can-start --spent <usd or null> --longest <costliest completed spawn set's usd> --max <memo.max_usd from pt/config.json, default 100>`.
+
+An unreadable usage store, an unknown total or an exit 1 from `can-start` stops research.
+Record the reason on `RUN_PAGE`, return `budget stopped`, and spawn no more research children.
+Never turn an unknown cost into 0 or bypass the check to reach three generations.
+A completed set can cost more than the estimate; this gate does not cap provider billing.
+
+On a budget stop, the conductor skips further generations and Freshness. Publish the current
+run's accepted checkpoint only when it already has three completed generations; otherwise
+publish a `could_not_source` memo explaining that the budget or unavailable cost stopped the
+run before a valid checkpoint. A prior night's checkpoint is not a result of this run.
+Delivery, recording and lock release still follow § Publish; do not re-run Cull or research.
+Bootstrap remains a separate path: on a budget stop send one explanation in the owner's
+language, release the lock and stop — no memo, no print and no inferred company summary.
+
 ## Continue or stop
 
 The conductor decides after each Generation coordinator returns. Run
-`/opt/plow/skills/memo-shared/scripts/run_cost.py total --since-minutes <minutes so far>`; the
-generation's cost is the change in `usd` since the last check (unknown when either is `null`), and
-its duration the change in minutes so far. Record both on `RUN_PAGE`. Then:
+`/opt/plow/skills/memo-shared/scripts/run_cost.py total --started <RUN_STARTED>`;
+the generation's cost is the change in `usd` since the last check (unknown when either is `null`),
+and its duration the change in minutes so far. Record both on `RUN_PAGE`. Then:
 
-- **Complete at least three generations**, whatever the cost and the clock say.
-- After that, start another only when both hold: one generation as long as the longest so far still
-  ends **45 minutes** before the window closes (the time Freshness and Publish need), and
-  `/opt/plow/skills/memo-shared/scripts/run_cost.py can-start --spent <usd or null> --longest <costliest generation's usd> --max <memo.max_usd from pt/config.json, default 100>`
-  exits 0. When the cost of any generation is unknown, pass its `--longest` as 0: the window alone
-  bounds the night.
-- Otherwise go to Freshness. A late memo beats a cut-off one: never abandon a started phase to
-  make the clock.
+- **Complete at least three generations only while the budget allows.** Check § Budget before
+  generation 1, 2 and 3 as well as every later generation. A budget stop uses the failure path
+  above; never force a generation to satisfy the minimum.
+- After three, start another only when § Budget passes and one generation as long as the longest
+  so far still ends **45 minutes** before the window closes (the time Freshness and Publish need).
+- Otherwise go to Freshness, whose spawn sets must also pass § Budget. A late memo beats a
+  cut-off one: never abandon a started phase to make the clock. A budget stop is a separate
+  reason to stop research.
 
 ## Freshness
 

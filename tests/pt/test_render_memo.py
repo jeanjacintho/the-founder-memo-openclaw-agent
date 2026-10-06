@@ -56,13 +56,13 @@ def checkpoint(m):
             "priority": copy.deepcopy(m["priority"])}
 
 
-def test_memo_prints_only_the_one_thing_its_questions_and_cost():
-    # The culler still ranks three; the owner asked for the one thing to do.
+def test_memo_prints_three_ranked_priorities_their_questions_and_cost():
     page = render.render(memo())
-    assert page.count('class="priority"') == 1 and "Priority 1:" in page and "Priority 2:" not in page
+    assert page.count('class="priority"') == 3
+    assert page.index("Priority 1:") < page.index("Priority 2:") < page.index("Priority 3:")
     assert "Q1 — Is Acme" in page and "$87.40" in page
     assert "3h 56m" in page and "The Founder Memo" in page and "2026-10-02" in page
-    assert page.count("FIRST STEP:") == 1
+    assert page.count("FIRST STEP:") == 3
 
 
 def test_unknown_cost_says_unavailable_not_zero():

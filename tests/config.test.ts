@@ -195,8 +195,8 @@ test("writer and critic models join the Plow provider with their prices", () => 
   assert.deepEqual(roleModels(ROLES), { writer: "plow/anthropic/claude-opus-5-5", critic: "plow/openai/gpt-6-sol" });
 });
 
-test("without role models the tournament runs on the chat's own model", () => {
-  assert.equal(roleModels({}), undefined);
+test("without role models memo boot refuses a same-model tournament", () => {
+  assert.throws(() => roleModels({}), /the memo requires MEMO_MODEL_WRITER and MEMO_MODEL_CRITIC with prices/);
   assert.deepEqual(renderConfig(identity, "http://api:8000", undefined, {}).models.providers.plow.models.map(
     (m: { id: string }) => m.id), ["openai/gpt-6-sol", "openai/gpt-6-luna"]);
 });

@@ -74,12 +74,12 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `wiki validate --writer shared`. Writes check the expected bytes on the Mac and retry
   conflicting merges up to three times. Failed validation restores/removes only an unchanged
   memo-written page; a subsequent owner save is preserved. Exit 1 names the problem on stderr.
-- `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --since-minutes <N>` prints
+- `scripts/run_cost.py` — the run's spend. Bare: `run_cost.py total --started <RUN_STARTED>` prints
   `{"usd": <float|null>, "sessions": n, "unpriced": m}` (every transcript call priced with its model's configured rates; null is unknown, never $0.00); `run_cost.py can-start --spent <usd|null> --longest <usd>
   --max <usd>` exits 0 when one more generation fits under the ceiling, 1 when not
   or spend is unknown. Any call with unknown usage or missing input/output/cache prices makes the total unknown.
   The SQLite reads are local and read-only; the shipped Agent Index client decodes compressed
-  events and their timestamps. Resumed sessions retain every call in the minute window.
+  events and their timestamps. Resumed sessions retain every call since the fixed run start.
 - `scripts/run_gate.py` — the night waits for the Mac. Bare:
   `run_gate.py wait --started <ISO-8601> --window <minutes>` probes `~/Plow/wiki/wiki.toml`
   through Latch every five minutes; `MAC:reachable` (0) start, `MAC:window-closed` (2) the

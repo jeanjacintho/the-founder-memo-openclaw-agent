@@ -5,8 +5,8 @@ description: The night's Publish step — write edition.json from the accepted c
 
 # memo-render — the checkpoint becomes the printed memo
 
-The memo is the product: the culler's #1 priority (it ranks three; the page
-prints the first), the questions that would change it, and one line saying
+The memo is the product: the culler's three ranked priorities, the questions
+that would change them, and one line saying
 what tonight's research cost. Nothing in it is a
 guess, and the layout is code.
 
@@ -14,7 +14,7 @@ guess, and the layout is code.
 
 **Never write HTML.** Write `/var/lib/plow/pt/run/memo/edition.json` (the name
 `post_to_chat.py` looks for beside the PDF it posts) with the run's numbers from
-`run_cost.py total --since-minutes <minutes since the run started>`:
+`run_cost.py total --started <RUN_STARTED>`:
 
 ```json
 {

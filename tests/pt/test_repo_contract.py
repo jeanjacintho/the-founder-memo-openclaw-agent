@@ -629,9 +629,14 @@ class TestSoul:
     def test_generations_continue_on_the_clock_and_the_ceiling(self):
         skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
         rule = skill[skill.index("## Continue or stop"):skill.index("## Freshness")]
-        assert "Complete at least three generations" in rule
-        assert "run_cost.py total" in rule and "run_cost.py can-start" in rule
-        assert "45 minutes" in rule and "memo.max_usd" in rule
+        assert "Complete at least three generations only while the budget allows" in rule
+        assert "generation 1, 2 and 3" in rule
+        budget = skill[skill.index("## Budget"):skill.index("## Continue or stop")]
+        assert "unknown total" in budget and "stops research" in budget
+        assert "otherwise\npublish a `could_not_source` memo" in budget
+        assert "Before every spawn set" in budget
+        assert "run_cost.py total" in rule and "run_cost.py can-start" in budget
+        assert "45 minutes" in rule and "memo.max_usd" in budget
         assert "never abandon a started phase" in rule
 
     def test_re_evaluating_priorities_queues_a_run_never_cron_run(self):
