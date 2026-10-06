@@ -108,10 +108,13 @@ test("an inline attachment is saved to the workspace and its bytes never reach t
   assert.match(text(result), new RegExp(`"bytes":${pdf.length}`));
 });
 
-test("an attachment command is recognised with plow-gog's own flags first, as its planner reads it", async t => {
+for (const lead of [
+  ["--account", "a@example.com"], ["-a", "a@example.com"], ["--account=a@example.com"], ["-a=a@example.com"],
+  ["-aowner@example.com"], ["--confirm-conflict", "-aowner@example.com"],
+]) test(`an attachment command is recognised after plow-gog's own ${lead.join(" ")}, as its planner reads it`, async t => {
   const dir = await workspace(t);
   plow(t, () => Response.json({ output: JSON.stringify({ stdout: JSON.stringify({ filename: "a.pdf", mimeType: "application/pdf", contentBase64: "YWJj" }) }) }));
-  const result = await runConnector(account, "google", ["--account", "a@example.com", "mail", "attachment", "18f2a", "att-1"], undefined, dir);
+  const result = await runConnector(account, "google", [...lead, "mail", "attachment", "18f2a", "att-1"], undefined, dir);
   assert.deepEqual(await readFile(join(dir, "attachments", "18f2a_a.pdf")), Buffer.from("abc"));
   assert.ok(!text(result).includes("YWJj"));
 });

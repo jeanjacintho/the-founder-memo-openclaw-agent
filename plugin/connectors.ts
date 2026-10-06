@@ -118,16 +118,17 @@ export async function withUploads(argv: readonly string[], workspace = WORKSPACE
 }
 
 /**
- * The command words plow-gog plans from: its own `--account`/`-a` (with value)
- * and `--confirm-conflict` may come anywhere and are not part of the command,
- * as in Latch's planner (`plowGog.ts`).
+ * The command words plow-gog plans from: its own account flag and
+ * `--confirm-conflict` may come anywhere and are not part of the command. The
+ * account spellings are exactly the planner's (`plowGog.ts` `accountAt`):
+ * `--account x`, `-a x`, `--account=x`, `-a=x` and the attached `-ax`.
  */
 export function commandWords(argv: readonly string[]): string[] {
   const words: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
     if (arg === "--account" || arg === "-a") i++;
-    else if (arg.startsWith("--account=") || arg.startsWith("-a=") || arg === "--confirm-conflict") continue;
+    else if (arg.startsWith("--account=") || arg.startsWith("-a") || arg === "--confirm-conflict") continue;
     else words.push(arg);
   }
   return words;
