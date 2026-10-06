@@ -69,3 +69,11 @@ def test_sleep_stops_at_a_short_window_boundary(mac, clock):
     mac.asleep = True
     assert run_gate.wait(mac.call_tool, clock.now(), 1, sleep=clock.advance, now=clock.now) == 2
     assert clock.elapsed == 60
+
+
+def test_a_response_arriving_after_the_window_cannot_start(clock):
+    started = clock.now()
+    def slow_mac(*args):
+        clock.advance(61)
+        return {}
+    assert run_gate.wait(slow_mac, started, 1, now=clock.now) == 2
