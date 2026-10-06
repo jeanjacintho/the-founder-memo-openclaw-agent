@@ -1,58 +1,30 @@
-# The Founder Times (inspired by Mayfield)
+# The Founder Memo
 
-Your morning paper, printed. It researches on your Mac and puts a sourced page
-in the tray — PDF in chat if you'd rather.
+Three researched priorities for your company, printed on your Mac and delivered
+as the same PDF in chat, in the language you write. An
+[OpenClaw](https://github.com/openclaw/openclaw) agent on [Plow Chat](https://howto.plow.co/).
 
-An [OpenClaw](https://github.com/openclaw/openclaw) agent on
-[Plow Chat](https://howto.plow.co/). You text it like a newspaper, not like a
-chatbot. It is one person's paper: the sections you asked for, at the hour you
-named, in the language you write.
+## What it does
 
-The nightly Founder Memo rollout is staged: this branch adds the Mac reachability
-gate and validates optional `memo.start` (`HH:MM`, default `01:00`) and
-`memo.window_minutes` (positive integer, default 240). These settings do not
-replace the current `delivery.hour` schedule yet; publication and engine integration
-are separate follow-up PRs.
+The nightly run reads your mail, messages, meetings, calendar and named web
+sources through [Latch](https://howto.plow.co/latch). It gathers dossiers on the
+people and companies behind your decisions, then challenges recommendations
+through at least three generations with independent facts and strategy critics.
+Before publishing, it checks the decisive facts again. The compact Letter memo
+contains three ranked priorities, the questions that could change them, and the
+run's cost and duration. Failed reads stay unknown; claims carry sources.
 
-## What it is
+Setup asks when research should start (default 01:00), probes the printer, and
+keeps your advisor and signal preferences. The Mac supplies your timezone.
+`memo.start` controls the start, `memo.window_minutes` defaults to four hours,
+and `memo.max_usd` defaults to $100. Delivery happens when research finishes.
+Existing installs retain their research start (old delivery hour minus lead,
+clamped at midnight), printer, signals and priority opt-out. An opt-out disables
+the nightly memo until you turn it on in chat.
 
-The product is a **compact Letter paper**. It can open with **stage-appropriate advice from Patrick Salyer, Paul Graham and Ben Horowitz**
-after watching your last day, learned from your Mac,
-then weather, one calendar rail, and up to three stories you told it to cover.
-The longest story leads; the other two sit side by side. A dense edition may
-continue onto a second sheet. It goes to a printer on your Mac when one is
-there, and the same edition lands as a PDF in chat. Mail and sports stay in
-the chat edition and research context; they do not compete for printed space.
-
-You do not fill a profile. The first message is the paper: what time it should
-arrive. It learns your timezone from where the Mac is.
-
-Research runs on **your** browser, through [Latch](https://howto.plow.co/latch).
-If a page cannot be read, the paper says so — it does not invent the paragraph.
-
-What it prints goes into your wiki at `~/Plow/wiki` (Latch's Obsidian-style
-wiki): a page for each paper that carried the advisor's card or one of your own
-sections, with its sources (never your mail, calendar or weather), your goals,
-and the advisor's notes. Open it in Obsidian; edit anything.
-
-It reports. It does not act on what it finds: no purchases, no bookings, no
-logins, no downloads.
-
-## What goes in the paper
-
-- **Printed desks** at the front: the advisor's desk (three ranked, sourced
-  recommendations challenged by independent critics, using your mail,
-  messages, calendar and the sources you name), weather, and one calendar
-  rail. Mail and sports stay chat-only. Set `delivery.lead_minutes` for the
-  advisor's overnight window; each paper starts no earlier than midnight of its
-  delivery day and the PDF waits for the delivery hour before posting.
-- **Sections** you named ("esportes", "the dollar", a beat of your own),
-  including a different paper at a different hour if you ask for one.
-- **One day's assignment** ("put the iPhone price in tomorrow's paper").
-- **A one-off** you want once, on a short budget.
-
-Ask in the chat. The edition comes back as its own delivery, on the clock you
-set — "send it now" included — never as a live essay in the same turn.
+Your wiki at `~/Plow/wiki` holds the sourced entity pages, goals, Q&A and delivered
+memos. Open it in Obsidian and edit anything. Chat is for corrections, answers and
+requests to run the memo now. It reports: no purchases, bookings, logins or downloads.
 
 ## Install (local)
 
@@ -69,8 +41,7 @@ docker compose up --build -d
 docker compose logs -f agent      # wait for: plow-boot: identity resolved … and [gateway] ready
 ```
 
-Text the line you minted. The first message is the paper's hour, not a profile
-interview.
+Text the line you minted. Setup begins with the nightly research start hour.
 
 ```sh
 docker compose down          # stop, keep the paper, sessions and schedule
@@ -115,7 +86,7 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
   its answer; groups get answers, never setup questions.
 - **Schedule.** Every paper is an OpenClaw scheduler job
   (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
-  from your topics: an isolated turn on the chat's own model, in **your**
+  from your memo settings: an isolated turn on the chat's own model, in **your**
   timezone (`--tz`), with no automatic delivery — the paper posts itself as a
   PDF. Jobs live in the state volume and survive restarts and
   `docker compose up --build`; on a fresh volume, setup (or any schedule
@@ -161,21 +132,19 @@ changing them, restart and run `plow-llm sync` to move the scheduled jobs.
 
 The nightly tournament can run its writers and its critics on two models from
 different providers. Set both, each with its USD price per million tokens
-(`input,output,cacheRead,cacheWrite`), in `plow-credentials`:
+(`input,output`), in `plow-credentials`:
 
 ```sh
 MEMO_MODEL_WRITER=plow/<provider>/<model>
-MEMO_MODEL_WRITER_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
+MEMO_MODEL_WRITER_PRICE=<input>,<output>
 MEMO_MODEL_CRITIC=plow/<another provider>/<model>
-MEMO_MODEL_CRITIC_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
+MEMO_MODEL_CRITIC_PRICE=<input>,<output>
 ```
 
 The prices register the role models for OpenClaw's usage accounting. The
-`run_cost.py` helper prices each transcript usage call in its minute window and checks
-whether another generation fits; tournament integration lands in later steps of
-issue #59, so the nightly workflow does not yet enforce a spending limit.
-The current tournament still directly spawns leaf
-workers; phase coordinators and depth-2 execution also land later.
+nightly conductor checks `run_cost.py` before another generation, using
+`memo.max_usd` (default $100); an unknown cost stays unknown. Phase coordinators
+can spawn up to ten leaf workers at depth two.
 Boot refuses one without the other, a missing or
 malformed price, and a critic from the writer's provider. With neither set,
 every child runs on the chat's model.
@@ -183,29 +152,6 @@ every child runs on the chat's model.
 The sign-in is a real credential for your account, kept in the state volume
 where the agent's own tools can read it. Use it on an install only you
 talk to.
-
-## Moving a paper from the Hermes edition
-
-The owner's wiki lives on their Mac and does not move. The paper's own
-choices — `pt/config.json` and `pt/topics.json` in the old `agent-home`
-volume — can be brought over instead of answering setup again:
-
-```sh
-# From the Hermes checkout, with its agent still defined:
-docker compose cp agent:/var/lib/hermes/pt ./hermes-pt
-
-# From this checkout, with this agent running:
-docker compose cp ./hermes-pt agent:/tmp/hermes-pt
-docker compose exec -u root agent chown -R node:node /tmp/hermes-pt
-docker compose exec agent /opt/plow/skills/memo-setup/scripts/import_state.py \
-  --from /tmp/hermes-pt --previous-tz America/Sao_Paulo
-```
-
-`--previous-tz` is the `TZ` the old compose ran with (`PT_TZ`, default
-`America/Sao_Paulo`). The script refuses a config that fails the setup gate,
-a topic store of the wrong shape, or an install that already has a paper
-(`--replace` overwrites on purpose), then registers the jobs. Scratch, locks
-and the old scheduler's jobs stay behind.
 
 ## Known limitations
 
@@ -221,12 +167,11 @@ and the old scheduler's jobs stay behind.
 
 - `boot/`, `plugin/`, `prompt/` — the OpenClaw base: identity, gateway config,
   Plow channel (with the setup-gate hook) and the agent prompt.
-- `skills/memo-*` — setup, intake, research, tournament, render, print, schedule
+- `skills/memo-*` — setup, intake, tournament, render, print, schedule
   and the shared scripts behind them. `skills/owners-mac`,
   `skills/google-workspace` come from the base.
 - `tests/*.test.ts` — boot and plugin tests (`node --test`); `tests/pt/` —
   newspaper tests and the repo contract (`pytest`).
-- `index/` — Agent Index images, shot from the synthetic `index/edition.json`.
 
 ## Development
 

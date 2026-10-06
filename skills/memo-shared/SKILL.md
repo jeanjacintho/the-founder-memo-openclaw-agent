@@ -14,10 +14,6 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 
 - `scripts/pt_config_gate.py` — the single definition of a valid `pt/config.json`;
   prints failing invariant names, empty stdout is pass
-- `scripts/run_gate.py wait --started <ISO-8601> --window <minutes>` — probes the Mac;
-  exits 0 (`MAC:reachable`), 2 (`MAC:window-closed`), or 3 (`MAC:still-waiting`).
-  Retry exit 3 with the same start time; each CLI call waits at most 25 minutes.
-  This helper is for the upcoming nightly engine; current cron behavior is unchanged.
 - `scripts/setup_needed.py` — live-chat first-run gate: prints `SETUP_NEEDED`
   then `DRAFT:` and `LANG:`, or `READY` then `LANG:` (from `pt/config.json`;
   missing file is needed)
@@ -67,8 +63,8 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `entities/owner/goals.md`, the OKF page format, and `check()` = `wiki validate --writer`
   (`founder-memo`, plus `shared` for goals.md) then `wiki index` through Latch's wiki plugin.
 - `scripts/entity_page.py` — one investigator's dossier into its shared page. Bare:
-  `entity_page.py merge --kind people|orgs --slug <lowercase-kebab-slug> --title <title> --dossier <file|->`,
-  the dossier `{"description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
+  `/opt/plow/skills/memo-shared/scripts/entity_page.py merge --dossier -`,
+  the dossier `{"entity", "kind": "people|orgs", "slug": "lowercase-kebab-slug", "description", "now", "timeline": [{"date", "fact", "item"}], "sources", "tags"}`.
   It replaces `## Now`, merges its marked `## Timeline` entries on (date, item) newest first,
   capped at 20, keeps unmarked owner entries (which win on matching keys), keeps
   every section and timeline line the owner wrote, sets `updated:`, unions `sources:`, then runs
@@ -81,6 +77,11 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   or spend is unknown. Any call with unknown usage or missing input/output/cache prices makes the total unknown.
   The SQLite reads are local and read-only; the shipped Agent Index client decodes compressed
   events and their timestamps. Resumed sessions retain every call in the minute window.
+- `scripts/run_gate.py` — the night waits for the Mac. Bare:
+  `run_gate.py wait --started <ISO-8601> --window <minutes>` probes `~/Plow/wiki/wiki.toml`
+  through Latch every five minutes; `MAC:reachable` (0) start, `MAC:window-closed` (2) the
+  window closed with no answer, `MAC:still-waiting` (3) call again with the same `--started`
+  (one call stays under the 30-minute exec timeout).
 - `scripts/wiki_setup.py` — make `~/Plow/wiki` ready for the paper. Bare:
   `wiki_setup.py` or `wiki_setup.py --desk`. Creates the wiki with `wiki init` when
   the Mac has none, copies an existing `projects/thefoundertimes` root's indexed
@@ -98,7 +99,7 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   `--filename The-Founder-Times-<date>.pdf` is the name shown in chat (the
   run file stays `edition.pdf` on disk). `--hold-until HH:MM` is a scheduled paper's
   send clock: while it is ahead the paper is staged in `pt/outbox/` for the
-  no-agent `pt-deliver` job (`--flush-outbox`), never slept on in the session;
+  no-agent `memo-deliver` job (`--flush-outbox`), never slept on in the session;
   once passed it posts now (the on-demand copy has none). After
   either POST it prints the run's `edition.pdf` when the printer is configured
   (the text leg too, so a missing PDF is reported as a miss), records
@@ -107,21 +108,19 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   work (one hang-on, then one "still on it", never a play-by-play). Cron never
   calls it.
 - `scripts/owner_time.py` — the owner's own clock, not the container's:
-  called bare as `owner_time.py minutes-until HH:MM` it prints the minutes left
-  until that time today (negative once passed; the priority desk's window check).
+  called bare as `owner_time.py now` it prints the owner's now (the run's `RUN_STARTED`),
+  `owner_time.py minutes-since <ISO>` the whole minutes since then, and
+  `owner_time.py minutes-until HH:MM` the minutes left until that time today.
   As a library, `owner_now()` (an aware datetime) and `owner_today()`, from `owner.timezone`
   in `pt/config.json`. Falls back to the container's clock only when the
   config or the key is absent; a config that exists but can't be trusted (bad
   JSON, an unreadable file, an unknown zone name) raises. Shared by
-  `history.py`'s window, `record_edition.py`'s heading and
+  `history.py`'s window, `record_memo.py`'s timestamps and
   `post_to_chat.py --hold-until`.
-- `memo-tournament/scripts/history.py recent [--topic ID]` — what this paper printed on the last 7
-  days, read from the wiki's edition pages: bare, the advisor desk's cards, `[{"date", "desk"}]`;
-  with a news section's topic id, that section's own blocks,
-  `[{"date", "headline", "printed": [{"claim", "url"}]}]`, so a pass knows which sources it has
-  already spent.
-- `memo-render/scripts/record_edition.py <edition.json>` — the delivered edition onto the day's
-  page in the wiki, then `wiki validate` + `wiki index`.
+- `memo-tournament/scripts/history.py recent` — the cards the memo printed on the 7 nights before
+  today, read from the wiki's memo pages, `[{"date", "desk"}]`.
+- `memo-render/scripts/record_memo.py <edition.json>` — the delivered memo onto its night's page
+  (`memos/<date>.md`) in the wiki, then `wiki validate` + `wiki index`.
 - `scripts/run_lock.py` — one exclusive run per name with stale takeover, so
   two daily-paper runs can never race and deliver a hollow edition.
   Called bare, never through an interpreter:
@@ -174,3 +173,9 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
 - `references/config.example.json` — the config contract `pt_config_gate.py`
   enforces (including the optional `delivery.lead_minutes`, default 0, and
   optional `mail.configured`, default off)
+
+- `/opt/plow/skills/memo-schedule/scripts/register_crons.py` — reconcile the memo jobs.
+  `--start HH:MM` changes the research start; `--enabled on|off` turns the nightly
+  memo on or off; `--now` queues an enabled memo on demand. Changes are validated
+  and saved before reconciliation (`saved:` confirms that write); only confirm
+  scheduling after the command succeeds.

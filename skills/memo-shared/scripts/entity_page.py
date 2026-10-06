@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """entity_page.py -- merge one investigator's dossier into its shared wiki page.
 
-    entity_page.py merge --kind people|orgs --slug <slug> --title <title> --dossier <file|-> [--today YYYY-MM-DD]
+    entity_page.py merge --dossier <file|-> [--today YYYY-MM-DD]
 
 The LLM decides what is true; this script decides the page's shape. `## Now` is
 replaced, `## Timeline` is merged on (date, item), newest first, capped at 20,
@@ -11,7 +11,8 @@ wiki's own CLI, and a problem fails the run loudly: exit 1, the problem on
 stderr. Writes check the expected bytes on the Mac; validation rollback never
 restores over an owner save detected since the memo's write.
 
-Dossier: {"description": str, "now": str,
+Dossier: {"entity": str, "kind": "people"|"orgs", "slug": str,
+          "description": str, "now": str,
           "timeline": [{"date": "YYYY-MM-DD", "fact": str, "item": str}],
           "sources": [{"resource": str}], "tags": [str]}
 Facts are paraphrases; `item` is the re-open handle, never an excerpt.
@@ -109,23 +110,26 @@ def main(argv=None, call_tool=None):
     p = argparse.ArgumentParser(prog="entity_page.py")
     sub = p.add_subparsers(dest="cmd", required=True)
     m = sub.add_parser("merge")
-    m.add_argument("--kind", choices=sorted(TYPES), required=True)
-    m.add_argument("--slug", required=True)
-    m.add_argument("--title", required=True)
     m.add_argument("--dossier", required=True)
     m.add_argument("--today")
     a = p.parse_args(argv)
-    rel = f"entities/{a.kind}/{a.slug}.md"
+    rel = "dossier"
     try:
-        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", a.slug):
-            raise ValueError("slug must be a single lowercase kebab-case component")
         with (sys.stdin if a.dossier == "-" else open(a.dossier, encoding="utf-8")) as f:
             dossier = json.load(f)
+        kind, slug, title = dossier["kind"], dossier["slug"], dossier["entity"]
+        if kind not in TYPES:
+            raise ValueError("kind must be people or orgs")
+        if not isinstance(slug, str) or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
+            raise ValueError("slug must be a single lowercase kebab-case component")
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError("entity must be a non-blank name")
+        rel = f"entities/{kind}/{slug}.md"
         w = Wiki(call_tool or latch_connect().call_tool)
-        with guarded(pt_home() / "entity-locks" / a.kind / a.slug):
+        with guarded(pt_home() / "entity-locks" / kind / slug):
             for _ in range(3):
                 original = w.read(rel)
-                page = merge(original, dossier, a.kind, a.title, a.today or owner_today().isoformat())
+                page = merge(original, dossier, kind, title, a.today or owner_today().isoformat())
                 if not w.compare_and_swap(rel, original, page):
                     continue
                 try:

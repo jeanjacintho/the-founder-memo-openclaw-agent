@@ -48,18 +48,18 @@ class TestWritesAValidConfig:
         assert written["printer"] == {"configured": True, "name": "virtual_printer_online"}
         assert written["mail"]["configured"] is True
         assert written["signals"] == {"group_chat": False, "email": True, "imessage": False}
-        assert written["delivery"]["lead_minutes"] == 0
+        assert "delivery" not in written
+        assert written["memo"] == {"start": "07:00", "window_minutes": 240, "max_usd": 100}
+        assert "memo.start=07:00" in out
         assert "CONFIG:written" in out
 
-    @pytest.mark.parametrize(("hour", "lead"), [("07:00", 150), ("00:20", 150)])
-    def test_priority_lead_minutes(self, tmp_path, hour, lead):
-        # The lead covers memo-tournament's three mandatory generations, so it is the tournament's own
-        # 150-minute window. The nominal lead is stored unclamped -- 00:20 keeps its 150 here and
-        # registration clamps it per slot. Chat still waits for the hour: lead is the start clock,
-        # not the send clock.
-        config = seed(tmp_path, dict(COMPLETE, local_hour=hour, priority={"configured": True}))
-        finalize.main(["finalize_setup.py", str(config), "--owner-tz", "America/Sao_Paulo"])
-        assert json.loads(config.read_text())["delivery"]["lead_minutes"] == lead
+    @pytest.mark.parametrize("hour", ["07:00", "00:20", "23:30"])
+    def test_chosen_start_and_opt_out_are_preserved(self, tmp_path, hour):
+        config = seed(tmp_path, dict(COMPLETE, local_hour=hour, priority={"configured": False}))
+        finalize.main(["finalize_setup.py", str(config), "--owner-tz", "UTC"])
+        written = json.loads(config.read_text())
+        assert written["memo"]["start"] == hour
+        assert written["priority"]["configured"] is False
 
     @pytest.mark.parametrize("container_tz", ["UTC", "", "Asia/Tokyo"])
     def test_stores_the_hour_the_owner_named_whatever_the_container_clock(
@@ -71,8 +71,8 @@ class TestWritesAValidConfig:
         assert finalize.main(
             ["finalize_setup.py", str(config), "--owner-tz", "America/Sao_Paulo"]) == 0
         written = json.loads(config.read_text())
-        assert written["delivery"]["hour"] == "07:00"
-        assert "local_hour" not in written["delivery"]
+        assert written["memo"]["start"] == "07:00"
+        assert "local_hour" not in written["memo"]
 
     def test_printer_not_configured_writes_null_name(self, tmp_path):
         draft = dict(COMPLETE, printer={"configured": False})
@@ -137,3 +137,11 @@ class TestCarriesTheLanguage:
         finalize.main(["finalize_setup.py", str(config), "--owner-tz", "America/Sao_Paulo"])
         assert "language" not in json.loads(config.read_text())["owner"]
 
+
+
+def test_setup_choice_is_the_registered_start(tmp_path):
+    crons = load_module("setup_crons", "memo-schedule/scripts/register_crons.py")
+    config = seed(tmp_path, dict(COMPLETE, local_hour="23:30", priority={"configured": True}))
+    assert finalize.main(["finalize_setup.py", str(config), "--owner-tz", "UTC"]) == 0
+    start, window = crons.load_memo(config)
+    assert crons.nightly_job(start, window, "UTC")["schedule"] == "30 23 * * *"

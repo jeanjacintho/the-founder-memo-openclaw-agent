@@ -19,10 +19,9 @@ Usage:
 
     finalize_setup.py <config.json path> --owner-tz <IANA zone>
 
-The zone is step 1's answer (from the browser). The hour is the draft's, the
-owner's own wall clock; register_crons.py moves it onto the container's
-clock when it registers. Prints CONFIG:written
-plus the delivery line on success; on failure prints why, on stderr, and
+The zone is step 1's answer (from the browser). The start hour is the draft's, on the owner's wall clock. The scheduler
+registers in that timezone. Prints CONFIG:written
+plus the start line on success; on failure prints why, on stderr, and
 writes nothing.
 """
 from __future__ import annotations
@@ -55,10 +54,7 @@ def build(draft, owner_tz):
     priority = draft.get("priority") or {}
     config = {
         "owner": owner,
-        "delivery": {
-            "hour": draft["local_hour"],
-            "lead_minutes": PRIORITY_LEAD_MINUTES if priority.get("configured") else 0,
-        },
+        "memo": {"start": draft["local_hour"], "window_minutes": 240, "max_usd": 100},
         "printer": {
             "configured": bool(printer.get("configured")),
             "name": printer.get("name") if printer.get("configured") else None,
@@ -72,16 +68,6 @@ def build(draft, owner_tz):
         config["priority"] = {"configured": bool(priority.get("configured"))}
     return config
 
-
-# The tournament, not a single advisor pass, is what the lead has to cover:
-# memo-tournament requires three full generations before the paper may be
-# delivered, and only generation four and later are gated by its 150-minute
-# window. Three generations measured ~50 minutes with nothing yet rendered,
-# so 150 -- the window memo-tournament already names -- is the lead that fits its
-# own budget, with the tournament's delivery.hour-30 rule holding the render
-# and print legs in the tail. Stored nominal: register_crons clamps it per
-# slot against the owner's midnight.
-PRIORITY_LEAD_MINUTES = 150
 
 
 def main(argv=None):
@@ -126,7 +112,7 @@ def main(argv=None):
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     print("CONFIG:written")
-    print(f"delivery.hour={config['delivery']['hour']} ({args.owner_tz})")
+    print(f"memo.start={config['memo']['start']} ({args.owner_tz})")
     return 0
 
 

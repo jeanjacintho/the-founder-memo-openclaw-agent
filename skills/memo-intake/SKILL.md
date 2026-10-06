@@ -1,100 +1,70 @@
 ---
 name: memo-intake
-description: Classify a chat message into a research topic — new topic or status question, and which of the four shapes it is (one-off, subscription, section, assignment) and depth (quick/deep) — write it to pt/topics.json via the topics script, and schedule the run that will produce its edition. Use on every owner chat turn that is not a status question. Status questions (list my topics, list my papers, stop watching X, cancel a dated item, when will it land, add/remove a second daily delivery time, a newspaper at another hour) are answered from the files, not this skill's scheduling path. Never research inside the turn.
+description: Route one owner chat turn once setup is READY — a status question, a start-hour change, "run it now", enabling or disabling the nightly memo, a signal source switched on or off, or a correction for the advisor desk. Answered from the files and the scripts; never research inside the turn.
 ---
 
-# memo-intake — a chat message becomes a scheduled research job
+# memo-intake — one chat turn, routed
 
-You classify; a later session researches. The turn's job is: classify,
-write, schedule, confirm with a time. Nothing more.
+The turn's job is: read the state, do the one thing asked, confirm in one
+line. A research pass never runs here.
 
 ## Read the state first, every turn
 
-Two local files, both cheap:
+`/var/lib/plow/pt/config.json` holds the delivery preferences (run
+`/opt/plow/skills/memo-shared/scripts/pt_config_gate.py` on it if it looks
+wrong). Answer status questions from it and from the scripts' output, never
+from session memory — another session may have delivered since yours started.
 
-- `/var/lib/plow/pt/topics.json` — run `topics.py list` for the readable form
-- `/var/lib/plow/pt/config.json` — delivery preferences (run
-  `/opt/plow/skills/memo-shared/scripts/pt_config_gate.py` on it if it looks wrong)
-
-Answer status questions from these files, never from
-session memory — another session may have delivered since yours started.
-
-Keep `owner.language` current before classifying, per SOUL.md
+Keep `owner.language` current before anything else, per SOUL.md
 (`record_owner_language.py`; a scheduled edition has no live message to
 read a language from). It is not a confirmation to ask about and not a
 change to narrate.
 
 ## Status questions — answer from the file, then stop
 
-These are ordinary turns, not classifications. Do them and end:
-
-- **"what are you watching" / "list my topics"** — run
-  `/opt/plow/skills/memo-intake/scripts/topics.py list` and render it as a short list:
-  each active topic, its kind, when its edition last landed.
-- **"list my paper" / "what's in my paper" / "list my papers"** — run
-  `topics.py list` and group by paper, on memo-research's rosters: the main
-  paper first (hour from `delivery.hour`: standing desks, its sections,
-  pending assignments), then one block per other `deliver_at` hour with its
-  sections. Extra reprint times
-  (`delivery.extra_hours`) are the same main paper again, not a different
-  roster — mention them as extra arrivals of the main paper.
-- **"stop watching X" / "drop X from my paper"** — resolve X against the
-  active topics; if ambiguous, ask which one and stop. Then
-  `topics.py cancel <id>`, and immediately run
-  `/opt/plow/skills/memo-schedule/scripts/register_crons.py` so the nightly job is
-  removed now rather than at the next bring-up. Confirm in one line.
-- **"cancel what I asked for in tomorrow's paper"** — resolve against pending
-  `assignment` topics and `topics.py cancel <id>`. A delivered assignment is
-  terminal; say so rather than pretending to cancel it.
-- **"when will it land" / "did it come?"** — read the topic's `status` and
-  `scheduled_for` / `run_on` / `last_edition_at` and answer. A missing
-  edition in this session's history is not evidence it never landed.
-- **"I want the paper twice a day" / "send it at 10:30 too" / "drop the
-  second edition"** — a second (or third) full-paper delivery time is not a
-  topic, so it never goes through `topics.py`: it is `delivery.extra_hours`
-  in `pt/config.json`, a list of "HH:MM" strings alongside `delivery.hour`,
-  in the owner's own clock like it. Append (or remove) the time they name
-  in `extra_hours`, validate with
-  `pt_config_gate.py`, paste its output, then re-run
-  `/opt/plow/skills/memo-schedule/scripts/register_crons.py` so
-  `pt-daily-edition-2` (or `-3`, numbered by list order) exists or is
-  removed **now** — never a hand-registered cron (see `memo-schedule`).
-  Confirm in one line, in the owner's own terms —
-  "got it, the paper now arrives at 03:00 and 10:30" — never mention the
-  container's zone.
-- **"I want a newspaper about X at 12:00" / "another paper at 18:00 with
-  Y" / "put Z in the noon paper"** — this is **not** `extra_hours`. It is a
-  `section` with `--deliver-at HH:MM` (the owner's own clock, like
-  `delivery.hour`). Sections that share an hour share one paper;
-  a different hour is a different paper (`pt-paper-HHMM`):
-
-      topics.py add --text "<topic>" --kind section --depth quick --deliver-at HH:MM
-
-  If `deliver_at` equals `delivery.hour`, omit `--deliver-at` — it rides
-  the main paper. Count news items **per paper** (max 3 on that hour's
-  roster, standing desks do not count). Then run `register_crons.py` so
-  `pt-paper-HHMM` exists now. Confirm in the owner's terms: "you'll get a
-  sports paper at 12:00".
-- **"drop the 18:00 paper" / "cancel the noon newspaper"** — resolve against
-  active sections with that `deliver_at`; `topics.py cancel` each, then
-  `register_crons.py` so the `pt-paper-*` job is swept. Confirm in one line.
-  Dropping one section from a multi-section paper is "stop watching X",
-  not dropping the whole paper.
-- **"put my mail in the paper" / "drop the letters column"** — `mail.configured`
-  in `pt/config.json`. Probe through Latch before writing true, **Google
-  (`plow-gog gmail search`) first, Mail.app only if that fails** (same
-  argv order as memo-setup). Validate with the gate, then confirm in one line.
-  The daily job already exists; no extra cron.
+- **"when does it run" / "did it come?"** — read `memo.start` (default
+  `01:00`) and `memo.window_minutes` (default 240) and answer in the owner's
+  own clock: the memo starts then and prints when its run finishes. A missing
+  memo in this session's history is not evidence it never landed.
+- **"start it at 2am instead"** — run
+  `/opt/plow/skills/memo-schedule/scripts/register_crons.py --start 02:00`
+  with the requested owner's "HH:MM". The command validates and saves it,
+  then reconciles the schedule. Confirm only on success; if registration
+  fails after a `saved:` line, say the preference was saved but the schedule
+  still needs repair. Without that line, report the refusal and do not claim a change.
+- **"turn the memo on/off"** — run
+  `/opt/plow/skills/memo-schedule/scripts/register_crons.py --enabled on`
+  or the same command with `--enabled off`. This changes the nightly memo
+  without changing its hour, printer or signals. Confirm only on success;
+  report a reconciliation failure as above. Do not directly edit config.
 - **"listen to my groups / mail / iMessage" / "stop listening to …"** —
-  `memo-setup`'s "Turning a signal source on or off": probe first for mail and
-  iMessage, then `set_signal_source.py <source> <on|off>`. Confirm in one line.
+  `memo-setup`'s "Turning a signal source on or off": probe first for mail
+  and iMessage, then `set_signal_source.py <source> <on|off>`. Confirm in
+  one line.
+
+## "Run it now" / "re-evaluate my priorities" — not a topic
+
+It names no claim to look up; it asks for tonight's run now instead of at
+`memo.start`. Every run evaluates the priorities afresh; there is no copy of
+an older memo to reprint.
+
+Queue it with `register_crons.py --now`, which `memo-render` documents
+under **On demand**; the paper arrives as its own message. If the output
+has a `queued:` line, reply with one ⏳ line in `owner.language` saying it
+is on its way; name anything else the output reports failing (a paused
+job, say) in one more line, and say the run takes up to its window
+(`memo.window_minutes`). An `already running:` line means a run is in flight
+and no second one was queued: say in one ⏳ line that the memo already in
+progress is on its way. With neither line, say it could not be queued. Never
+research or render it in this turn, and never fire a job with `openclaw cron
+run`.
 
 ## Corrections for the advisor desk
 
 Only when `priority.configured` is true. When the owner corrects the desk, answers a
 question the paper asked ("Q2: …"), or states something durable about their work — "Raj is
-my cousin, not a customer", "stop telling me to hire", "we signed our first pilot" — this
-is not a topic. Run `/opt/plow/skills/memo-shared/scripts/wiki_setup.py --desk` first
+my cousin, not a customer", "stop telling me to hire", "we signed our first pilot" — run
+`/opt/plow/skills/memo-shared/scripts/wiki_setup.py --desk` first
 (idempotent; it seeds or carries over the page) — an `error:` line means the Mac's wiki
 isn't reachable: say so in one line and write nothing, the correction will need resending.
 Then `plow__plow_read_file` `~/Plow/wiki/entities/owner/goals.md`, append one line
@@ -123,157 +93,16 @@ A retraction reads, in shape:
 `- 2026-03-04: the Q7 headcount figure is not mine — treat it as retracted. Basis: iMessage
 chat +15550100 rowid 100200, 2026-03-04.`
 
-## New topic — classify, then write
+## Anything else
 
-Decide, in this order:
-
-**1. Is this a topic at all?** A greeting, a question about the agent, a complaint
-about an edition — none of these is a topic. Answer it like a person and
-stop. A question the OWNER wants researched is a topic only when the
-answer must be *looked up* on the web, not when it's something you know
-or can say in a line.
-
-**2. Which of the four shapes is it?**
-
-| The owner says | Shape | What it becomes |
-|---|---|---|
-| "my paper should have X" / "X in the paper every day" | `section` | a fixed block in the **main** daily paper (no `deliver_at`) |
-| "a paper about X at 12:00" / "Y in the noon newspaper" | `section` with `--deliver-at` | a block in that hour's paper, not the main one |
-| "X in tomorrow's paper" / "Y in Friday's paper" | `assignment` | one research pass whose result appears **only** in that day's paper |
-| "research X, tell me later" | `one_off` | its own edition, delivered once |
-| "update me on Y every night" / "keep an eye on Z" | `subscription` | its own edition, re-run on the delivery hour |
-| "send me the paper now" / "generate a copy I can read right now" | **not a topic** | queue the daily edition now — see below |
-| "re-evaluate today's priorities" / "print another paper with fresh advice" | **not a topic** | queue it now with fresh advice — see below |
-
-**"Give me a copy of my paper" is not a subject to research.** It names no
-claim to look up; it asks you to run the paper the owner already
-configured, now instead of at the delivery hour. Filed as a topic, it
-becomes an edition *about the phrase*, carrying none of their sections.
-Do not add a topic.
-
-Queue it with `register_crons.py --now`, which `memo-render` documents
-under **On demand**; the paper arrives as its own message. If the output
-has a `queued:` line, reply with one ⏳ line in `owner.language` saying it
-is on its way; name anything else the output reports failing (a paused
-job, say) in one more line. An `already running:` line means a copy is
-mid-paper and no second one was queued: say in one ⏳ line that the edition
-already in progress is on its way. With neither line, say it could not be
-queued. Never research or render it in this turn.
-
-**"Re-evaluate my priorities" is the same paper with fresh advice.** When the
-owner asks for today's priorities to be analyzed again (a new advice card,
-not yesterday's reused), queue `register_crons.py --now --fresh-advice`: that
-copy runs the advice tournament instead of reusing a checkpoint, and takes
-longer than a plain copy. Only a `queued:` line means a fresh evaluation is
-coming: say so in one ⏳ line. A `not queued:` line means a paper is mid-run
-and no fresh evaluation was queued: say that in one line and ask the owner to
-ask again once that edition arrives. Never fire the daily job with `openclaw cron run` for this: after its
-delivery hour it skips the tournament by its own window rule.
-
-A subscription/section is anything with a cadence in it. A one-off/assignment
-is a single ask. When the owner genuinely cannot be read as one or the other,
-ask — one question, then classify their answer. Do not silently guess a
-cadence into someone's mornings.
-
-**3. Quick or deep?** The clock decides the default: a topic asked during the
-owner's waking day is `quick`; a topic asked late at night, anything they
-said to "keep an eye on", and every subscription's nightly run is `deep`.
-**Sections are always `quick`** — several sections at deep would blow any
-delivery lead, so depth there is not offered. Assignments default `quick`; an
-explicit "properly" / "deep dive" can raise them. An explicit "quick, one
-line" lowers anything.
-
-Two rules that keep the paper honest:
-
-- **Dedup.** Resolve the new ask against what already exists. "My paper
-  should have weather" when the weather desk already runs every day → point
-  at that desk instead of adding a news section that would search the same
-  forecast twice. Same for calendar and, when configured, mail. "My paper
-  should have the dollar" when a dollar section is already active → point at
-  the existing one. An assignment whose subject matches a section → one
-  question: "every day, or only in tomorrow's paper?".
-- **Each paper holds at most 3 news items total.** Weather and the single
-  calendar rail do not count against it. Count standing sections plus any
-  assignments due in the main paper. Sections at a different `deliver_at`
-  have their own three-item roster; unscoped sections and sections explicitly
-  set to the main `delivery.hour` share one roster. If another item would
-  exceed three, refuse with the full roster and ask which one to drop.
-
-Then write it — this script is the ONLY writer for topics.json:
-
-    /opt/plow/skills/memo-intake/scripts/topics.py add --text "<the topic, in the owner's words>" --kind one_off|subscription|section|assignment --depth quick|deep [--run-on YYYY-MM-DD] [--deliver-at HH:MM] [--scheduled-for <ISO-8601 with offset; required for one_off>]
-
-Adding a `section` the owner already has is a no-op: the script prints
-`{"duplicate_of": "<id>", ...}` and adds nothing, because a section is an
-evergreen standing interest, not a second beat. That output is a success,
-not an error — do not retry it with different wording to force a second
-copy. One-offs and assignments are never collapsed; "research X again" is
-a real second request.
-
-`--run-on` is required for an assignment and refused for every other kind.
-`--deliver-at` is section-only: the owner's own `HH:MM` for a paper other
-than the main daily edition. Omit it for the main paper. Compute "tomorrow"/"Friday" as a real calendar date in **the owner's timezone**
-(the one in `pt/config.json`), never from the container's clock reading past
-midnight. If the day is ambiguous ("the 15th", "next Friday"), ask — never
-guess a date onto a promise. Paste the script's output; the `id` it prints is
-the topic's identity everywhere else.
-
-## Schedule the run — one-time crons, never inline
-
-Every stored hour is the owner's own clock; `register_crons.py` (spec in
-`memo-schedule`) derives every job from the topic store.
-
-- **Section** — nothing to schedule by hand: write the topic (with
-  `--deliver-at` when it belongs to a non-main paper), then run
-  `/opt/plow/skills/memo-schedule/scripts/register_crons.py` so
-  `pt-daily-edition` or `pt-paper-HHMM` is created (or its schedule
-  reconciled) **now**, not at the next bring-up.
-  Paste the script's output and report its exit status.
-- **Assignment** — **never gets a cron of its own**: it rides the daily
-  edition. The daily job exists because the assignment is pending (the
-  registration you run after writing it sees that). Confirm with the *real*
-  date it will appear: if the target day's edition has already left by the
-  time the owner asks, the assignment lands in the next one — say so, and
-  remember the late tag follows it.
-- **One-off** — pick the moment: quick is now+3m; deep is the next
-  `delivery.hour` from pt/config.json, in the owner's zone (today if it has
-  not passed, tomorrow otherwise), so the result lands with the morning
-  paper. Record it at add time as an ISO-8601 instant with the owner's
-  offset via `--scheduled-for`, then run
-  `/opt/plow/skills/memo-schedule/scripts/register_crons.py`. It
-  creates `pt-oneoff-<id>` at that `scheduled_for` with the topic's own
-  prompt and the deliver target baked in; the sweep removes it once the
-  topic is delivered.
-- **Subscription** — write the topic, then run
-  `/opt/plow/skills/memo-schedule/scripts/register_crons.py` so `pt-subscription-<id>`
-  exists now.
-
-If `register_crons.py` fails, say so — a topic
-whose run was never scheduled is a promise with no paper behind it, and the
-owner must hear it rather than wait for an edition that will never come.
+A greeting, a question about the agent, a complaint about an edition: answer
+it like a person and stop. A subject the owner wants researched is not
+something this agent files; say in one line that the memo researches their
+own priorities each night, and that a correction or answer to one of its
+questions is how they steer it.
 
 ## Confirm, in one line
 
-The turn's final response is CHAT_VOICE: 📰 then a space, then one spoken
-line with a time — not a progress report.
-
-Portuguese examples:
-
-> 📰 Beleza — um jornal sobre <assunto> cai aqui em uns 3 minutos.
-> 📰 Todo dia de manhã, às 7h, isso entra no jornal.
-> 📰 O preço do iPhone vai no jornal de sexta.
-
-English examples:
-
-> 📰 On it — a paper on <topic> lands here in about 3 minutes.
-> 📰 You'll get that every morning at 7:00.
-> 📰 The iPhone price goes in Friday's paper.
-
-Never narrate the mechanics (no "writing topics.json", no "scheduling a cron").
-The edition, when it lands, speaks for itself.
-
-## Never mark a topic yourself
-
-`post_to_chat.py` finalizes the topics an edition carried, after its POST
-succeeds (`memo-render` step 3). Never mark a topic delivered in the intake
-turn — nothing has been delivered yet.
+The turn's final response is CHAT_VOICE: one emoji, a space, then one spoken
+line — not a progress report. Never narrate the mechanics (no "writing
+config.json", no "scheduling a cron").

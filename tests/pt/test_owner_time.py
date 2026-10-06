@@ -32,8 +32,8 @@ class TestOwnerNow:
         assert owner_time.owner_today(tmp_path / "nope.json") == date.today()
 
     def test_the_default_config_path_follows_pt_home(self, tmp_path, monkeypatch):
-        # Same override every other pt script honors (topics.py, run_lock.py,
-        # record_edition.py) -- tests point it at a tmp dir; CONFIG must read
+        # Same override every other pt script honors (run_lock.py,
+        # record_memo.py) -- tests point it at a tmp dir; CONFIG must read
         # it at call time, not bake in whatever it was at import.
         monkeypatch.setenv("PT_HOME", str(tmp_path))
         (tmp_path / "config.json").write_text(
@@ -75,6 +75,17 @@ class TestMinutesUntil:
         owner_time.main(["minutes-until", "00:20"])
         assert capsys.readouterr().out.strip() == "15"
 
-    @pytest.mark.parametrize("argv", [["minutes-until", "25:00"], ["minutes-until"], ["later"]])
+    def test_now_is_the_owners_instant_with_its_offset(self, tmp_path, monkeypatch, capsys):
+        self._at(monkeypatch, tmp_path, datetime(2026, 9, 24, 4, 0, tzinfo=timezone.utc))  # 01:00
+        assert owner_time.main(["now"]) == 0
+        assert capsys.readouterr().out.strip() == "2026-09-24T01:00:00-03:00"
+
+    def test_minutes_since_the_runs_start_crosses_midnight(self, tmp_path, monkeypatch, capsys):
+        self._at(monkeypatch, tmp_path, datetime(2026, 9, 24, 3, 20, tzinfo=timezone.utc))  # 00:20
+        assert owner_time.main(["minutes-since", "2026-09-23T23:00:00-03:00"]) == 0
+        assert capsys.readouterr().out.strip() == "80"
+
+    @pytest.mark.parametrize("argv", [["minutes-until", "25:00"], ["minutes-until"], ["later"],
+                                      ["minutes-since", "2026-09-23T23:00:00"], ["now", "x"]])
     def test_bad_usage_is_exit_2(self, argv):
         assert owner_time.main(argv) == 2

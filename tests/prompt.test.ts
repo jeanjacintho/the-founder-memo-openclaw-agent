@@ -22,9 +22,9 @@ test("the tournament dispatch contract uses the configured writer and critic rou
   assert.doesNotMatch(rendered, /\{\{(?:writer|critic)_model\}\}/);
   const skill = await readFile(new URL("../skills/memo-tournament/SKILL.md", import.meta.url), "utf8");
   const loop = skill.split("### Mechanical loop (authoritative)")[1].split("### ")[0];
-  assert.match(loop, /three writer children with `model` set to the writer model/);
-  assert.match(loop, /every critic's `model` to the critic model/);
-  assert.match(loop, /one child for Cull with `model` set to the writer model/);
+  assert.match(loop, /five writer children \(`model`: the writer model\)/);
+  assert.match(loop, /critics:[\s\S]*\(`model`: the critic model\)/);
+  assert.match(loop, /one culler child \(`model`: the writer\s+model\)/);
 });
 
 test("unset role models render the selected boot route for both roles", () => {

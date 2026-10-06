@@ -17,36 +17,22 @@ Exit 0 either way so a missing config is not mistaken for a crashed check.
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
 
+import pt_config_gate as _config_gate
 from pt_paths import config_file
 
-_DELIVERY_HOUR_RE = re.compile(r"^([01][0-9]|2[0-3]):[0-5][0-9]$")
 CONFIG_FILE = str(config_file())
 
 
 def setup_needed(path):
     try:
-        config = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        config = json.loads(Path(path).read_text(encoding="utf-8"), parse_constant=lambda token:
+                            (_ for _ in ()).throw(ValueError(f"non-standard JSON constant {token}")))
+        return bool(_config_gate.gate(config))
+    except (OSError, ValueError, _config_gate.GateError):
         return True
-    if not isinstance(config, dict):
-        return True
-    owner = config.get("owner")
-    delivery = config.get("delivery")
-    printer = config.get("printer")
-    tz = owner.get("timezone") if isinstance(owner, dict) else None
-    hour = delivery.get("hour") if isinstance(delivery, dict) else None
-    configured = printer.get("configured") if isinstance(printer, dict) else None
-    if not (isinstance(tz, str) and tz.strip()):
-        return True
-    if not (isinstance(hour, str) and _DELIVERY_HOUR_RE.fullmatch(hour)):
-        return True
-    if not isinstance(configured, bool):
-        return True
-    return False
 
 
 def draft_line(config_path):
