@@ -93,10 +93,7 @@ never a hand-edited config:
     /opt/plow/skills/memo-shared/scripts/set_signal_source.py imessage on
 
 (`off` to stop). Every source starts off. Before `email on`, probe Google with
-`plow_run_command` argv `["plow-gog", "gmail", "search", "newer_than:1d", "--max", "5", "--json", "--fields", "id,date,from,subject"]`
-(Mac not connected? Probe with `plow_google`, the same argv without `"plow-gog"`; if no Google
-account is connected, call `plow_connect` with `google`, send the owner its link, switch `email` on
-once Plow says their connections changed and the probe answers, and send a fresh link if it lapses);
+`plow_run_command` argv `["plow-gog", "gmail", "search", "newer_than:1d", "--max", "5", "--json", "--fields", "id,date,from,subject"]`;
 before `imessage on`, probe once through Latch with **exactly** the argv the
 nightly scan uses, so the Mac's "always allow" covers the unattended runs:
 
