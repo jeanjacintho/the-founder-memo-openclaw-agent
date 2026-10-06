@@ -10,7 +10,7 @@ rec = load_module("record_owner_language", "memo-shared/scripts/record_owner_lan
 
 READY = {
     "owner": {"timezone": "America/Sao_Paulo", "language": "Portuguese"},
-    "delivery": {"hour": "07:00"},
+    "memo": {"start": "01:00", "window_minutes": 240, "max_usd": 100},
     "printer": {"configured": False, "name": None},
 }
 

@@ -27,7 +27,7 @@ def run_gate(config, tmp_path):
 
 VALID = {
     "owner": {"timezone": "America/Los_Angeles"},
-    "delivery": {"hour": "07:00"},
+    "memo": {"start": "01:00", "window_minutes": 240, "max_usd": 100},
     "printer": {"configured": False, "name": None},
 }
 
@@ -49,18 +49,6 @@ class TestPass:
         )
         assert out == ""
 
-    def test_lead_minutes_optional(self, tmp_path):
-        out, _ = run_gate(VALID, tmp_path)
-        assert out == ""
-
-    @pytest.mark.parametrize("lead", [0, 45, 179, 180, 1000])
-    def test_lead_minutes_accepted(self, tmp_path, lead):
-        out, _ = run_gate(
-            {**VALID, "delivery": {"hour": "07:00", "lead_minutes": lead}}, tmp_path
-        )
-        assert out == ""
-
-
 class TestNotValidJSON:
     def test_unreadable_file(self, tmp_path):
         out, _ = run_gate(str(tmp_path / "missing.json"), tmp_path)
@@ -80,7 +68,7 @@ class TestNotValidJSON:
 
     def test_nan_fail_closes(self, tmp_path):
         out, _ = run_gate(
-            '{"owner": {"timezone": "UTC"}, "delivery": {"hour": "07:00"},'
+            '{"owner": {"timezone": "UTC"}, "memo": {"start": "01:00", "window_minutes": 240, "max_usd": 100},'
             ' "printer": {"configured": NaN}}',
             tmp_path,
         )
@@ -98,33 +86,29 @@ class TestInvariants:
         )
         assert "owner.timezone is blank" in out
 
-    @pytest.mark.parametrize("hour", ["7:00", "24:00", "0700", "07:60", 700, None])
-    def test_malformed_delivery_hour(self, tmp_path, hour):
-        out, _ = run_gate({**VALID, "delivery": {"hour": hour}}, tmp_path)
-        assert 'delivery.hour is not "HH:MM"' in out
+    @pytest.mark.parametrize("start", ["1:00", "24:00", "0100", "01:60", 100, None])
+    def test_malformed_start(self, tmp_path, start):
+        out, _ = run_gate({**VALID, "memo": {**VALID["memo"], "start": start}}, tmp_path)
+        assert 'memo.start is not "HH:MM"' in out
 
-    @pytest.mark.parametrize("hour", ["07:30", "10:25", "00:05", "23:59"])
-    def test_delivery_hour_accepts_any_real_minute(self, tmp_path, hour):
-        # Minutes were once refused on the theory that "the cron fires at
-        # the hour" was a hard limit -- register_crons.py's own
-        # daily_schedule() has always produced a non-zero minute field, so
-        # any real HH:MM is a promise the schedule can keep.
-        out, _ = run_gate({**VALID, "delivery": {"hour": hour}}, tmp_path)
+    @pytest.mark.parametrize("start", ["01:30", "23:45", "00:05"])
+    def test_start_accepts_any_real_minute(self, tmp_path, start):
+        out, _ = run_gate({**VALID, "memo": {**VALID["memo"], "start": start}}, tmp_path)
         assert out == ""
 
-    @pytest.mark.parametrize("lead", [-1, "45", 4.5])
-    def test_malformed_lead_minutes(self, tmp_path, lead):
-        out, _ = run_gate(
-            {**VALID, "delivery": {"hour": "07:00", "lead_minutes": lead}}, tmp_path
-        )
-        assert "delivery.lead_minutes is not a non-negative integer" in out
+    @pytest.mark.parametrize("window", [0, -5, "240", 240.5, True, None])
+    def test_malformed_window(self, tmp_path, window):
+        out, _ = run_gate({**VALID, "memo": {**VALID["memo"], "window_minutes": window}}, tmp_path)
+        assert "memo.window_minutes is not a positive integer" in out
 
-    def test_bool_lead_minutes_refused(self, tmp_path):
-        # True is 1 in Python; a boolean is not a number of minutes.
-        out, _ = run_gate(
-            {**VALID, "delivery": {"hour": "07:00", "lead_minutes": True}}, tmp_path
-        )
-        assert "delivery.lead_minutes is not a non-negative integer" in out
+    @pytest.mark.parametrize("ceiling", [0, -1, "100", True, None])
+    def test_malformed_ceiling(self, tmp_path, ceiling):
+        out, _ = run_gate({**VALID, "memo": {**VALID["memo"], "max_usd": ceiling}}, tmp_path)
+        assert "memo.max_usd is not a positive number" in out
+
+    def test_a_fractional_ceiling_passes(self, tmp_path):
+        out, _ = run_gate({**VALID, "memo": {**VALID["memo"], "max_usd": 37.5}}, tmp_path)
+        assert out == ""
 
     def test_string_false_is_not_a_boolean(self, tmp_path):
         out, _ = run_gate(
@@ -146,31 +130,6 @@ class TestInvariants:
         )
         assert out == "not valid JSON"
 
-    def test_extra_hours_absent_is_valid(self, tmp_path):
-        out, _ = run_gate(VALID, tmp_path)
-        assert out == ""
-
-    def test_extra_hours_accepts_real_times(self, tmp_path):
-        out, _ = run_gate(
-            {**VALID, "delivery": {"hour": "03:00", "extra_hours": ["10:30", "16:00"]}},
-            tmp_path,
-        )
-        assert out == ""
-
-    @pytest.mark.parametrize("bad", ["10:30", ["10:75"], ["nope"], [700]])
-    def test_extra_hours_rejects_malformed(self, tmp_path, bad):
-        config = {**VALID, "delivery": {"hour": "03:00", "extra_hours": bad}}
-        out, _ = run_gate(config, tmp_path)
-        assert 'delivery.extra_hours is not a list of "HH:MM" strings' in out
-
-    def test_extra_hours_null_is_treated_as_absent(self, tmp_path):
-        # Same convention as delivery.lead_minutes: an explicit null reads
-        # the same as the key being missing, not as a malformed value.
-        out, _ = run_gate(
-            {**VALID, "delivery": {"hour": "03:00", "extra_hours": None}}, tmp_path
-        )
-        assert out == ""
-
     def test_language_absent_is_valid(self, tmp_path):
         out, _ = run_gate(VALID, tmp_path)
         assert out == ""
@@ -187,18 +146,6 @@ class TestInvariants:
             {**VALID, "owner": {"timezone": "UTC", "language": "   "}}, tmp_path
         )
         assert "owner.language is blank" in out
-
-    def test_mail_absent_is_valid(self, tmp_path):
-        out, _ = run_gate(VALID, tmp_path)
-        assert out == ""
-
-    def test_mail_configured_true_passes(self, tmp_path):
-        out, _ = run_gate({**VALID, "mail": {"configured": True}}, tmp_path)
-        assert out == ""
-
-    def test_mail_configured_must_be_boolean(self, tmp_path):
-        out, _ = run_gate({**VALID, "mail": {"configured": "yes"}}, tmp_path)
-        assert "mail.configured is not a boolean" in out
 
     def test_signals_absent_is_valid(self, tmp_path):
         # An install from before signal sources existed: every source off.
@@ -247,10 +194,10 @@ class TestInvariants:
 
     def test_failures_join_with_semicolons(self, tmp_path):
         out, _ = run_gate(
-            {"owner": {"timezone": "UTC"}, "delivery": {"hour": "nope"},
+            {"owner": {"timezone": "UTC"}, "memo": {"start": "nope", "window_minutes": 240, "max_usd": 100},
              "printer": {"configured": "no"}}, tmp_path
         )
-        assert out == ('delivery.hour is not "HH:MM"; '
+        assert out == ('memo.start is not "HH:MM"; '
                        "printer.configured is not a boolean")
 
 
@@ -262,7 +209,7 @@ class TestExample:
         example = (ROOT / "memo-shared/references/config.example.json").read_text()
         filled = (
             example.replace("[OWNER_TZ]", "America/Los_Angeles")
-            .replace("[DELIVERY_HOUR]", "07:00")
+            .replace("[START_HOUR]", "01:00")
         )
         out, _ = run_gate(json.loads(filled), tmp_path)
         assert out == ""
@@ -277,18 +224,3 @@ class TestExample:
         )
         out, _ = run_gate(example, tmp_path)
         assert "placeholder" in out
-
-
-@pytest.mark.parametrize("memo", [{}, {"start": "01:00", "window_minutes": 240}])
-def test_future_memo_settings_are_optional_and_validated(memo, tmp_path):
-    assert run_gate({**VALID, "memo": memo}, tmp_path)[0] == ""
-
-
-@pytest.mark.parametrize("memo, reason", [
-    ("night", "memo is not an object"),
-    ({"start": "25:00"}, "memo.start"),
-    ({"window_minutes": True}, "memo.window_minutes"),
-    ({"window_minutes": 0}, "memo.window_minutes"),
-])
-def test_bad_future_memo_settings_fail_the_shared_gate(memo, reason, tmp_path):
-    assert reason in run_gate({**VALID, "memo": memo}, tmp_path)[0]

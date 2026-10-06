@@ -30,6 +30,9 @@ falls between the send and the mark, and no model-written text reaches a
 shell. --scheduled says the job runs again on its own tomorrow, for the line
 that says when the next try is; without it the line says to ask again later.
 
+An explicit owner ask lifts that cap once: queue_now (register_crons.py --now)
+calls grant(), and the paper's next start proceeds past a spent day, consuming
+the grant, so a retry of the same job is capped again.
 The count starts over when post_to_chat.py --clear-attempts [KEY] confirms a
 post or stages the edition (see `clear`). Always exits 0, like run_lock.py, so a
 cron-fired session reads the word. Each count lives in
@@ -84,11 +87,31 @@ def _notice(scheduled):
     return phrase("attempts.spent_scheduled" if scheduled else "attempts.spent_on_demand")
 
 
+def _grant_path():
+    return pt_home() / "paper-attempts-grant"
+
+
+def grant():
+    """The owner asked for the paper now (queue_now): one start past a spent day.
+
+    A file, not a flag in the job's prompt: OpenClaw re-fires a failed job with
+    the same prompt, so a flag would lift the cap on every retry. The first start
+    consumes the grant; a retry of that job finds none and meets the cap again.
+    """
+    with _locked():
+        pt_home().mkdir(parents=True, exist_ok=True)
+        _grant_path().touch()
+
+
 def begin(key=DEFAULT_KEY, scheduled=False):
     path = _path(key)
     with _locked():
         data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
-        if data["starts"] < MAX_ATTEMPTS:
+        # Any start of the paper consumes the grant, so none lingers to lift a later retry.
+        granted = key == DEFAULT_KEY and _grant_path().exists()
+        if granted:
+            _grant_path().unlink()
+        if data["starts"] < MAX_ATTEMPTS or granted:
             data["starts"] += 1
             word = "proceed"
         else:

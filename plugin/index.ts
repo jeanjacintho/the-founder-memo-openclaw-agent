@@ -204,7 +204,7 @@ export default defineChannelPluginEntry({
       try { await notifyFailedPaperRun(event, ctx); }
       catch (error) { api.logger.warn(`paper cron failure notice failed: ${(error as Error).name}`); }
     });
-    // The owner's own phone DM starts from the newspaper's setup gate.
+    // The owner's own phone DM starts from the memo's setup gate.
     api.on("before_prompt_build", async (_event, ctx) => {
       // A group only ever listens: it gets the listening rules, never setup.
       if (isGroupTurn(ctx)) return { prependContext: await listeningContext() };
