@@ -126,7 +126,9 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 
 - **Chat.** The owner's phone DM is the agent's main session. Before each of
   the owner's turns the Plow channel runs the setup gate and hands the model
-  its answer. Replies appear automatically in the current conversation;
+  its answer once; the model uses that result for the rest of the turn.
+  Heartbeats, scheduled jobs, groups and sub-agents skip setup.
+  Replies appear automatically in the current conversation;
   groups are only listened to for priority signals and never get replies or
   setup questions. Non-owner messages in untrusted DMs and non-owner email
   turns get no tools. Only the owner's main phone DM can start a new group.
@@ -148,6 +150,9 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
   phase, which spawns its own investigators, writers, critics and culler
   (two levels deep, at most ten at a time), so its context stays flat however
   many generations run.
+- **Idle turns.** Main-session heartbeats are disabled (`every: "0m"`).
+  Memos run through their scheduler jobs; boot replaces an older main
+  heartbeat configuration with this disabled setting.
 - **Scripts.** The `memo-*` skills' Python scripts run on Python 3.13 with
   WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The memo's state is
   `/var/lib/plow/pt` (config, the accepted checkpoint, run scratch).

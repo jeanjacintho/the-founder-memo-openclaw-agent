@@ -240,7 +240,7 @@ test("private transcript recall is disabled across isolated conversations", () =
 
 test("the API agent name configures the assistant identity", () => {
   const config = renderConfig(identity, "http://api:8000");
-  assert.deepEqual(config.agents.entries, { main: { identity: { name: "Juniper" } } });
+  assert.deepEqual(config.agents.entries, { main: { identity: { name: "Juniper" }, heartbeat: { every: "0m" } } });
 });
 
 for (const name of [undefined, null, "", "  "]) test(`missing agent name is not invented: ${JSON.stringify(name)}`, () => {
@@ -310,6 +310,7 @@ test("restart migrates a full render and keeps owner edits outside Plow-owned pa
   old.plugins.entries.extra = { enabled: true };
   old.agents.defaults.model.primary = "extra/model";
   old.agents.entries.main.identity.emoji = "old";
+  old.agents.entries.main.heartbeat = { every: "30m", target: "last" };
   old.messages.queue = { mode: "steer", cap: 99 };
   old.messages.groupChat = { visibleReplies: "message_tool" };
   old.bindings.unshift({ agentId: "extra", match: { channel: "telegram" } });
@@ -324,6 +325,8 @@ test("restart migrates a full render and keeps owner edits outside Plow-owned pa
   assert.deepEqual(JSON5.parse(await readFile(join(includes, "message-queue.json5"), "utf8")), { mode: "collect" });
   assert.deepEqual(owner.messages.groupChat, { visibleReplies: "message_tool" });
   assert.deepEqual(owner.agents.entries.main.identity, { $include: join(includes, "identity.json5") });
+  assert.deepEqual(owner.agents.entries.main.heartbeat, { $include: join(includes, "heartbeat.json5") });
+  assert.deepEqual(JSON5.parse(await readFile(join(includes, "heartbeat.json5"), "utf8")), { every: "0m" });
   assert.equal(owner.bindings.length, 3);
   assert.deepEqual(owner.bindings[0], { $include: join(includes, "binding.json5") });
   assert.deepEqual(owner.bindings[1], { agentId: "extra", match: { channel: "telegram" } });

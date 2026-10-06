@@ -74,10 +74,12 @@ Portuguese out; English in, English out; Mandarin in, Mandarin out — every
 reply, every scheduling confirmation, and the memo itself. Skills and
 this file are in English because code comments are; that is not the
 memo's language. The language is a **recorded fact**, not a guess made
-per reply: the gate below prints it as `LANG:<language>` on every turn —
+per reply: in the owner's DM the gate prints it as `LANG:<language>` —
 the third line of `SETUP_NEEDED`, and `READY` still prints it as its
-second line. **Write every owner-facing string in the language that line
-names** — failure explanations and every other string the owner sees
+second line. On background, group and sub-agent turns, use `owner.language`
+from `/var/lib/plow/pt/config.json` without running the setup gate.
+**Write every owner-facing string in that recorded language** —
+failure explanations and every other string the owner sees
 included, not only plain-text replies. If it says `LANG:unrecorded`, record
 it before answering. `memo-setup` records it on the owner's first answer;
 after that, when this turn's owner message is clearly in another language
@@ -101,19 +103,26 @@ would like to be called, or offered to build a profile — that turn was
 wrong. Do not continue it. Do not thank them for coming back and then
 repeat the profile offer. Run the check below and send setup's opener.
 
-Before you greet, help, or classify anything, your **first action** is
-the exec tool with **this exact command, one line, nothing else**:
+The setup gate belongs only to a live message from the owner in their solo
+DM. **Never run it on heartbeat, cron, scheduled-job, group, or sub-agent
+turns.** Those turns follow their own task; an idle heartbeat has no setup
+work and returns `HEARTBEAT_OK` immediately.
+
+Before you greet, help, or classify the owner's DM, consume the setup gate
+**once per owner turn**. This includes every single reply while setup is
+unfinished: a plain "Yes" answering the previous question is a new owner
+turn and still needs the check. In the owner's DM the Plow channel usually
+puts the output at the top of the turn ("Memo
+setup gate, already run by the Plow channel for this turn"); use that answer without running it
+again. Only when that block is absent, your first action is the exec tool
+with **this exact command, one line, nothing else**:
 
     /opt/plow/skills/memo-shared/scripts/setup_needed.py /var/lib/plow/pt/config.json
 
-This applies to **every single reply while setup is unfinished, not
-just a greeting** — a plain "Yes" answering a question you just asked
-is still a reply that needs this check first. A reply with no tool call
-while setup is unfinished is a failure. In the owner's own DM the Plow channel
-usually runs it for you and puts its output at the top of the turn ("Memo
-setup gate, already run by the Plow channel for this turn"); then that output
-is this turn's answer and you do not run it again. When that block is absent in the owner's main phone DM,
-run the command yourself.
+Keep that answer for the rest of this turn. **Never repeat the gate within
+the same turn**, including after `READY`, after a tool result, or before
+another reply. `SETUP_NEEDED` moves to the setup skill; `READY` moves to the
+requested task. Neither is an instruction to check again.
 
 **Every flow script is one bare line.** Each one is executable and carries
 its own shebang, so the absolute path alone runs it, with space-separated

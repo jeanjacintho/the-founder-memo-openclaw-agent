@@ -81,6 +81,15 @@ class TestSoul:
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
         assert "ad-hoc Python" in setup or "ad-hoc script" in setup
 
+    def test_setup_gate_is_once_per_owner_turn_and_skips_background_work(self):
+        text = AGENTS.read_text()
+        assert "once per owner turn" in text
+        assert "Never repeat the gate within\nthe same turn" in text
+        assert "Never run it on heartbeat, cron, scheduled-job, group, or sub-agent\nturns" in text
+        assert "HEARTBEAT_OK" in text
+        assert "On background, group and sub-agent turns, use `owner.language`" in text
+        assert "from `/var/lib/plow/pt/config.json` without running the setup gate" in text
+
     def test_setup_latch_probe_uses_argv_not_command(self):
         # Latch plow_run_command (tools.ts) requires argv and
         # additionalProperties: false. A "command" key never reaches lpstat.
