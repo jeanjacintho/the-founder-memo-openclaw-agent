@@ -77,10 +77,8 @@ English:
 
 > 📰 Hi — I'm The Founder Times (inspired by Mayfield), your newspaper. What time should it land each morning? If you don't say, I'll send it at 7:00.
 
-**Changing one setting later** is not this skill: a different delivery hour,
-**a second (or third) daily delivery time** (`delivery.extra_hours`, a list
-of "HH:MM" strings alongside `delivery.hour`, each in the owner's own
-clock like `delivery.hour` itself — never ask the zone again), **turning the letters desk
+**Changing one setting later** is not this skill: a different start hour
+(`memo.start`, the owner's own clock — never ask the zone again), **turning the letters desk
 on or off** (`mail.configured`), **turning a signal source on or off**
 (see below), or a new printer is a
 one-line conversation that updates `pt/config.json` directly. After a valid change, re-run the gate

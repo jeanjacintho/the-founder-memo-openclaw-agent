@@ -8,17 +8,6 @@ An [OpenClaw](https://github.com/openclaw/openclaw) agent on
 chatbot. It is one person's paper: the sections you asked for, at the hour you
 named, in the language you write.
 
-The nightly Founder Memo rollout is staged: this branch adds the Mac reachability
-gate and validates optional `memo.start` (`HH:MM`, default `01:00`) and
-`memo.window_minutes` (positive integer, default 240). These settings do not
-replace the current `delivery.hour` schedule yet; publication and engine integration
-are separate follow-up PRs.
-
-The publication draft adds `render_memo.py`, `record_memo.py` and
-`memo_history.py` alongside the active newspaper scripts. The existing
-renderer, template, recorder and delivery finalizers remain active until
-the engine integration switches all consumers together.
-
 ## What it is
 
 The product is a **compact Letter paper**. It can open with **what Patrick
@@ -224,3 +213,11 @@ The OpenClaw runtime is pinned to `2026.9.6` by image digest, as in the base.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Draft engine integration
+
+This branch preserves the engine split out of #80. It is not ready to merge:
+the setup/config migration, priority opt-out, exact legacy cron retirement,
+entity-name command transport and product documentation cutover remain open
+review findings. The approved #59 generation floor and two critics are retained;
+changing those rules requires a product decision supported by real runs.

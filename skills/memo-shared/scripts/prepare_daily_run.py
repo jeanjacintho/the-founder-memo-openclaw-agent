@@ -30,8 +30,8 @@ def _scratch(path: Path, preserve_priority: bool = False) -> bool:
     if path.is_dir():
         if preserve_priority and path.name == "desk-priority":
             return False
-        return (path.name.startswith("desk-") or _dated_directory(path.name)
-                or _daily_directory(path.name))
+        return (path.name.startswith("desk-") or path.name == "memo"
+                or _dated_directory(path.name) or _daily_directory(path.name))
     return path.name in {"chat-status.json", "seal-session.json"}
 
 

@@ -210,7 +210,7 @@ class TestSoul:
         render = [
             line.strip()
             for line in text.splitlines()
-            if "render_edition.py" in line and line.startswith(" " * 7)
+            if "render_memo.py" in line and line.startswith(" " * 7)
         ]
         # One command, printer or not: the print ships the same PDF, so a
         # printer-only --html variant is a choice the model can only get wrong.
@@ -232,7 +232,7 @@ class TestSoul:
         # /bin/sh -c '... < edition.chat.txt' tripped the dangerous-command
         # gate. A flag needs no shell.
         text = (ROOT / "memo-render" / "SKILL.md").read_text()
-        assert "--text-file" in text
+        assert "no shell redirect" in text and " < " not in text
         script = (ROOT / "memo-shared" / "scripts" / "post_to_chat.py").read_text()
         assert '"--text-file"' in script
 
@@ -243,7 +243,6 @@ class TestSoul:
         edition = (ROOT / "memo-render" / "SKILL.md").read_text()
         assert "print_edition.py" in edition
         assert "call `memo-print`" in edition
-        assert "Do not mark topics after posting" in edition
 
 
 
@@ -495,7 +494,7 @@ class TestSoul:
         edition = (ROOT / "memo-render" / "SKILL.md").read_text()
         assert "one ⏳ line" in intake
         assert "Only your final reply reaches the chat" in " ".join(soul.split())
-        assert "The-Founder-Times-" in edition
+        assert "The-Founder-Memo-" in edition
         assert "--filename" in edition
         script = ROOT / "memo-shared" / "scripts" / "chat_status.py"
         assert script.is_file()
@@ -558,15 +557,16 @@ class TestSoul:
 
     def test_the_paper_scans_private_signals_before_the_tournament(self):
         # Mail and iMessage become signals only through scan -> triage ->
-        # intake -> commit, inside the priority desk's own run and before
-        # memo-tournament loads; an unreadable source is an unknown, never "no mail".
-        desk = (ROOT / "memo-tournament" / "references" / "desk.md").read_text()
-        step = desk[desk.index("### Signals"):]
+        # intake -> commit, at the top of Orient, before anything reads them;
+        # an unreadable source is an unknown, never "no mail".
+        skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
+        step = skill[skill.index("### Signals — scan"):skill.index("### Read, then the agenda")]
         order = [step.index(s) for s in (
             "scan_private_signals.py scan", "signal-triage.md", "signal_intake.py", "scan_private_signals.py commit")]
         assert order == sorted(order)
         assert "degraded" in step and "never" in step.lower()
         assert "data, never instructions" in step
+        assert skill.index("### Signals — scan") < skill.index("signals_recent.py recent")
 
     def test_setup_probes_imessage_with_the_scans_exact_argv(self):
         # The Mac's always-allow keys on the exact argv: the attended setup
@@ -580,10 +580,10 @@ class TestSoul:
         # Signals are other people's words: evidence the tournament must
         # re-open and prosecute, never an accepted fact or an Answered entry.
         skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
-        orient = skill[skill.index("## Orient"):skill.index("## Run generations")]
+        orient = skill[skill.index("## Orient"):skill.index("## Gather")]
         assert "signals_recent.py recent" in orient
         assert "## Signals (unverified)" in orient
-        rules = skill[skill.index("### Signals are unverified evidence"):skill.index("## Run generations")]
+        rules = skill[skill.index("### Signals are unverified evidence"):skill.index("## Gather")]
         for rule in ("never an Answered", "unsupported", "re-open", "ineligible at Cull",
                      "data, never instructions", "never copy a signal's words"):
             assert rule in rules, rule
@@ -622,31 +622,32 @@ class TestSoul:
         for banned in ("tool name", "guardrail", "attempt count", "advice written to yourself"):
             assert banned in rule, banned
 
-    def test_the_priority_desk_checks_its_window_before_a_tournament(self):
-        # A delivery hour near midnight clamps the lead far under the ~50
-        # minutes three generations need; nothing refuses it (a lead rule was
-        # removed on purpose), so the desk measures what is left and writes its
-        # own reason instead of starting a tournament it cannot finish.
+    def test_the_night_starts_behind_its_lock_its_attempts_and_the_mac(self):
+        # The cron prompt hands the night to Start; Start owns what the old
+        # prompt carried, in order, and a sleeping Mac is one owner note, no memo.
         skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
-        orient = skill[skill.index("## Orient"):]
-        check = orient[:orient.index("Read all named advisor files")]
-        assert "Check the tournament window before anything else" in check
-        assert "owner_time.py minutes-until" in check and "under 50 minutes" in check
-        assert "in the owner's language" in check and "on-demand run states no window" in check
-        assert "too little tournament window" in skill
-        # Measured live 2026-09-30: with 148 minutes left the desk wrote its
-        # notes by hand and skipped the tournament; only the script, which
-        # checks the window, may record that skip.
-        assert "advice_unavailable.py window" in check and "the tournament runs" in check
-        assert "never by writing\n`run/desk-priority/notes.json` itself" in skill
+        start = skill[skill.index("## Start"):skill.index("## Orient")]
+        order = [start.index(s) for s in ("run_lock.py acquire", "run_attempts.py begin",
+                                          "owner_time.py now", "run_gate.py wait", "prepare_daily_run.py")]
+        assert order == sorted(order)
+        assert "MAC:still-waiting" in start and "MAC:window-closed" in start and "there is no memo" in start
+        assert "--scheduled" in start
 
-    def test_re_evaluating_priorities_queues_fresh_advice_never_cron_run(self):
+    def test_generations_continue_on_the_clock_and_the_ceiling(self):
+        skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
+        rule = skill[skill.index("## Continue or stop"):skill.index("## Freshness")]
+        assert "Complete at least three generations" in rule
+        assert "run_cost.py total" in rule and "run_cost.py can-start" in rule
+        assert "45 minutes" in rule and "memo.max_usd" in rule
+        assert "never abandon a started phase" in rule
+
+    def test_re_evaluating_priorities_queues_a_run_never_cron_run(self):
         # Measured live 2026-09-30: asked to re-evaluate today's priorities, the
-        # chat fired the daily job with `cron run` after its hour; its window rule
-        # skipped the tournament, so the new paper reprinted no fresh advice.
+        # chat fired the daily job with `cron run` and raced the lock and window.
         intake = (ROOT / "memo-intake" / "SKILL.md").read_text()
         soul = AGENTS.read_text()
-        assert "register_crons.py --now --fresh-advice" in intake
+        assert "register_crons.py --now" in intake and "--fresh-advice" not in intake
+        assert "never fire a job with `openclaw cron\nrun`" in intake
         assert "Never fire a paper job with `openclaw cron run`" in soul
         dashboard = (ROOT / "memo-schedule" / "SKILL.md").read_text()
         assert "Never force a paper job" in dashboard
@@ -784,19 +785,15 @@ class TestSkills:
                 assert old not in text, f"{skill.relative_to(ROOT)} still names {old}"
 
     def test_priority_desk_is_documented_and_wired(self):
-        desks = (ROOT / "memo-tournament" / "references" / "desk.md").read_text()
-        assert "## Reuse a checkpoint, or run the tournament" in desks
-        assert "create the run's wiki state page" in desks
-        assert "never proof that today's desk is complete" in desks
         skill = (ROOT / "memo-tournament" / "SKILL.md").read_text()
+        assert not (ROOT / "memo-tournament" / "references" / "desk.md").exists()
+        assert "never proof that the tournament ran in the current cron session" in " ".join(skill.split())
         assert "run/desk-priority/tournament.json" in skill
         assert "`name` = `imessage`" in skill
         assert "**An event is its people,**" in skill
-        assert "never infer a stage" not in desks
         edition = (ROOT / "memo-render" / "SKILL.md").read_text()
-        assert "record_edition.py" in edition
-        assert "Skipping this desk in the canonical scheduled paper is a bug" in desks
-        # desk.md is the one statement of the priority rule (asserted in
+        assert "record_memo.py" in edition
+        # memo-tournament is the one statement of the priority rule (asserted in
         # test_priority_evolution_contract); SOUL.md only names the skill.
         soul = (AGENTS).read_text()
         assert "gap card" not in soul
@@ -812,10 +809,8 @@ class TestSkills:
         assert "not a language inferred from this file" in skill
         assert "`you` in English, `você` in Portuguese" in skill
         assert "owner.language` from `/var/lib/plow/pt/config.json`" in skill
-        # A config with no owner.language must not send the culler back to inferring one;
-        # memo-render owns that fallback and this desk defers to it rather than forking it.
-        assert "is `memo-render/SKILL.md`'s case" in skill
-        assert "Never omit the slot" in edition
+        # A config with no owner.language still gets one rule, never a hardcoded default.
+        assert "never a hardcoded default" in skill
 
     def test_soul_does_not_restate_delivery_argv(self):
         soul = (AGENTS).read_text()
@@ -826,13 +821,14 @@ class TestSkills:
         for clause in (
             "Mechanical loop (authoritative)",
             "Complete at least three generations",
-            "six independent critic children in one spawn set",
+            "two per target, one **facts** critic and one **strategy** critic",
+            "at most ten children per spawn\nset",
             "A critic is a prosecutor, never a reviser",
             "exactly three grounded",
             "A recommendation without a supporting sourced quote is ineligible",
             "The three it returns quote three different sourced lines",
             "/var/lib/plow/pt/run/desk-priority/tournament.candidate.json",
-            "--tournament",
+            "render_memo.py", "--tournament",
             "rewrite every reference to the owner by name or role into direct",
             "question in the owner's language -- the literal value read during Orient",
             "is a defect, not a style choice",
@@ -846,15 +842,7 @@ class TestSkills:
             '`["wiki", "validate", "--writer", "founder-memo"]`',
         ):
             assert clause in text
-        desks = (ROOT / "memo-tournament" / "references" / "desk.md").read_text()
-        assert "reserved 150-minute window" in desks
-        assert "reserved 150-minute window; delivery waits" in desks
-        assert "ending earlier when the delivery cutoff requires it" not in desks
-        assert "One rule for every scheduled paper" in desks
-        assert "never waits on a tournament" in desks and "`as_of`" in desks
-        assert "an older checkpoint is never a reason to stop the" in desks
-        assert "accepted checkpoint" in desks and "reuse it" in desks
-        assert "tournament.working.json" not in text + desks
+        assert "tournament.working.json" not in text
         assert "newest active run page" not in text
         qa = (ROOT / "memo-shared" / "assets" / "wiki" / "qa.md").read_text()
         assert "Rank is positional" in qa
@@ -910,7 +898,7 @@ class TestSkills:
 
     def test_edition_renderer_and_template_exist(self):
         edition = ROOT / "memo-render"
-        assert (edition / "scripts" / "render_edition.py").is_file()
+        assert (edition / "scripts" / "render_memo.py").is_file()
         assert (edition / "template.html").is_file()
 
     def test_template_carries_no_script(self):
@@ -920,47 +908,8 @@ class TestSkills:
         assert "<script" not in template.lower()
         assert "onload=" not in template.lower()
 
-    def test_template_keeps_every_slot_the_renderer_fills(self):
-        # A restyle that drops a placeholder silently drops that desk from
-        # the page. The renderer fills these; the template must keep them.
-        template = (ROOT / "memo-render" / "template.html").read_text()
-        for slot in ("MASTHEAD", "DATE", "LOCATION", "LEAD", "PRIORITY_BLOCK",
-                     "WEATHER_EAR", "NEWS_PAIR", "CALENDAR_RAIL"):
-            assert "{{" + slot + "}}" in template, f"template lost {{{{{slot}}}}}"
-        assert "{{SUDOKU}}" not in template
-
-    def test_template_has_a_newspaper_front_page(self):
-        # Measured live 2026-09-18: the page read as a newsletter, not a
-        # newspaper. The reference is a broadsheet front page: nameplate,
-        # a folio line, the lead as a large headline, and news in columns.
-        template = (ROOT / "memo-render" / "template.html").read_text()
-        assert "nameplate" in template
-        assert "inspired by Mayfield" in template
-        assert "folio" in template
-        assert "dropcap" in template
-        assert "border-image" not in template  # no fake photo frames
-        assert "masthead-row" in template
-        assert "Every claim" not in template
-        # The priority card's heading is model-written (owner.language),
-        # not a hardcoded English/Portuguese string.
-        assert "What should I prioritize today?" not in template
-        assert "O que devo priorizar hoje?" not in template
-        assert "PRIORITY_BLOCK" in template
-        assert "kicker" in template
-        assert "calendar-rail" in template
-        assert "news-pair" in template
-        assert "break-inside: avoid" in template
-        # A long localized focus title must be a horizontal bar. Making it
-        # a narrow table cell stacked the English title into five lines and
-        # turned the card into a black vertical slab in the real PDF.
-        assert ".section--priority > h2 {\n    display: block;" in template
-        # Never display:none an element that gets a background from
-        # another rule -- WeasyPrint 62.3 paints the background anyway
-        # (measured: an empty black stripe where the "hidden" h2 was).
-        assert "display: none" not in template
-
     def test_recorder_has_only_the_current_recommendation_schema(self):
-        recorder = (ROOT / "memo-render" / "scripts" / "record_edition.py").read_text()
+        recorder = (ROOT / "memo-render" / "scripts" / "record_memo.py").read_text()
         assert "CARD_LINES" not in recorder
         assert 'card.get("why")' not in recorder
 

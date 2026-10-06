@@ -113,7 +113,7 @@ class TestMissedPrintIsReported:
         monkeypatch.setenv("PT_HOME", str(tmp_path / "pt"))
         monkeypatch.setattr(post, "resolve_chat", lambda: ("https://api.example", "cht_1", "tok"))
         monkeypatch.setattr(post, "declare_and_upload", lambda *a, **k: "att_1")
-        monkeypatch.setattr(post, "run_record_edition", lambda *a: "RECORDED")
+        monkeypatch.setattr(post, "run_record_memo", lambda *a: "RECORDED")
         if run:
             monkeypatch.setattr(subprocess, "run", run)
         bodies = []
@@ -160,11 +160,11 @@ class TestRunRecord:
 
     def test_a_hung_recorder_times_out_instead_of_blocking_the_run(self, monkeypatch):
         def fake_run(*args, **kwargs):
-            raise subprocess.TimeoutExpired(cmd="record_edition.py", timeout=kwargs.get("timeout"))
+            raise subprocess.TimeoutExpired(cmd="record_memo.py", timeout=kwargs.get("timeout"))
 
         monkeypatch.setattr(subprocess, "run", fake_run)
-        out = post.run_record_edition("run/1/edition.json", MORNING)
-        assert out == f"edition not recorded — timed out after {post.RECORD_TIMEOUT}s"
+        out = post.run_record_memo("run/1/edition.json", MORNING)
+        assert out == f"memo not recorded — timed out after {post.RECORD_TIMEOUT}s"
 
     def test_passes_the_delivered_at_it_was_given_as_the_now_flag(self, monkeypatch):
         # issue #48: this must be the timestamp captured right before the
@@ -173,7 +173,7 @@ class TestRunRecord:
         argv = []
         monkeypatch.setattr(subprocess, "run", lambda a, **k: argv.extend(a) or
                              types.SimpleNamespace(returncode=0, stdout="RECORDED x.md", stderr=""))
-        post.run_record_edition("run/1/edition.json", MORNING)
+        post.run_record_memo("run/1/edition.json", MORNING)
         assert argv[-2:] == ["--now", MORNING.isoformat()]
 
 
@@ -191,17 +191,17 @@ class TestFinalizersRunIndependently:
         monkeypatch.setattr(post, "post_json", lambda *a, **k: None)
         if "print_page" in overrides:
             monkeypatch.setattr(post, "print_page", overrides["print_page"])
-        if "run_record_edition" in overrides:
-            monkeypatch.setattr(post, "run_record_edition", overrides["run_record_edition"])
+        if "run_record_memo" in overrides:
+            monkeypatch.setattr(post, "run_record_memo", overrides["run_record_memo"])
         monkeypatch.setattr(sys, "argv", ["post_to_chat.py", "--pdf", pdf_arg or str(pdf)])
 
     @pytest.mark.parametrize("print_result, recorded, error", [
         (None, "RECORDED", None),
         ("page not printed — lp 1", "RECORDED", None),
-        (None, "error: edition not recorded — broken",
-         r"record_edition.py <edition.json> --now \S+.*do not repost"),
-        ("page not printed — lp 1", "error: edition not recorded — broken",
-         r"record_edition.py <edition.json> --now \S+.*do not repost"),
+        (None, "error: memo not recorded — broken",
+         r"record_memo.py <edition.json> --now \S+.*do not repost"),
+        ("page not printed — lp 1", "error: memo not recorded — broken",
+         r"record_memo.py <edition.json> --now \S+.*do not repost"),
     ])
     def test_finalizers_continue_in_order(self, tmp_path, monkeypatch,
                                           print_result, recorded, error):
@@ -210,7 +210,7 @@ class TestFinalizersRunIndependently:
         self._mock_main(
             tmp_path, monkeypatch,
             print_page=lambda *a, **k: order.append("print") or print_result,
-            run_record_edition=lambda path, delivered_at: paths.append(path) or order.append("record") or recorded,
+            run_record_memo=lambda path, delivered_at: paths.append(path) or order.append("record") or recorded,
         )
         if error:
             with pytest.raises(SystemExit, match=error):
@@ -226,14 +226,14 @@ class TestFinalizersRunIndependently:
         order = []
         self._mock_main(
             tmp_path, monkeypatch, pdf_arg="bad\x00path",
-            run_record_edition=lambda *a, **k: order.append("record") or "RECORDED",
+            run_record_memo=lambda *a, **k: order.append("record") or "RECORDED",
         )
         post.main()
         assert order == ["record"]
 
     def test_record_gets_the_post_moment_not_a_clock_read_after_the_slow_print_step(
             self, tmp_path, monkeypatch):
-        # issue #48: the print step can poll for minutes; record_edition.py's
+        # issue #48: the print step can poll for minutes; record_memo.py's
         # own now must not be sampled after it, or a fast-printing edition
         # could out-race an already-recorded one that posted first but
         # printed slower.
@@ -248,7 +248,7 @@ class TestFinalizersRunIndependently:
         self._mock_main(
             tmp_path, monkeypatch,
             print_page=fake_print_page,
-            run_record_edition=lambda path, at: seen.append(at) or "RECORDED",
+            run_record_memo=lambda path, at: seen.append(at) or "RECORDED",
         )
         post.main()
         assert seen == [MORNING]
@@ -344,7 +344,7 @@ class TestPrintMissInTheOwnersLanguage:
 class TestOutboxDelivery:
     """A scheduled paper starts hours before its delivery hour. Sleeping inside
     the session until then dies (OpenClaw's exec is synchronous with a 30-min
-    ceiling), so the paper is staged in pt/outbox and the no-agent pt-deliver
+    ceiling), so the paper is staged in pt/outbox and the no-agent memo-deliver
     job posts it once its hour has come."""
 
     ZONE = ZoneInfo("America/Sao_Paulo")
@@ -366,7 +366,7 @@ class TestOutboxDelivery:
         monkeypatch.setattr(post, "declare_and_upload", lambda base, uid, token, pdf, filename=None: f"att:{Path(pdf).read_bytes().decode()}")
         monkeypatch.setattr(post, "post_json", lambda *a: posts.append(a[-1]))
         monkeypatch.setattr(post, "print_page", lambda pdf: finalized.append(("print", pdf)) and None)
-        monkeypatch.setattr(post, "run_record_edition", lambda path, at: finalized.append(("record", path)) or "RECORDED")
+        monkeypatch.setattr(post, "run_record_memo", lambda path, at: finalized.append(("record", path)) or "RECORDED")
         monkeypatch.setattr(post, "deliver_job_runs", lambda: deliver_runs)
         return home, run, posts, finalized
 
@@ -436,7 +436,7 @@ class TestOutboxDelivery:
         monkeypatch.setenv("PT_HOME", str(home))
         order, posts = [], []
         monkeypatch.setattr(post, "print_page", lambda path: order.append(("print", Path(path).name)) or None)
-        monkeypatch.setattr(post, "run_record_edition", lambda path, at: order.append(("record", Path(path).name)) or "RECORDED")
+        monkeypatch.setattr(post, "run_record_memo", lambda path, at: order.append(("record", Path(path).name)) or "RECORDED")
         monkeypatch.setattr(post, "post_json", lambda *args, **kwargs: posts.append(args))
 
         assert post.main_flush() == 0
@@ -503,7 +503,7 @@ class TestOutboxDelivery:
             "finalizers_pending": ["record"], "attempts": {},
         }))
         calls = []
-        monkeypatch.setattr(post, "run_record_edition", lambda *args: calls.append(args) or "edition not recorded — broken")
+        monkeypatch.setattr(post, "run_record_memo", lambda *args: calls.append(args) or "memo not recorded — broken")
         for _ in range(post.MAX_FINALIZER_ATTEMPTS):
             assert post.recover_delivery(ticket) == ["record"]
         assert post.recover_delivery(ticket) == ["record retry limit reached"]
@@ -524,7 +524,7 @@ class TestOutboxDelivery:
         monkeypatch.setattr(post, "persist_posted_delivery",
                             lambda *a: order.append("persist") or (_ for _ in ()).throw(OSError("disk full")))
         monkeypatch.setattr(post, "print_page", lambda *a: order.append("print") or None)
-        monkeypatch.setattr(post, "run_record_edition", lambda *a: order.append("record") or "RECORDED")
+        monkeypatch.setattr(post, "run_record_memo", lambda *a: order.append("record") or "RECORDED")
         post.deliver("https://api.example", "chat", "token", pdf=str(pdf),
                      on_posted=lambda: order.append("clear outbox"))
         assert order == ["post", "clear outbox", "persist", "print", "record"]
