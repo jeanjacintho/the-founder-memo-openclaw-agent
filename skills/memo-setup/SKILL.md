@@ -1,6 +1,6 @@
 ---
 name: memo-setup
-description: First-run conversation over chat — the start hour, a printer probed once through Latch, and whether the Mac stays awake at night — then the owner's timezone from Latch location, the config, and the one-off first read of their company. Use on the owner's first DM, including greetings (oi, oi de novo, hi, hello, hey), while pt/config.json is missing owner.timezone, memo.start or printer.configured. Never ask their timezone, name, or a personal profile. Never in a group, never in someone else's DM, and never to change one already-stored setting.
+description: First-run conversation over chat — the start hour, a printer probed once through Latch, and whether the Mac stays awake at night — then the owner's timezone from Latch location, the config, and the one-off first read of their company. Use on the owner's first DM, including greetings (oi, oi de novo, hi, hello, hey), while pt/config.json is missing owner.timezone, memo.start or printer.configured. Never ask their name or a personal profile, nor their timezone while their Mac is connected. Never in a group, never in someone else's DM, and never to change one already-stored setting.
 ---
 
 # memo-setup — the first conversation
@@ -12,7 +12,7 @@ the Mac will be awake to read, then hands over to the first read.
 the **only** record of how far it got — not the Plow Chat thread. Older
 messages about a printer after a wiped session are leftover; if the draft is
 missing, start at the hour. Do **not** ask their timezone — Latch location at
-the end supplies `owner.timezone`. Never re-ask something the draft or config
+the end supplies `owner.timezone` (without a Mac, the close step says how). Never re-ask something the draft or config
 already holds.
 
 **Every draft write, and every "what's next", goes through one script —
@@ -142,6 +142,12 @@ that time on a 24-hour clock, written `HH:MM` ("2am" → `02:00`, "11pm" →
 has actually written so far — not from this file's language, not from
 their name, not from where they are. From here on the gate prints it back
 as `LANG:` (SOUL.md).
+
+**Mac not connected?** When this turn's note says the owner's Mac (Latch) is
+not connected, there is no printer to probe and no Mac to keep awake: add
+`printer.configured=false mac.awake=false` to this same call, say in one line,
+in their language, that the memo arrives here in chat, and go straight to the
+close step (`NEXT_QUESTION` says `close`).
 
 Send only the `NEXT_QUESTION` it prints (question 2a), then stop. Do not
 also probe the printer in this reply — that happens on their *next*
@@ -284,7 +290,8 @@ no separate question to send; "close" means do the close work now).
 steps below — nothing else.** Do not open other skills (the daily run
 loads them itself), and never ask the owner for a city — not in a reply, not
 through any tool. If step 1 hasn't produced a timezone, the answer is its "can't be
-scheduled yet" message, not a question back to the owner.
+scheduled yet" message, not a question back to the owner. The one exception is
+step 1's "Mac not connected?" path, where there is no Mac to read.
 
 Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
 
@@ -304,6 +311,11 @@ Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
    loads, or none gives a usable IANA timezone, say the memo cannot be
    scheduled until the Mac can report where they are — do not invent a
    zone, do not ask them to type one.
+
+   **Mac not connected?** When this turn's note says the owner's Mac (Latch)
+   is not connected, skip the browser: ask the owner once, in their language,
+   which city or time zone they are in, then stop. On their answer, use that
+   place's IANA zone in step 2.
 2. **Write** `/var/lib/plow/pt/config.json` — with this exact bare
    invocation, never by composing the JSON yourself, never with the write tool:
 
