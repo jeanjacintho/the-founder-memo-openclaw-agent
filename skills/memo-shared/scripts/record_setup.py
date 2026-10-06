@@ -89,6 +89,12 @@ def apply_event(draft):
     draft["printer"] = {"configured": True, "url": event["print_url"], "key": event["print_key"], "paper": event["paper"]}
     draft["mac"] = {"awake": False}
     draft.setdefault("start", event["start"])  # the first memo runs now; later nights at the event's hour
+    # The event's language until the attendee writes in another one (record_owner_language):
+    # nothing else in an event setup records it, and an inferred one printed Portuguese
+    # for an English-speaking test owner (10-06).
+    owner = draft.setdefault("owner", {})
+    if isinstance(owner, dict):
+        owner.setdefault("language", event["language"])
 
 
 def _coerce(raw_value):

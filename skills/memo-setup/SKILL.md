@@ -115,7 +115,9 @@ event's print server, 72 mm) and the Mac fields itself, so the first
 `NEXT_QUESTION` is `connect`: never ask about an hour, a printer, a Mac or a city.
 The gate's `DRAFT:` line already reads `start,printer,awake` on the very first
 turn, whatever the owner wrote: the question is **connect**, never the hour, until
-it reads `connected`; then it is **close**.
+it reads `connected`; then it is **close**. The gate's `LANG:` is the event's
+language (English) from the first turn: write in it, and record another only when
+the attendee's own message is clearly in that language (`record_owner_language.py`).
 
 **connect** — call `plow_connect` once for `google` and once for `slack`, and send
 the owner one message, in their language: one line on what connecting gives their

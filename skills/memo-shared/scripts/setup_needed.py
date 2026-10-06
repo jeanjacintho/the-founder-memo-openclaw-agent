@@ -112,7 +112,17 @@ def owner_language(config_path):
         config = json.loads(config_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         config = None
-    return _language_from(config) or ""
+    from_config = _language_from(config)
+    if from_config:
+        return from_config
+    if os.environ.get("MEMO_EVENT"):
+        # Before an event install records anything, its language is the event's: the
+        # very first turn must not fall through to "record a language" and guess one.
+        event = {}
+        import record_setup  # noqa: PLC0415 -- only an event install needs it
+        record_setup.apply_event(event)
+        return _language_from(event) or ""
+    return ""
 
 
 def language_line(config_path):

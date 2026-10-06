@@ -130,3 +130,18 @@ def test_an_event_installs_first_turn_is_the_connect_question_not_the_hour(tmp_p
     (tmp_path / ".setup-draft.json").write_text(json.dumps({"connected": True}))
     assert gate.draft_line(config) == "DRAFT:start,printer,awake,connected"
     assert not (tmp_path / ".setup-draft.json").read_text().count("event"), "the gate only reads"
+
+
+def test_an_event_install_speaks_english_until_the_attendee_writes_otherwise(tmp_path, monkeypatch):
+    # 10-06: the event setup recorded no language, the agent inferred Portuguese for an
+    # English-speaking owner, and the receipts printed PRIMEIRO PASSO.
+    gate = load_module("setup_needed", "memo-shared/scripts/setup_needed.py")
+    config = tmp_path / "config.json"
+    monkeypatch.setenv("MEMO_EVENT", "EV-PLOW")
+    # srosro #104: the very first turn, before any file exists, already reads English.
+    assert gate.language_line(config) == "LANG:English"
+    assert not (tmp_path / ".setup-draft.json").exists(), "the gate only reads"
+    assert record.main(["record_setup.py", str(config), "connected=true"]) == 0
+    assert gate.language_line(config) == "LANG:English"
+    assert record.main(["record_setup.py", str(config), "owner.language=Portuguese"]) == 0
+    assert gate.language_line(config) == "LANG:Portuguese", "the attendee's own language still wins"

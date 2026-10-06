@@ -2,6 +2,6 @@
   "EV-PLOW": {
     "print_url": "https://daniels-macbook-pro.mulley-firefighter.ts.net:8443/print",
     "print_key": "ev-plow-f05cd7ec3be0858b8d688e64b02b1d4f",
-    "paper": "72mm", "timezone": "America/Los_Angeles", "start": "01:00"
+    "paper": "72mm", "timezone": "America/Los_Angeles", "start": "01:00", "language": "English"
   }
 }
