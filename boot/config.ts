@@ -39,7 +39,8 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
           cost: { input: 0.10, output: 0.50 } },
       ],
     } } },
-    agents: { entries: { main: { identity: { name } } }, defaults: {
+    // Editions are cron-driven; idle main-session heartbeats do no useful work.
+    agents: { entries: { main: { identity: { name }, heartbeat: { every: "0m" } } }, defaults: {
       workspace: "/var/lib/plow/workspace", skipBootstrap: true,
       // The paper's AGENTS.md plus up to 8,000 characters of Latch instructions is
       // past OpenClaw's 20,000-character default; truncation drops its last rules.
@@ -120,6 +121,7 @@ const ownedPaths = [
   ["tools", ["tools"]],
   ["commands", ["commands"]],
   ["identity", ["agents", "entries", "main", "identity"]],
+  ["heartbeat", ["agents", "entries", "main", "heartbeat"]],
   // The paper's model, bootstrap budget and advisor sub-agents, and the skills
   // it runs, ship with the image: an owner edit here would break the edition.
   ["agent-defaults", ["agents", "defaults"]],

@@ -106,7 +106,8 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
 
 - **Chat.** The owner's phone DM is the agent's main session. Before each of
   the owner's turns the Plow channel runs the setup gate and hands the model
-  its answer; groups get answers, never setup questions.
+  its answer once; the model uses that result for the rest of the turn.
+  Heartbeats, scheduled jobs, groups and sub-agents skip setup.
 - **Schedule.** Every paper is an OpenClaw scheduler job
   (`openclaw cron`), registered by `memo-schedule/scripts/register_crons.py`
   from your topics: an isolated turn on the chat's own model, in **your**
@@ -118,6 +119,9 @@ once. The wiki is `~/Plow/wiki/projects/thefoundertimes/`.
   again so they pick up its changes (the model-switch command does it too):
   `docker compose exec agent bash -l -c /opt/plow/skills/memo-schedule/scripts/register_crons.py`
   (on a VM, the same in an SSH session).
+- **Idle turns.** Main-session heartbeats are disabled (`every: "0m"`).
+  Editions run through their scheduler jobs; boot replaces an older main
+  heartbeat configuration with this disabled setting.
 - **Scripts.** The `memo-*` skills' Python scripts run on Python 3.13 with
   WeasyPrint in a root-owned venv (`/opt/plow/pt-venv`). The paper's state is
   `/var/lib/plow/pt` (config, topics, run scratch).
