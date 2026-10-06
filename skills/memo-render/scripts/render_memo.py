@@ -331,9 +331,8 @@ p, h1, h2, h3, ul { margin: 0; padding: 0; }
 .r-orn span { position: relative; top: -9px; padding: 0 6px; background: #fff; font-size: 11px; line-height: 1; }
 .r-owner { margin-top: 4px; font: 900 21px/1.1 "Memo Display", serif; font-variant-numeric: lining-nums;
   line-clamp: 2; }
-.r-code { margin-top: 10px; padding-top: 10px; border-top: 2px dashed #000; text-align: center; }
-.r-code span { padding: 3px 10px 4px; background: #000; color: #fff; font: 700 16px/1.3 "Memo Text", serif;
-  letter-spacing: 3px; font-variant-numeric: lining-nums; }
+.r-code { margin-top: 10px; padding-top: 7px; border-top: 2px dashed #000; text-align: center;
+  font: 700 10.5px/1.3 "Memo Text", serif; letter-spacing: 2px; font-variant-numeric: lining-nums; }
 .r-folio { margin-top: 3px; padding: 4px 0; border-top: 2px solid #000; border-bottom: 2px solid #000;
   font: 700 10.5px/1.2 "Memo Text", serif; letter-spacing: 3px; }
 .r-band { margin-top: 3px; padding: 4px 4px 5px; background: #000; color: #fff;
