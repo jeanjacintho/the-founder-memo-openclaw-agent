@@ -223,6 +223,36 @@ The sign-in is a real credential for your account, kept in the state volume
 where the agent's own tools can read it. Use it on an install only you
 talk to.
 
+## Groups, email and trust
+
+Every phone group is listen-only, including groups the agent starts from the
+owner's main DM. Every member, including the owner, gets only
+`plow_record_signal`; inbound group turns never receive replies. Owner-initiated
+messages and follow-ups requested from the owner's DM can still be posted into
+the group. The inherited
+`PLOW_THREAD_TRUST=ask|trusted|untrusted` policy and `plow_set_thread_trust`
+set the Plow trust flag, but never make a group interactive or grant Mac tools
+in this memo. In an untrusted non-owner DM the sender gets replies only,
+no tools. Non-owner senders carry their normalized phone number or email
+address as the sender id, so one person is one sender across chats; the owner
+is `plow-owner`.
+
+An email turn's final text never reaches the sender: it goes privately to the
+owner (the chat the thread was started from, else their 1:1), and mail is sent
+only with `plow_send_email`. A turn on mail from anyone but the owner has no tools, so
+an email cannot make the assistant send; the owner approves in their chat and
+the send comes from their turn. Each outside sender in a thread runs in a session of their own, so
+their mail cannot join a run the owner is in. This image does not enable OpenClaw's native
+`automations` reminders; the memo's own jobs are registered by
+`register_crons.py`.
+
+Recovery pages through unread history to the saved checkpoint; a first-contact
+owner DM scans back to its last answer. An uncertain send blocks later Plow
+mutations in the same run. Thread creation keys use the inbound source and
+normalized payload, so a new tool-call ID does not create another thread for
+that request. A new run can still explicitly send again; ordinary message sends
+have no API idempotency key.
+
 ## Known limitations
 
 - If the model provider is unreachable at the start hour, OpenClaw records the

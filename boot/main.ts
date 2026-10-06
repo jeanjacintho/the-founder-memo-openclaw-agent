@@ -37,7 +37,7 @@ try {
   const roles = roleModels() ?? { writer: route.primary, critic: route.primary };
   const prompt = (await readFile("/opt/plow/prompt/AGENTS.md", "utf8")).replaceAll("{{model}}", modelName(route))
     .replaceAll("{{writer_model}}", roles.writer).replaceAll("{{critic_model}}", roles.critic);
-  await writeFile("/var/lib/plow/workspace/AGENTS.md", await renderPrompt(prompt, identity.mcp_url, process.env.PLOW_AGENT_TOKEN, identity.agent?.web_url));
+  await writeFile("/var/lib/plow/workspace/AGENTS.md", await renderPrompt(prompt, identity.mcp_url, process.env.PLOW_AGENT_TOKEN, config.channels.plow.threadTrust, identity.agent?.web_url));
   await syncConfig(config, "/var/lib/plow/openclaw.json", "/etc/plow/openclaw");
   console.log(`plow-boot: identity resolved to ${identity.line.uid}`);
   startAgentIndex(300_000, writeLog);

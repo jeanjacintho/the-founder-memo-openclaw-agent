@@ -9,6 +9,7 @@ export type Participant =
 export type Identity = {
   agent?: { name?: string | null; web_url?: string | null };
   line: { uid: string };
+  mailbox?: { uid: string; display_name: string } | null;
   chats: { uid: string; status: string; participants: Participant[] }[];
   mcp_url?: string | null;
 };
@@ -16,10 +17,10 @@ export type Identity = {
 type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
 
 export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
+  const threadTrust = env.PLOW_THREAD_TRUST ?? "ask";
+  if (!["ask", "trusted", "untrusted"].includes(threadTrust)) throw new Error("PLOW_THREAD_TRUST must be ask, trusted, or untrusted");
   const name = identity.agent?.name;
   if (typeof name !== "string" || !name.trim()) throw new Error(`Identity has no usable agent.name: ${JSON.stringify(name)}`);
-  const email = identity.chats.flatMap(chat => chat.participants).find(p =>
-    p.type === "agent" && p.relationship === "self" && p.line.provider_type === "email");
   // Plow serves Sol with a 1,050,000-token window and publishes no price for it.
   const plowModels: PlowModel[] = [
     { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
@@ -86,15 +87,15 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     // The channel runs the memo's setup gate in a before_prompt_build hook; OpenClaw
     // registers conversation hooks of a non-bundled plugin only with this opt-in.
     plugins: { load: { paths: ["/opt/plow/plugin"] }, entries: { plow: { enabled: true, hooks: { allowConversationAccess: true } } } },
-    messages: { visibleReplies: "automatic" },
+    messages: { visibleReplies: "automatic", queue: { mode: "collect" } },
     channels: { plow: {
-      apiBase, lineUid: identity.line.uid,
+      apiBase, lineUid: identity.line.uid, threadTrust,
       // Groups are listen-only and anyone may join one, so in a group every
       // sender -- the owner too -- gets exactly one tool: recording a signal.
       // Any groups key turns on OpenClaw's group allowlist with mentions
       // required; "*" admits every group and the agent hears every message.
       groups: { "*": { requireMention: false, toolsBySender: { "*": { allow: ["plow_record_signal"] } } } },
-      ...(email?.type === "agent" ? { emailLineUid: email.line.uid } : {}),
+      ...(identity.mailbox ? { emailLineUid: identity.mailbox.uid, emailName: identity.mailbox.display_name } : {}),
     } },
     session: { dmScope: "per-account-channel-peer", groupScope: "per-group" },
     bindings: [
@@ -109,11 +110,13 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     skills: { load: { extraDirs: ["/opt/plow/skills"] }, allowBundled: ["plow-no-bundled-skills"] },
     // Keep workspace and durable memory writes local instead of routing them through the Mac relay.
     tools: {
+      message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } },
       // Keep configured research tools visible as direct model tools. OpenClaw
       // Code Mode catalogs every eligible tool behind exec/wait and has no
       // per-tool visibility allowlist.
       profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
         "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+        "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
       ], deny: ["ask_user", "secrets"],
@@ -133,6 +136,7 @@ const ownedPaths = [
   ["tools", ["tools"]],
   ["commands", ["commands"]],
   ["visible-replies", ["messages", "visibleReplies"]],
+  ["message-queue", ["messages", "queue"]],
   ["identity", ["agents", "entries", "main", "identity"]],
   ["heartbeat", ["agents", "entries", "main", "heartbeat"]],
   // The paper's model, bootstrap budget and advisor sub-agents, and the skills
