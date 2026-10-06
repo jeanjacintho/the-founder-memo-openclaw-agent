@@ -53,7 +53,7 @@ class TestSoul:
 
     def test_setup_opener_does_not_ask_timezone(self):
         text = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "A que horas você quer o jornal de manhã?" in text
+        assert "A que horas eu começo a ler, à noite?" in text
         assert "Qual seu fuso" not in text
 
     def test_soul_setup_gate_is_a_bare_script_not_python_dash_c(self):
@@ -514,13 +514,10 @@ class TestSoul:
                   + (ROOT / "memo-shared" / "scripts" / "owner_phrases.py").read_text())
         assert "CHAT_VOICE" in soul
         assert "emoji, then a space, then one or two short spoken lines" in soul
-        for mark in ("📰", "🕖", "🖨️", "⭐", "✉️", "⏳"):
+        for mark in ("📰", "🕐", "🖨️", "💤", "👂", "⏳"):
             assert mark in soul
-        assert "> 📰 " in setup
-        assert "> 🕖 " in setup
-        assert "> 🖨️ " in setup
-        assert "> ⭐ " in setup
-        assert "> ✉️ " in setup
+        for mark in ("📰", "🕐", "🖨️", "💤"):
+            assert f"> {mark} " in setup
         spoken = "\n".join(
             line for line in setup.splitlines() if line.startswith("> ")
         )
@@ -529,19 +526,23 @@ class TestSoul:
         assert '"⏳ ' in status
         assert "--busy" in status
 
-    def test_setup_asks_which_signal_sources_to_listen_to(self):
-        # Question 5 switches the priority-signal sources. Every source starts
-        # off; the owner names them, and the iMessage probe uses the scan's
-        # exact argv so the Mac's "always allow" covers the unattended scan.
+    def test_setup_leaves_signals_off_and_turns_them_on_through_their_script(self):
+        # No interview: every source starts off, and the owner turns one on later
+        # with set_signal_source.py, after the same probe the nightly scan relies on.
         soul = (AGENTS).read_text()
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "| Asking which signals to listen to | 👂 |" in soul
-        assert "> 👂 Quer que eu escute" in setup
-        assert "> 👂 Want me to listen" in setup
-        assert "NEXT_QUESTION=<hour|printer|priority|mail|signals|close>" in setup
-        for field in ("signals.group_chat", "signals.email", "signals.imessage"):
-            assert field in setup
+        assert "| Turning a signal source on or off | 👂 |" in soul
+        assert "NEXT_QUESTION=<hour|printer|awake|close>" in setup
+        assert "Every source starts off" in setup
         assert '"plow-messages", "search", "--limit", "200", "--order", "desc"' in setup
+        finalize = (ROOT / "memo-setup" / "scripts" / "finalize_setup.py").read_text()
+        assert "source: False for source in" in finalize
+
+    def test_setup_asks_whether_the_mac_stays_awake_and_says_why(self):
+        setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
+        step = setup[setup.index("**3a."):setup.index("## Close")]
+        assert "Keep Mac Awake" in step and "no memo" in step
+        assert "mac.awake=" in step and "not a reason to stop setup" in step
 
     def test_groups_are_listen_only_in_the_prompt(self):
         # A group chat is listen-only: the channel drops any reply, and the
@@ -657,11 +658,9 @@ class TestSoul:
         # handle, so it could never be a fact the advisor page rests on.
         priority = (ROOT / "memo-tournament" / "SKILL.md").read_text()
         intake = (ROOT / "memo-intake" / "SKILL.md").read_text()
-        setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
         definition = priority[priority.index("An **item** is a handle"):priority.index("is **unsupported**")]
         assert "plow_chat:<chat uid>:<message uid>" in definition and "chat_message_id.py read" in definition
         assert "chat_message_id.py" in intake and "HANDLE:none" in intake
-        assert "chat_message_id.py" in setup
 
     def test_signal_sources_change_later_only_through_their_script(self):
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
@@ -691,7 +690,7 @@ class TestSoul:
         # before. memo-setup/SKILL.md is the one place that rule lives.
         assert "record_setup.py" in soul and "NEXT_QUESTION" in soul
         assert '"yes"' in setup and '"sim"' in setup
-        assert "local_hour=07:00" in setup
+        assert "start=01:00" in setup
 
     def test_setup_writes_the_draft_only_through_record_setup(self):
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
@@ -703,7 +702,7 @@ class TestSoul:
         assert "never a hand-edited" in setup
         assert "record_setup.py" in setup
         assert "NEXT_QUESTION" in setup
-        for field in ("printer.configured", "mail.configured"):
+        for field in ("printer.configured", "mac.awake"):
             assert field in setup
 
     def test_soul_does_not_gate_the_hour_answer_behind_draft_none(self):
@@ -755,15 +754,6 @@ class TestSkills:
             head = skill.read_text()
             assert head.startswith("---"), f"{d.name}/SKILL.md has no frontmatter"
             assert f"name: {d.name}" in head, f"{d.name}/SKILL.md frontmatter name mismatch"
-
-    def test_setup_asks_about_the_priority_file(self):
-        text = (ROOT / "memo-setup" / "SKILL.md").read_text()
-        assert "NEXT_QUESTION=priority" in text
-        assert "trying to make true" in text
-        assert not (ROOT / "memo-setup" / "assets" / "prioritization.template.md").exists()
-        section = text.split("## NEXT_QUESTION=priority", 1)[1].split("\n## ", 1)[0]
-        assert "stays as it was" in section.lower()
-        assert "leave it alone" not in section.lower()
 
     def test_no_skill_points_at_the_pre_wiki_homes(self):
         # The goals, the desk's Q&A and the owner's advisors moved into ~/Plow/wiki.

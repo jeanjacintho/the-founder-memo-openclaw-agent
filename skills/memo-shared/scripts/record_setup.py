@@ -27,10 +27,10 @@ the owner everything.
 Each `key` is a dot-path merged into `.setup-draft.json` (a sibling file of
 <config.json path>); a key with no dot is a top-level field. "true"/"false"
 (any case) parse as booleans, everything else is kept as a string -- so
-"07:00" is written as the string "07:00", and "true"/"false" for
-printer.configured / priority.configured / mail.configured are real JSON booleans, not the
-strings "true"/"false" (the gate and setup_needed.py's draft_line both
-require isinstance(..., bool)).
+"01:00" is written as the string "01:00", and "true"/"false" for
+printer.configured / mac.awake are real JSON booleans, not the strings
+"true"/"false" (the gate and setup_needed.py's draft_line both require
+isinstance(..., bool)).
 
 A value containing a space needs its own shell quoting, same as any other
 command argument -- e.g. printer.name="HP LaserJet 4" -- nothing here reads
@@ -39,7 +39,7 @@ JSON off argv, so there is no `{`/`}`/inner-quote escaping to get wrong.
 Prints two lines on success:
 
     DRAFT:<comma-joined fields already recorded, or "none">
-    NEXT_QUESTION=<hour|printer|priority|mail|news|signals|close>
+    NEXT_QUESTION=<hour|printer|awake|close>
 
 memo-setup's SKILL.md reads NEXT_QUESTION to decide what to ask -- never by
 re-deriving "what's next" from the draft's shape itself, and never from
@@ -64,8 +64,8 @@ from pt_paths import config_file  # noqa: E402
 DEFAULT_CONFIG = str(config_file())
 # The order memo-setup/SKILL.md's questions are asked in, plus the close step.
 # next_question() returns the first of these whose draft field is missing.
-QUESTION_ORDER = ("hour", "printer", "priority", "mail", "signals")
-# The priority-signal sources question 5 switches; all three must be recorded.
+QUESTION_ORDER = ("hour", "printer", "awake")
+# The priority-signal sources; setup leaves every one off (memo-intake turns them on).
 SIGNAL_SOURCES = ("group_chat", "email", "imessage")
 
 
@@ -112,21 +112,15 @@ def next_question(draft):
     """The first interview field still missing from the draft, in
     memo-setup/SKILL.md's own question order. Each step advances only once
     its own field lands in the draft."""
-    hour = draft.get("local_hour")
+    hour = draft.get("start")
     if not (isinstance(hour, str) and hour.strip()):
         return "hour"
     printer = draft.get("printer")
     if not (isinstance(printer, dict) and isinstance(printer.get("configured"), bool)):
         return "printer"
-    priority = draft.get("priority")
-    if not (isinstance(priority, dict) and isinstance(priority.get("configured"), bool)):
-        return "priority"
-    mail = draft.get("mail")
-    if not (isinstance(mail, dict) and isinstance(mail.get("configured"), bool)):
-        return "mail"
-    signals = draft.get("signals")
-    if not (isinstance(signals, dict) and all(isinstance(signals.get(s), bool) for s in SIGNAL_SOURCES)):
-        return "signals"
+    mac = draft.get("mac")
+    if not (isinstance(mac, dict) and isinstance(mac.get("awake"), bool)):
+        return "awake"
     return "close"
 
 

@@ -19,78 +19,47 @@ class TestNextQuestion:
         assert record.next_question({}) == "hour"
 
     def test_hour_only_asks_printer(self):
-        assert record.next_question({"local_hour": "07:00"}) == "printer"
+        assert record.next_question({"start": "01:00"}) == "printer"
 
     def test_blank_hour_still_asks_hour(self):
-        assert record.next_question({"local_hour": "  "}) == "hour"
+        assert record.next_question({"start": "  "}) == "hour"
 
     def test_printer_without_configured_bool_asks_printer(self):
-        draft = {"local_hour": "07:00", "printer": {"name": "HP"}}
+        draft = {"start": "01:00", "printer": {"name": "HP"}}
         assert record.next_question(draft) == "printer"
-
-    def test_hour_and_printer_asks_priority(self):
-        draft = {"local_hour": "07:00", "printer": {"configured": False, "name": None}}
-        assert record.next_question(draft) == "priority"
-
-    def test_priority_is_asked_after_printer(self):
-        draft = {"local_hour": "07:30", "printer": {"configured": False}}
-        assert record.next_question(draft) == "priority"
-        draft["priority"] = {"configured": True}
-        assert record.next_question(draft) == "mail"
-
-    def test_hour_printer_priority_asks_mail(self):
-        draft = {"local_hour": "07:00", "printer": {"configured": False, "name": None},
-                 "priority": {"configured": False}}
-        assert record.next_question(draft) == "mail"
-
-    def test_hour_printer_mail_asks_signals(self):
-        draft = {
-            "local_hour": "07:00",
-            "printer": {"configured": True, "name": "HP LaserJet 4"},
-            "priority": {"configured": False},
-            "mail": {"configured": False},
-        }
-        assert record.next_question(draft) == "signals"
-
-    def test_everything_present_is_close(self):
-        draft = {
-            "local_hour": "07:00",
-            "printer": {"configured": True, "name": "HP LaserJet 4"},
-            "priority": {"configured": True},
-            "mail": {"configured": True},
-                "signals": {"group_chat": False, "email": True, "imessage": False},
-        }
-        assert record.next_question(draft) == "close"
-
-    @pytest.mark.parametrize("signals", [
-        {"group_chat": True},
-        {"group_chat": True, "email": False, "imessage": "false"},
-        "all",
-    ])
-    def test_incomplete_signals_is_still_open(self, signals):
-        draft = {"local_hour": "07:00", "printer": {"configured": False}, "priority": {"configured": True},
-                 "mail": {"configured": True}, "signals": signals}
-        assert record.next_question(draft) == "signals"
 
     def test_printer_configured_string_not_bool_asks_printer(self):
         # A stray {"printer": {"configured": "true"}} (string, not bool) --
         # the gate and draft_line both require an actual JSON boolean.
-        draft = {"local_hour": "07:00", "printer": {"configured": "true"}}
+        draft = {"start": "01:00", "printer": {"configured": "true"}}
         assert record.next_question(draft) == "printer"
+
+    def test_hour_and_printer_asks_whether_the_mac_stays_awake(self):
+        draft = {"start": "01:00", "printer": {"configured": False, "name": None}}
+        assert record.next_question(draft) == "awake"
+
+    @pytest.mark.parametrize("awake", [True, False])
+    def test_any_answer_about_the_mac_closes(self, awake):
+        draft = {"start": "01:00", "printer": {"configured": False}, "mac": {"awake": awake}}
+        assert record.next_question(draft) == "close"
+
+    def test_awake_as_a_string_is_still_open(self):
+        draft = {"start": "01:00", "printer": {"configured": False}, "mac": {"awake": "yes"}}
+        assert record.next_question(draft) == "awake"
 
 
 class TestApplyPairs:
     def test_top_level_string(self):
-        draft = record.apply_pairs({}, ["local_hour=07:00"])
-        assert draft == {"local_hour": "07:00"}
+        draft = record.apply_pairs({}, ["start=01:00"])
+        assert draft == {"start": "01:00"}
 
     def test_dotted_path_creates_nested_dict(self):
         draft = record.apply_pairs({}, ["printer.configured=true", "printer.name=HP"])
         assert draft == {"printer": {"configured": True, "name": "HP"}}
 
     def test_boolean_coercion_is_case_insensitive(self):
-        draft = record.apply_pairs({}, ["mail.configured=FALSE"])
-        assert draft["mail"]["configured"] is False
+        draft = record.apply_pairs({}, ["mac.awake=FALSE"])
+        assert draft["mac"]["awake"] is False
 
     def test_value_with_spaces_stays_one_string(self):
         # argv splitting happens in the shell, not here -- apply_pairs sees
@@ -105,14 +74,14 @@ class TestApplyPairs:
 
     def test_no_equals_sign_raises(self):
         try:
-            record.apply_pairs({}, ["local_hour"])
+            record.apply_pairs({}, ["start"])
             raise AssertionError("expected ValueError")
         except ValueError:
             pass
 
     def test_blank_key_raises(self):
         try:
-            record.apply_pairs({}, ["=07:00"])
+            record.apply_pairs({}, ["=01:00"])
             raise AssertionError("expected ValueError")
         except ValueError:
             pass
@@ -121,43 +90,36 @@ class TestApplyPairs:
 class TestCLI:
     def test_writes_draft_and_prints_next_question(self, tmp_path, capsys):
         config = tmp_path / "config.json"
-        rc = record.main(["record_setup.py", str(config), "local_hour=07:00"])
+        rc = record.main(["record_setup.py", str(config), "start=01:00"])
         assert rc == 0
         out = capsys.readouterr().out.strip().splitlines()
-        assert out == ["DRAFT:local_hour", "NEXT_QUESTION=printer"]
-        assert draft_of(tmp_path) == {"local_hour": "07:00"}
+        assert out == ["DRAFT:start", "NEXT_QUESTION=printer"]
+        assert draft_of(tmp_path) == {"start": "01:00"}
 
     def test_second_call_advances_from_disk_state(self, tmp_path, capsys):
         config = tmp_path / "config.json"
-        record.main(["record_setup.py", str(config), "local_hour=07:00"])
+        record.main(["record_setup.py", str(config), "start=01:00"])
         capsys.readouterr()
         rc = record.main(
             ["record_setup.py", str(config), "printer.configured=true", "printer.name=HP LaserJet 4"]
         )
         assert rc == 0
         out = capsys.readouterr().out.strip().splitlines()
-        assert out == ["DRAFT:local_hour,printer", "NEXT_QUESTION=priority"]
+        assert out == ["DRAFT:start,printer", "NEXT_QUESTION=awake"]
         assert draft_of(tmp_path) == {
-            "local_hour": "07:00",
+            "start": "01:00",
             "printer": {"configured": True, "name": "HP LaserJet 4"},
         }
 
     def test_full_sequence_reaches_close(self, tmp_path, capsys):
         config = tmp_path / "config.json"
-        record.main(["record_setup.py", str(config), "local_hour=07:00"])
+        record.main(["record_setup.py", str(config), "start=01:00", "owner.language=English"])
         record.main(["record_setup.py", str(config), "printer.configured=false"])
-        record.main(["record_setup.py", str(config), "priority.configured=false"])
         capsys.readouterr()
-        rc = record.main(["record_setup.py", str(config), "mail.configured=true"])
+        rc = record.main(["record_setup.py", str(config), "mac.awake=true"])
         assert rc == 0
         out = capsys.readouterr().out.strip().splitlines()
-        assert out == ["DRAFT:local_hour,printer,priority,mail", "NEXT_QUESTION=signals"]
-        rc = record.main(["record_setup.py", str(config), "signals.group_chat=true",
-                          "signals.email=false", "signals.imessage=false"])
-        assert rc == 0
-        out = capsys.readouterr().out.strip().splitlines()
-        assert out == ["DRAFT:local_hour,printer,priority,mail,signals", "NEXT_QUESTION=close"]
-        assert draft_of(tmp_path)["signals"] == {"group_chat": True, "email": False, "imessage": False}
+        assert out == ["DRAFT:start,printer,awake", "NEXT_QUESTION=close"]
 
     def test_too_few_args_is_a_usage_error(self, capsys):
         rc = record.main(["record_setup.py"])
@@ -173,11 +135,11 @@ class TestCLI:
 
     def test_existing_draft_on_disk_is_preserved_and_extended(self, tmp_path, capsys):
         config = tmp_path / "config.json"
-        (tmp_path / ".setup-draft.json").write_text(json.dumps({"local_hour": "08:30"}))
+        (tmp_path / ".setup-draft.json").write_text(json.dumps({"start": "02:30"}))
         capsys.readouterr()
         record.main(["record_setup.py", str(config), "printer.configured=true", "printer.name=Canon"])
         assert draft_of(tmp_path) == {
-            "local_hour": "08:30",
+            "start": "02:30",
             "printer": {"configured": True, "name": "Canon"},
         }
 
@@ -186,16 +148,14 @@ class TestDoneClearsTheDraft:
     """The close step tells memo-setup to delete .setup-draft.json. It used to
     say so with no command attached, and a live run reached for
     `python3 -c "import os; os.remove(...)"` -- tripping the dangerous-command
-    gate and handing the owner an /approve prompt instead of their newspaper.
+    gate and handing the owner an /approve prompt instead of their memo.
     Deleting the draft IS a draft write, so it goes through this script like
     every other one, as a bare invocation."""
 
     COMPLETE = {
-        "local_hour": "07:00",
+        "start": "01:00",
         "printer": {"configured": True, "name": "virtual_printer_online"},
-        "priority": {"configured": False},
-        "mail": {"configured": True},
-        "signals": {"group_chat": False, "email": True, "imessage": False},
+        "mac": {"awake": True},
     }
 
     def write_draft(self, tmp_path, draft):
@@ -216,7 +176,7 @@ class TestDoneClearsTheDraft:
         assert "DRAFT:cleared" in capsys.readouterr().out
 
     def test_done_refuses_a_half_finished_draft(self, tmp_path, capsys):
-        draft_path = self.write_draft(tmp_path, {"local_hour": "07:00"})
+        draft_path = self.write_draft(tmp_path, {"start": "01:00"})
         rc = record.main(["record_setup.py", str(tmp_path / "config.json"), "--done"])
         assert rc == 1
         assert draft_path.exists(), "a mid-interview draft must survive"
@@ -225,7 +185,7 @@ class TestDoneClearsTheDraft:
     def test_done_does_not_mix_with_key_value_pairs(self, tmp_path):
         self.write_draft(tmp_path, self.COMPLETE)
         rc = record.main(
-            ["record_setup.py", str(tmp_path / "config.json"), "--done", "mail.configured=true"]
+            ["record_setup.py", str(tmp_path / "config.json"), "--done", "mac.awake=true"]
         )
         assert rc == 1
 
