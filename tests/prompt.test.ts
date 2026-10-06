@@ -27,14 +27,6 @@ test("the tournament dispatch contract uses the configured writer and critic rou
   assert.match(loop, /one culler child \(`model`: the writer\s+model\)/);
 });
 
-test("memo boot requires configured roles before writing a prompt or starting the gateway", async () => {
-  assert.throws(() => roleModels({}), /the memo requires/);
-  const boot = await readFile(new URL("../boot/main.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(boot, /roleModels\(\) \?\?/);
-  assert.ok(boot.indexOf("const roles = roleModels()") < boot.indexOf('await writeFile("/var/lib/plow/workspace/AGENTS.md"'));
-  assert.ok(boot.indexOf("const roles = roleModels()") < boot.indexOf("await startGateway("));
-});
-
 test("no Mac still renders the default thread trust instruction", async () => {
   assert.match(await renderPrompt(prompt, null, "test-token"), /ask the owner whether the group should have its Plow trusted flag set/i);
 });

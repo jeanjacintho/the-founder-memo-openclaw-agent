@@ -14,7 +14,7 @@ guess, and the layout is code.
 
 **Never write HTML.** Write `/var/lib/plow/pt/run/memo/edition.json` (the name
 `post_to_chat.py` looks for beside the PDF it posts) with the run's numbers from
-`run_cost.py total --since-minutes <minutes since the run started>`:
+`run_cost.py total --started <RUN_STARTED>`:
 
 ```json
 {

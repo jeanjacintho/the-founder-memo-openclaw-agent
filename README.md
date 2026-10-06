@@ -78,6 +78,9 @@ cd the-founder-memo-openclaw-agent
 plow-agents login                 # text the printed code
 plow-agents lines                 # pick a free line
 plow-agents mint LINE_UID         # writes ./plow-credentials before the first up
+
+# Before the first up, add the required role models and prices (see Model below).
+# Edit ./plow-credentials with the values for your install.
 docker compose up --build -d
 docker compose logs -f agent      # wait for: plow-boot: identity resolved … and [gateway] ready
 ```
@@ -172,7 +175,8 @@ once. The wiki is `~/Plow/wiki/projects/founder-memo/`.
 ## Model
 
 Every install runs on Plow's GPT-6 Sol (`plow/openai/gpt-6-sol`). A
-one-click install has nothing to configure and never leaves it. The memo's
+one-click install must also supply the [required role models and prices](#model)
+before boot; without them the agent stays parked. The memo's
 research runs are long tool loops: on Luna they gave up before research, on
 Sol they finish.
 

@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """The memo's time-bounded spend from OpenClaw transcript usage events.
 
-    run_cost.py total --since-minutes N
+    run_cost.py total --started ISO-8601
     run_cost.py can-start --spent <usd|null> --longest <usd> --max <usd>
 
 Reads the local stores read-only, including every call in a resumed session.
 The pinned Agent Index client already shipped in the image owns compressed-event
 decoding and timestamp interpretation; this adapter prices its events for the
-memo's minute window, without running the reporter or contacting the Index.
+memo's fixed run window, without running the reporter or contacting the Index.
 Unknown prices or token counts never become a smaller numeric total. Cached
-usage requires an explicit cache price too. Unknown spend refuses another
-generation; the caller proceeds to Freshness and Publish.
+usage requires an explicit cache price too. Unknown spend refuses further
+research; the caller proceeds to Publish.
 """
 from __future__ import annotations
 
 import argparse
 from contextlib import closing
 from decimal import Decimal, InvalidOperation
+from datetime import datetime
 import importlib.util
 import json
 import os
@@ -119,7 +120,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="run_cost.py")
     sub = p.add_subparsers(dest="cmd", required=True)
     t = sub.add_parser("total")
-    t.add_argument("--since-minutes", type=int, required=True)
+    t.add_argument("--started", required=True)
     c = sub.add_parser("can-start")
     c.add_argument("--spent", type=lambda v: None if v == "null" else _usd(v), required=True)
     for flag in ("--longest", "--max"):
@@ -128,12 +129,13 @@ def main(argv=None):
     if a.cmd == "can-start":
         return 0 if can_start(a.spent, a.longest, a.max) else 1
     try:
-        if a.since_minutes <= 0:
-            raise ValueError("--since-minutes must be positive")
+        started = datetime.fromisoformat(a.started)
+        if started.tzinfo is None:
+            raise ValueError("--started must include a timezone offset")
         with open(PROVIDER_CONFIG, encoding="utf-8") as f:
             table = prices(json.load(f, parse_float=Decimal))
         until = int(time.time() * 1000)
-        out = summary(events(until - a.since_minutes * 60_000, until), table)
+        out = summary(events(int(started.timestamp() * 1000), until), table)
     except (OSError, ValueError, KeyError, TypeError, RuntimeError, InvalidOperation, sqlite3.Error) as exc:
         print(f"run_cost: {exc}", file=sys.stderr)
         return 1

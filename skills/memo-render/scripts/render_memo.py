@@ -277,10 +277,6 @@ def render(memo, template_text=None):
     if status(language) != "ready":
         raise CardError("owner phrases need translation before rendering the memo")
     body = priorities_html(memo, language)
-    questions = memo.get("priority", {}).get("questions")
-    if questions:  # the owner's answers are what make tomorrow's advice better informed
-        items = "".join(f"<li>{_esc(q)}</li>" for q in questions)
-        body += f'\n<section class="questions"><h3>{_esc(phrase("page.questions", language))}</h3><ul>{items}</ul></section>'
     text = template_text if template_text is not None else TEMPLATE.read_text(encoding="utf-8")
     for slot, value in {
         "{{LANG}}": _esc(language), "{{MASTHEAD}}": _esc(MASTHEAD),
@@ -293,14 +289,19 @@ def render(memo, template_text=None):
 
 
 def priorities_html(memo, language):
-    """The three ranked recommendations, or why the night has none."""
+    """The three ranked recommendations and questions, or why the night has none."""
     if "priority" in memo:
-        return "\n".join(priority_html(rank, item, language)
+        body = "\n".join(priority_html(rank, item, language)
                          for rank, item in enumerate(memo["priority"]["recommendations"], 1))
-    items = "".join(f"<li>{_esc(r)}</li>" for r in memo["could_not_source"])
-    return (f'<section class="unavailable"><h3>{_esc(phrase("page.could_not_source", language))}</h3>'
-            f"<ul>{items}</ul></section>")
-
+    else:
+        items = "".join(f"<li>{_esc(r)}</li>" for r in memo["could_not_source"])
+        body = (f'<section class="unavailable"><h3>{_esc(phrase("page.could_not_source", language))}</h3>'
+                f"<ul>{items}</ul></section>")
+    questions = memo.get("priority", {}).get("questions")
+    if questions:
+        items = "".join(f"<li>{_esc(q)}</li>" for q in questions)
+        body += f'\n<section class="questions"><h3>{_esc(phrase("page.questions", language))}</h3><ul>{items}</ul></section>'
+    return body
 
 # A 72 mm thermal roll (printer.paper "72mm"; Star TSP100). The Letter page shrunk
 # to 72 mm prints ~2.5 pt type, so the roll gets its own page with the same card.
@@ -325,14 +326,10 @@ blockquote { margin: 6px 0 0; padding-top: 4px; border-top: 1px solid #000; font
 def receipt_html(memo):
     """The roll's page: the same card as the Letter page, at 72 mm."""
     language = memo["language"]
-    questions = memo.get("priority", {}).get("questions") or []
-    items = "".join(f"<li>{_esc(q)}</li>" for q in questions)
-    question_html = (f'<section class="questions"><h3>{_esc(phrase("page.questions", language))}</h3><ul>{items}</ul></section>'
-                     if items else "")
     return (f'<!doctype html><html lang="{_esc(language)}"><head><meta charset="utf-8">'
             f"<style>{RECEIPT_CSS}</style></head><body>"
             f'<p class="r-masthead">{_esc(MASTHEAD)}</p><p class="r-date">{_esc(memo["date"])}</p>'
-            f"{priorities_html(memo, language)}{question_html}"
+            f"{priorities_html(memo, language)}"
             f"<footer>{_esc(cost_line(memo['run'], language))}</footer></body></html>")
 
 

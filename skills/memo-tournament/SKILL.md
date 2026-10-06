@@ -414,7 +414,7 @@ tournament metadata across separate canonical files.
 
 The budget takes precedence over finishing three generations. Before every spawn set, and
 before starting each generation, run
-`/opt/plow/skills/memo-shared/scripts/run_cost.py total --since-minutes <minutes so far, at least 1>`.
+`/opt/plow/skills/memo-shared/scripts/run_cost.py total --started <RUN_STARTED>`.
 Keep its `usd` and the costliest completed spawn set's cost on `RUN_PAGE` (0 before the first set).
 Then run
 `/opt/plow/skills/memo-shared/scripts/run_cost.py can-start --spent <usd or null> --longest <costliest completed spawn set's usd> --max <memo.max_usd from pt/config.json, default 100>`.
@@ -435,7 +435,7 @@ language, release the lock and stop — no memo, no print and no inferred compan
 ## Continue or stop
 
 The conductor decides after each Generation coordinator returns. Run
-`/opt/plow/skills/memo-shared/scripts/run_cost.py total --since-minutes <minutes so far, at least 1>`;
+`/opt/plow/skills/memo-shared/scripts/run_cost.py total --started <RUN_STARTED>`;
 the generation's cost is the change in `usd` since the last check (unknown when either is `null`),
 and its duration the change in minutes so far. Record both on `RUN_PAGE`. Then:
 
