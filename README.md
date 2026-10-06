@@ -48,7 +48,11 @@ You do not fill a profile. Setup asks when to start, whether there is a
 printer, and whether the Mac stays awake at night. A minute later it does a
 first full read of your company and texts you what it thinks your company is,
 so you can correct it before the first night. Reply to any memo to correct it
-or answer one of its questions.
+or answer one of its questions. Ask to print it again to reprint the last
+posted PDF without a new research run. For development, explicitly ask to
+print a draft: it prints the current edition JSON and validation failures,
+stamped DRAFT, even if incomplete or old. This diagnostic print is not final
+advice and does not replace the last delivered memo.
 
 If a source cannot be read, the memo says so — it does not invent the paragraph.
 It reports. It does not act on what it finds: no purchases, no bookings, no

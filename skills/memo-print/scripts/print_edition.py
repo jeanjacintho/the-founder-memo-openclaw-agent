@@ -42,7 +42,7 @@ from printer_config import read_printer as _printer
 RECEIPT_MEDIA = "X72MMY2000MM"
 
 PATH_RE = re.compile(
-    r"(/Users/[^\s'\"]+/Plow/pt/edition-[0-9-]+\.pdf(?:\.b64)?)"
+    r"(/Users/[^\s'\"]+/Plow/pt/edition-[0-9-]+(?:-draft)?\.pdf(?:\.b64)?)"
 )
 
 
@@ -191,9 +191,9 @@ def require_exit_zero(call_tool, result, step):
         sys.exit(f"error: {step} {result['exit_code']}: {output}")
 
 
-def ship(pdf_path, printer, date, call_tool, lp_options=()):
+def ship(pdf_path, printer, date, call_tool, lp_options=(), *, draft=False):
     pdf = read_pdf(pdf_path)
-    dest_b64 = mac_b64_path(date)
+    dest_b64 = mac_b64_path(f"{date}-draft" if draft else date)
 
     wrote = call_tool(
         "plow_write_file",

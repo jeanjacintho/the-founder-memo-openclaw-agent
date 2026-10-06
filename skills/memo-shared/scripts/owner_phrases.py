@@ -40,6 +40,9 @@ PRINT_TIMEOUT_NOTE = "outcome unknown: still running after {seconds}s"
 
 # The English source: every key a translation must carry, with its placeholders.
 SOURCE = {
+    "draft.unverified": "Incomplete development snapshot; no checkpoint or freshness verification. Not final advice.",
+    "draft.problems": "Unverified / incomplete",
+    "draft.content": "Available content",
     "chat.busy": "⏳ Hang on a sec — still setting up.",
     "chat.busy_still": "⏳ Still on it — back in a moment.",
     "print.lede": "page not printed — ",
@@ -64,6 +67,9 @@ SOURCE = {
 
 # Curated Portuguese: the paper's first language, never left to a translation.
 PORTUGUESE = {
+    "draft.unverified": "Retrato incompleto para desenvolvimento; sem verificar conclusão ou atualidade. Não é aconselhamento final.",
+    "draft.problems": "Não verificado / incompleto",
+    "draft.content": "Conteúdo disponível",
     "chat.busy": "⏳ Um instante — tô nessa.",
     "chat.busy_still": "⏳ Ainda nisso — já já eu falo.",
     "print.lede": "página não impressa — ",

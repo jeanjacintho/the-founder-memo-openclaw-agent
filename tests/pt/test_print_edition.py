@@ -233,3 +233,10 @@ class TestShip:
             "plow_run_command",
             "plow_run_applescript",
         ]
+
+
+def test_draft_path_is_distinct_and_resolves_from_latch():
+    path = "/Users/test/Plow/pt/edition-2026-10-06-draft.pdf.b64"
+    assert pe.written_path({"path": path}) == path
+    assert pe.pdf_path_from_b64(path).endswith("-draft.pdf")
+    assert pe.mac_b64_path("2026-10-06-draft") != pe.mac_b64_path("2026-10-06")
