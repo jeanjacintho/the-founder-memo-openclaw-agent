@@ -5,6 +5,15 @@ description: First-run conversation over chat — the start hour, a printer prob
 
 # memo-setup — the first conversation
 
+**No Mac?** If this turn has no Mac (Latch) tools (`plow__plow_run_command`,
+`plow_browser`) or says the owner's Mac (Latch) is not connected:
+- Ask only the start hour. In that same `record_setup.py` call add
+  `printer.configured=false mac.awake=false`: never ask about a printer or Keep
+  Mac Awake. Say in one line that the memo arrives here in chat.
+- At close, ask the owner once which city or time zone they are in, then
+  finalize with that place's IANA zone (Close, step 1).
+- Never say the memo can't be scheduled because the Mac can't report a location.
+
 There is no interview. The memo learns the company by reading the owner's Mac,
 not by asking: setup settles when it runs, whether it can print, and whether
 the Mac will be awake to read, then hands over to the first read.
@@ -143,8 +152,7 @@ has actually written so far — not from this file's language, not from
 their name, not from where they are. From here on the gate prints it back
 as `LANG:` (SOUL.md).
 
-**Mac not connected?** When this turn's note says the owner's Mac (Latch) is
-not connected, there is no printer to probe and no Mac to keep awake: add
+**No Mac?** (the block at the top) There is no printer to probe and no Mac to keep awake: add
 `printer.configured=false mac.awake=false` to this same call, say in one line,
 in their language, that the memo arrives here in chat, and go straight to the
 close step (`NEXT_QUESTION` says `close`).
@@ -288,10 +296,8 @@ no separate question to send; "close" means do the close work now).
 
 **The moment `NEXT_QUESTION` says `close`, do only the three numbered
 steps below — nothing else.** Do not open other skills (the daily run
-loads them itself), and never ask the owner for a city — not in a reply, not
-through any tool. If step 1 hasn't produced a timezone, the answer is its "can't be
-scheduled yet" message, not a question back to the owner. The one exception is
-step 1's "Mac not connected?" path, where there is no Mac to read.
+loads them itself). Ask the owner for a city only as step 1 says — not
+through any other tool, never before step 1 has failed or found no Mac.
 
 Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
 
@@ -307,15 +313,13 @@ Do not write `pt/config.json` until `NEXT_QUESTION` says `close`:
    `https://ifconfig.co/json`. Stop after these three; an empty or
    malformed body is a real "can't determine" answer, not a reason to try
    the next. `plow_browser` `action: "text"` reads the JSON back; the IANA
-   zone is `time_zone` / `timezone`. Then `plow_browser_close`. If no provider
-   loads, or none gives a usable IANA timezone, say the memo cannot be
-   scheduled until the Mac can report where they are — do not invent a
-   zone, do not ask them to type one.
+   zone is `time_zone` / `timezone`. Then `plow_browser_close`.
 
-   **Mac not connected?** When this turn's note says the owner's Mac (Latch)
-   is not connected, skip the browser: ask the owner once, in their language,
-   which city or time zone they are in, then stop. On their answer, use that
-   place's IANA zone in step 2.
+   **Location not read, for any reason** — no Mac, the browser or Latch
+   unavailable, no provider loads, or none gives a usable IANA timezone: ask
+   the owner once, in their language, which city or time zone they are in,
+   then stop. On their answer, use that place's IANA zone in step 2. Never
+   invent a zone, and never answer that the memo can't be scheduled.
 2. **Write** `/var/lib/plow/pt/config.json` — with this exact bare
    invocation, never by composing the JSON yourself, never with the write tool:
 

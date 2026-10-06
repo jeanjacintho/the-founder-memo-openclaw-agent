@@ -410,7 +410,8 @@ class TestSoul:
         # a cross-reference to desks.md's rule.
         setup = (ROOT / "memo-setup" / "SKILL.md").read_text()
         close = " ".join(setup.split("## Close:", 1)[1].split())
-        assert "not through any tool" in close
+        assert "not through any other tool" in close
+        assert "Location not read, for any reason" in close
         assert "Em que cidade" in close or "do only the three numbered" in close
 
     def test_setup_never_narrates_its_own_step_classification(self):
