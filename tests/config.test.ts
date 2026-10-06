@@ -55,9 +55,9 @@ test("group chats get their own binding and only the signal tool, for everyone",
 });
 
 test("mailbox and group chats cannot displace the owner's DM", () => {
-  const config = renderConfig({ ...identity, chats: [...identity.chats,
+  const config = renderConfig({ ...identity, mailbox: { uid: "ln_mail", display_name: "Elm" }, chats: [...identity.chats,
     { uid: "cht_email", status: "active", participants: [
-      { type: "agent", relationship: "self", line: { uid: "ln_mail", provider_type: "email" } },
+      { type: "agent", relationship: "self", line: { uid: "ln_mail" } },
       { type: "member", role: "owner", uid: "mem_owner" },
     ] },
     { ...identity.chats[0], uid: "cht_group", participants: [...identity.chats[0].participants,
@@ -66,6 +66,11 @@ test("mailbox and group chats cannot displace the owner's DM", () => {
   ] }, "http://api:8000");
   assert.ok(!("ownerChatUid" in config.channels.plow));
   assert.equal(config.channels.plow.emailLineUid, "ln_mail");
+});
+
+test("the mailbox comes from identity, so it is served before its first thread exists", () => {
+  assert.equal(renderConfig({ ...identity, mailbox: { uid: "ln_mail", display_name: "Elm" } }, "http://api:8000").channels.plow.emailLineUid, "ln_mail");
+  assert.ok(!("emailLineUid" in renderConfig({ ...identity, mailbox: null }, "http://api:8000").channels.plow));
 });
 
 test("boot accepts no owner chat or ambiguous owner chats without waiting", () => {
@@ -154,7 +159,7 @@ test("MCP sessions share the loopback bridge and expire after five idle minutes"
   } } });
 });
 
-test("the Plow MCP filter exposes only the Latch tools used by newspaper research", () => {
+test("the Plow MCP filter exposes only the Latch tools used by the memo research", () => {
   const config = renderConfig({ ...identity, mcp_url: "https://relay.internal/mcp" }, "http://api:8000");
   assert.deepEqual(config.mcp?.servers?.plow?.toolFilter?.include, [
     "plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file", "plow_read_skill",
@@ -168,9 +173,9 @@ test("the Plow MCP filter exposes only the Latch tools used by newspaper researc
   assert.ok(!config.tools.alsoAllow.includes("group:plugins"), "do not grant every plugin tool");
 });
 
-test("the current tournament allows six leaf children without chat turns preferring delegation", () => {
+test("the tournament allows depth-two phase coordinators and ten leaf children without chat turns preferring delegation", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").agents.defaults.subagents, {
-    maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest",
+    maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest",
   });
 });
 
@@ -190,8 +195,8 @@ test("writer and critic models join the Plow provider with their prices", () => 
   assert.deepEqual(roleModels(ROLES), { writer: "plow/anthropic/claude-opus-5-5", critic: "plow/openai/gpt-6-sol" });
 });
 
-test("without role models the tournament runs on the chat's own model", () => {
-  assert.equal(roleModels({}), undefined);
+test("without role models memo boot refuses a same-model tournament", () => {
+  assert.throws(() => roleModels({}), /the memo requires MEMO_MODEL_WRITER and MEMO_MODEL_CRITIC with prices/);
   assert.deepEqual(renderConfig(identity, "http://api:8000", undefined, {}).models.providers.plow.models.map(
     (m: { id: string }) => m.id), ["openai/gpt-6-sol", "openai/gpt-6-luna"]);
 });
@@ -213,8 +218,10 @@ test("phone turns cannot block on ask_user or read secrets", () => {
 
 test("native messaging retains local workspace and memory file tools", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools, {
+    message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } },
     profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
       "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+      "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
       "plow_google", "plow_slack", "plow_connect",
       "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
       "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
@@ -223,7 +230,7 @@ test("native messaging retains local workspace and memory file tools", () => {
   });
 });
 
-test("exec resolves python3 to the newspaper venv", () => {
+test("exec resolves python3 to the memo venv", () => {
   assert.deepEqual(renderConfig(identity, "http://api:8000").tools.exec, { pathPrepend: ["/opt/plow/pt-venv/bin"] });
 });
 
@@ -234,7 +241,7 @@ test("private transcript recall is disabled across isolated conversations", () =
 
 test("the API agent name configures the assistant identity", () => {
   const config = renderConfig(identity, "http://api:8000");
-  assert.deepEqual(config.agents.entries, { main: { identity: { name: "Juniper" } } });
+  assert.deepEqual(config.agents.entries, { main: { identity: { name: "Juniper" }, heartbeat: { every: "0m" } } });
 });
 
 for (const name of [undefined, null, "", "  "]) test(`missing agent name is not invented: ${JSON.stringify(name)}`, () => {
@@ -245,6 +252,7 @@ test("the base image uses boot-owned config with the OpenClaw browser UI", () =>
   const config = renderConfig(identity, "http://api:8000");
   assert.equal(config.gateway.controlUi.enabled, true);
   assert.equal(config.agents.defaults.skipBootstrap, true);
+  assert.deepEqual(config.messages, { visibleReplies: "automatic", queue: { mode: "collect" } });
   assert.deepEqual(config.meta, {});
 });
 
@@ -253,6 +261,13 @@ test("the Plow plugin may register its setup-gate prompt hook", () => {
     load: { paths: ["/opt/plow/plugin"] },
     entries: { plow: { enabled: true, hooks: { allowConversationAccess: true } } },
   });
+});
+
+test("boot renders the group trust mode into the owned channel config", () => {
+  for (const mode of ["ask", "trusted", "untrusted"]) {
+    assert.equal(renderConfig(identity, "http://api:8000", undefined, { PLOW_THREAD_TRUST: mode }).channels.plow.threadTrust, mode);
+  }
+  assert.throws(() => renderConfig(identity, "http://api:8000", undefined, { PLOW_THREAD_TRUST: "invalid" }), /PLOW_THREAD_TRUST/);
 });
 
 test("the dashboard uses the proxy's port and accepts origins checked by the proxy", () => {
@@ -279,6 +294,9 @@ test("fresh boot seeds owner defaults and external includes for Plow-owned setti
   assert.deepEqual(owner.skills, { $include: join(includes, "skills.json5") });
   assert.equal(JSON5.parse(await readFile(join(includes, "skills.json5"), "utf8")).load.extraDirs[0], "/opt/plow/skills");
   assert.deepEqual(owner.gateway, { $include: join(includes, "gateway.json5") });
+  assert.equal(JSON5.parse(await readFile(join(includes, "plow-channel.json5"), "utf8")).threadTrust, "ask");
+  assert.deepEqual(owner.messages.visibleReplies, { $include: join(includes, "visible-replies.json5") });
+  assert.equal(JSON5.parse(await readFile(join(includes, "visible-replies.json5"), "utf8")), "automatic");
   assert.equal(owner.bindings.length, 2);
   assert.deepEqual(owner.bindings[0], { $include: join(includes, "binding.json5") });
   assert.deepEqual(owner.bindings[1].match.peer, { kind: "group", id: "*" });
@@ -293,6 +311,9 @@ test("restart migrates a full render and keeps owner edits outside Plow-owned pa
   old.plugins.entries.extra = { enabled: true };
   old.agents.defaults.model.primary = "extra/model";
   old.agents.entries.main.identity.emoji = "old";
+  old.agents.entries.main.heartbeat = { every: "30m", target: "last" };
+  old.messages.queue = { mode: "steer", cap: 99 };
+  old.messages.groupChat = { visibleReplies: "message_tool" };
   old.bindings.unshift({ agentId: "extra", match: { channel: "telegram" } });
   await writeFile(path, `// owner settings\n${JSON.stringify(old)}\n`);
   await syncConfig(renderConfig(identity, "http://new-api:8000"), path, includes);
@@ -302,7 +323,11 @@ test("restart migrates a full render and keeps owner edits outside Plow-owned pa
   assert.deepEqual(owner.plugins.entries.extra, { enabled: true });
   // The paper owns its model: an owner edit there does not survive a restart.
   assert.deepEqual(owner.agents.defaults, { $include: join(includes, "agent-defaults.json5") });
+  assert.deepEqual(JSON5.parse(await readFile(join(includes, "message-queue.json5"), "utf8")), { mode: "collect" });
+  assert.deepEqual(owner.messages.groupChat, { visibleReplies: "message_tool" });
   assert.deepEqual(owner.agents.entries.main.identity, { $include: join(includes, "identity.json5") });
+  assert.deepEqual(owner.agents.entries.main.heartbeat, { $include: join(includes, "heartbeat.json5") });
+  assert.deepEqual(JSON5.parse(await readFile(join(includes, "heartbeat.json5"), "utf8")), { every: "0m" });
   assert.equal(owner.bindings.length, 3);
   assert.deepEqual(owner.bindings[0], { $include: join(includes, "binding.json5") });
   assert.deepEqual(owner.bindings[1], { agentId: "extra", match: { channel: "telegram" } });
@@ -317,6 +342,7 @@ test("restart migrates a full render and keeps owner edits outside Plow-owned pa
   assert.deepEqual(again.channels.plow, { $include: join(includes, "plow-channel.json5") });
   assert.deepEqual(again.channels.telegram, { enabled: true });
   assert.equal(again.bindings.length, 3);
+  assert.deepEqual(again.messages.groupChat, { visibleReplies: "message_tool" });
 });
 
 test("MCP Plow server include disappears without a relay while owner MCP settings remain", async t => {

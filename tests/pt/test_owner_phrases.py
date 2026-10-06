@@ -40,9 +40,9 @@ def test_the_closed_set_covers_every_fixed_line():
     assert set(phrases.SOURCE) == {
         "chat.busy", "chat.busy_still",
         "print.lede", "print.retry", "print.timeout", "print.no_pdf",
-        "turn.failed", "attempts.spent_scheduled", "attempts.spent_on_demand",
-        "page.first_step", "page.questions", "page.sources", "page.could_not_source",
-        "page.nothing_to_report", "page.advice_from", "page.priority_band", "page.cost", "page.cost_unknown",
+        "edition.failed", "attempts.cooldown", "attempts.spent_scheduled", "attempts.spent_on_demand",
+        "page.first_step", "page.questions", "page.could_not_source",
+        "page.advice_from", "page.priority_band", "page.cost", "page.cost_unknown",
     }
     assert "{seconds}" in phrases.SOURCE["print.timeout"] and "{path}" in phrases.SOURCE["print.no_pdf"]
 
@@ -68,7 +68,7 @@ def test_record_then_every_line_is_the_owners(pt_home):
     code, out, err = run(["record"], json.dumps({"phrases": translated()}))
     assert (code, out, err) == (0, "PHRASES:ready", "")
     assert run(["status"])[1] == "PHRASES:ready"
-    assert phrases.phrase("turn.failed") == "ZH " + phrases.SOURCE["turn.failed"]
+    assert phrases.phrase("page.questions") == "ZH " + phrases.SOURCE["page.questions"]
     assert phrases.phrase("print.timeout", seconds=120) == "ZH " + phrases.SOURCE["print.timeout"].format(seconds=120)
 
 
@@ -77,7 +77,7 @@ def test_a_language_change_makes_the_file_stale(pt_home):
     run(["record"], json.dumps({"phrases": translated()}))
     configure(pt_home, "Deutsch")
     assert run(["status"])[1] == "PHRASES:missing"
-    assert phrases.phrase("turn.failed") == phrases.SOURCE["turn.failed"], "stale phrases never speak another language"
+    assert phrases.phrase("page.questions") == phrases.SOURCE["page.questions"], "stale phrases never speak another language"
 
 
 def test_without_a_file_portuguese_and_english_keep_their_curated_lines(pt_home):
@@ -90,8 +90,8 @@ def test_without_a_file_portuguese_and_english_keep_their_curated_lines(pt_home)
 
 
 @pytest.mark.parametrize("broken, reason", [
-    (lambda p: p.pop("turn.failed"), "missing: turn.failed"),
-    (lambda p: p.update({"turn.failed": "  "}), "blank: turn.failed"),
+    (lambda p: p.pop("page.questions"), "missing: page.questions"),
+    (lambda p: p.update({"page.questions": "  "}), "blank: page.questions"),
     (lambda p: p.update({"print.timeout": "sem placeholder"}), "placeholders differ: print.timeout"),
     (lambda p: p.update({"print.no_pdf": "{path} {extra}"}), "placeholders differ: print.no_pdf"),
     (lambda p: p.update({"extra.key": "x"}), "unknown: extra.key"),
@@ -118,12 +118,27 @@ def test_the_file_names_the_language_it_was_written_for(pt_home):
     assert stored["language"] == "Mandarin Chinese" and set(stored["phrases"]) == set(phrases.SOURCE)
 
 
-def test_pre_memo_pack_keeps_active_labels_but_requires_cost_translation(pt_home):
+@pytest.mark.parametrize("has_cost", [False, True])
+@pytest.mark.parametrize("has_edition_failed", [False, True])
+def test_pre_memo_pack_keeps_active_labels_and_requires_missing_translations(pt_home, has_cost, has_edition_failed):
     configure(pt_home, "Mandarin Chinese")
-    old = {k: v for k, v in translated().items() if k not in ("page.cost", "page.cost_unknown")}
-    (pt_home / "owner-phrases.json").write_text(json.dumps({"language": "Mandarin Chinese", "phrases": old}))
+    old = translated()
+    if not has_cost:
+        old = {k: v for k, v in old.items() if k not in ("page.cost", "page.cost_unknown")}
+    if not has_edition_failed:
+        old.pop("edition.failed")
+        old["turn.failed"] = "ZH Previous turn failed."
+    old.update({"page.sources": "ZH Sources:", "page.nothing_to_report": "ZH Nothing to report."})
+    raw = json.dumps({"language": "Mandarin Chinese", "phrases": old})
+    path = pt_home / "owner-phrases.json"
+    path.write_text(raw)
     assert phrases.phrase("chat.busy") == old["chat.busy"]
     assert phrases.phrase("page.first_step") == old["page.first_step"]
-    assert phrases.status() == "missing"
-    assert "missing: page.cost" in phrases.problems(old)
+    assert phrases.phrase("attempts.spent_on_demand") == old["attempts.spent_on_demand"]
+    assert phrases.phrase("attempts.spent_scheduled") == old["attempts.spent_scheduled"]
+    assert phrases.status() == ("ready" if has_cost and has_edition_failed else "missing")
+    assert path.read_text() == raw
+    if not has_cost:
+        assert "missing: page.cost" in phrases.problems(old)
+    # Existing packs are readable; writing a replacement uses the current key set.
     assert run(["record"], json.dumps({"phrases": old}))[0] == 1

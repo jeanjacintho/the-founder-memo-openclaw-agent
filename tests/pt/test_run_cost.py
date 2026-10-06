@@ -42,7 +42,7 @@ def stores(tmp_path, monkeypatch):
 
 def test_resumed_session_includes_every_call_and_stops_generation(stores, capsys):
     stores([("coordinator", event("generation-1")), ("coordinator", event("generation-2", input=2_000_000))])
-    assert rc.main(["total", "--since-minutes", "1"]) == 0
+    assert rc.main(["total", "--started", "1970-01-01T00:01:00+00:00"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result == {"usd": 15, "sessions": 1, "unpriced": 0}
     assert rc.main(["can-start", "--spent", str(result["usd"]), "--longest", "5", "--max", "19"]) == 1
@@ -74,7 +74,7 @@ def test_cached_tokens_use_their_explicit_model_prices(stores):
 
 def test_empty_store_is_unknown(stores, capsys):
     stores([])
-    assert rc.main(["total", "--since-minutes", "1"]) == 0
+    assert rc.main(["total", "--started", "1970-01-01T00:01:00+00:00"]) == 0
     assert json.loads(capsys.readouterr().out) == {"usd": None, "sessions": 0, "unpriced": 0}
 
 
@@ -91,13 +91,30 @@ def test_unreadable_usage_fails_without_a_partial_total(stores, capsys, monkeypa
             def refuse(*args):
                 raise RuntimeError("cannot decode compressed usage")
             monkeypatch.setattr(rc, "_client", lambda: SimpleNamespace(_event_json=refuse))
-    assert rc.main(["total", "--since-minutes", "1"]) == 1
+    assert rc.main(["total", "--started", "1970-01-01T00:01:00+00:00"]) == 1
     captured = capsys.readouterr()
     assert not captured.out and "run_cost:" in captured.err
 
 
 @pytest.mark.parametrize("spent, longest, maximum, code", [
-    (0.1, 0.2, 0.3, 0), (0.1, 0.20001, 0.3, 1), (10, 20, 100, 0), (80, 20, 100, 0), (85, 20, 100, 1), ("null", 20, 100, 1),
+    (0.1, 0.2, 0.3, 0), (0.1, 0.20001, 0.3, 1), (10, 20, 100, 0), (80, 20, 100, 0), (85, 20, 100, 1), (100, 0, 100, 1), (0, 0, 0, 1), ("null", 20, 100, 1),
 ])
 def test_cli_can_start_respects_the_ceiling(spent, longest, maximum, code):
     assert rc.main(["can-start", "--spent", str(spent), "--longest", str(longest), "--max", str(maximum)]) == code
+
+
+def test_fixed_start_includes_early_calls_after_partial_minute(stores, monkeypatch, capsys):
+    monkeypatch.setattr(rc.time, "time", lambda: 90)
+    stores([("s", event("early", stamp=20_000, input=120_000)),
+            ("s", event("late", stamp=70_000, input=80_000))])
+    assert rc.main(["total", "--started", "1970-01-01T00:00:00+00:00"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["usd"] == 1
+    assert rc.main(["can-start", "--spent", str(result["usd"]), "--longest", "0.6", "--max", "1"]) == 1
+
+
+@pytest.mark.parametrize("started", ["invalid", "1970-01-01T00:00:00"])
+def test_start_must_be_an_instant(stores, capsys, started):
+    stores([])
+    assert rc.main(["total", "--started", started]) == 1
+    assert not capsys.readouterr().out

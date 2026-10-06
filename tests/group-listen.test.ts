@@ -4,11 +4,11 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import entry from "../plugin/index.ts";
 import { isListeningGroup } from "../plugin/group-listen.ts";
-import { websocketFixture } from "./ws-fixture.ts";
+import { websocketFixture, checkpointUid } from "./ws-fixture.ts";
 
 type Payload = { text: string; isError?: boolean; isFallbackNotice?: boolean };
 type Dispatch = {
-  replyOptions: { onAgentRunTerminalOutcome: (outcome: string) => void };
+  replyOptions: { onAgentRunTerminalOutcome: (outcome: string) => void; turnAdoptionLifecycle: { onAdopted: () => Promise<void>; onSettled?: () => void } };
   delivery: { preparePayload?: (payload: Payload) => unknown; deliver: (payload: Payload) => Promise<unknown> };
 };
 
@@ -60,6 +60,7 @@ for (const [scenario, run] of Object.entries(scenarios)) for (const sender of [m
     runtime: { channel: {
       routing: { resolveAgentRoute: () => ({ sessionKey: "agent:main:plow:group:group" }) },
       inbound: { buildContext: async () => ({}), dispatch: async (dispatch: Dispatch) => {
+        await dispatch.replyOptions.turnAdoptionLifecycle.onAdopted();
         await run(dispatch);
         return { dispatched: true, dispatchResult: { deliberateSilentTerminalReply: scenario === "the model stays silent" } };
       } },
@@ -70,8 +71,44 @@ for (const [scenario, run] of Object.entries(scenarios)) for (const sender of [m
   const posts = fetch.mock.calls.filter(call => (call.arguments[1] as RequestInit | undefined)?.method === "POST").map(call => String(call.arguments[0]));
   assert.deepEqual(posts.filter(url => url.endsWith("/messages")), [], "nothing is ever posted in a group");
   assert.deepEqual(posts.filter(url => url.endsWith("/typing")), [], "no typing indicator in a group");
-  assert.equal(await readFile(`${root}/plow-checkpoints/group`, "utf8"), "inbound", "the message is acknowledged");
+  assert.equal(JSON.parse(await readFile(`${root}/plow-checkpoints/group`, "utf8")).uid, "inbound", "the message is acknowledged");
   assert.ok(!logs.some(text => text.includes("notifying")), "no failure notice in a group");
+});
+
+// The inbox holds one message per group: collected messages must not overlap.
+test("two messages of one listening group run one after the other", async t => {
+  const { server, apiBase, abortAfter } = await websocketFixture(t);
+  const controller = abortAfter();
+  const account = { apiBase, accountId: "chat", lineUid: "line" };
+  const chat = { uid: "group", status: "active", trusted: true, participants: [owner, member, agent] };
+  t.mock.method(globalThis, "fetch", async (url: string) => Response.json(
+    url.endsWith("/chats") ? { data: [chat], has_more: false } : url.endsWith("/chats/group") ? chat :
+    url.includes("/messages?") ? { data: [], has_more: false } : { ticket: "ticket", uid: "reply" }));
+  server.on("connection", (socket: { send: (text: string) => void }) => {
+    for (const uid of ["first", "second"]) socket.send(JSON.stringify({ event_type: "message_received", event_id: uid, chat_id: "group", data: { message: { uid, direction: "inbound", sender: member, body: uid, attachments: [], created_at: new Date().toISOString() } } }));
+  });
+  const order: string[] = [];
+  let running = 0, overlapped = false, acked = 0;
+  let current = "";
+  let channel: { gateway: { startAccount: (context: object) => Promise<void> } } | undefined;
+  entry.register({ registrationMode: "full", registerTool() {}, logger: { info() {} }, on() {},
+    registerChannel(value: { plugin: typeof channel }) { channel = value.plugin; },
+    runtime: { channel: {
+      routing: { resolveAgentRoute: () => ({ sessionKey: "agent:main:plow:group:group" }) },
+      inbound: { buildContext: async (value: { messageId: string }) => { current = value.messageId; return { messageId: value.messageId }; }, dispatch: async (dispatch: Dispatch) => {
+        await dispatch.replyOptions.turnAdoptionLifecycle.onAdopted();
+        order.push(current);
+        if (++running > 1) overlapped = true;
+        await new Promise(resolve => setTimeout(resolve, 150));
+        running--;
+        return { dispatched: true, dispatchResult: { deliberateSilentTerminalReply: true } };
+      } },
+    } },
+  });
+  assert.ok(channel);
+  await channel.gateway.startAccount({ account, cfg: {}, abortSignal: controller.signal, log: { info(text: string) { if (text.startsWith("acked") && ++acked === 2) controller.abort(); } } });
+  assert.deepEqual(order, ["first", "second"]);
+  assert.equal(overlapped, false);
 });
 
 // --- Recording a signal from a group turn ---------------------------------
@@ -103,7 +140,59 @@ function registerAll() {
   return { register, tool: (context: object) => factory!(context), hook: () => hook!, channel: () => channel! };
 }
 
-const groupContext = (to = "group", sender = "member") => ({ sessionKey: "agent:main:plow:group:group", messageChannel: "plow", agentAccountId: "chat", deliveryContext: { channel: "plow", to, accountId: "chat" }, requesterSenderId: sender });
+const groupContext = (to = "group", sender = member.provider_key) => ({ sessionKey: "agent:main:plow:group:group", messageChannel: "plow", agentAccountId: "chat", deliveryContext: { channel: "plow", to, accountId: "chat" }, requesterSenderId: sender });
+
+test("a deferred group retains its source until the signal tool runs, before the next source", async t => {
+  const home = await ptHome(t);
+  const { root, server, apiBase, abortAfter } = await websocketFixture(t);
+  const controller = abortAfter(5000);
+  const account = { apiBase, accountId: "chat", lineUid: "line" };
+  const chat = { uid: "group", status: "active", trusted: false, participants: [owner, member, agent] };
+  t.mock.method(globalThis, "fetch", async (url: string) => Response.json(
+    url.endsWith("/chats") ? { data: [chat], has_more: false } : url.endsWith("/chats/group") ? chat :
+    url.includes("/messages?") ? { data: [], has_more: false } : { ticket: "ticket" }));
+  server.on("connection", (socket: { send: (text: string) => void }) => {
+    for (const uid of ["first", "later"]) socket.send(JSON.stringify({ event_type: "message_received", event_id: uid,
+      chat_id: chat.uid, data: { message: { uid, direction: "inbound", sender: member, body: `Priority ${uid}`,
+        attachments: [], created_at: "2026-10-06T12:00:00Z" } } }));
+  });
+  const all = registerAll();
+  const recorded: string[] = [];
+  let queuedWork: Promise<void> | undefined;
+  let source = "";
+  all.register({ channel: {
+    routing: { resolveAgentRoute: () => ({ sessionKey: "agent:main:plow:group:group" }) },
+    inbound: {
+      buildContext: async (context: { messageId: string }) => { source = context.messageId; return {}; },
+      dispatch: async (dispatch: Dispatch) => {
+        const uid = source;
+        const record = async () => {
+          await dispatch.replyOptions.turnAdoptionLifecycle.onAdopted();
+          dispatch.replyOptions.turnAdoptionLifecycle.onSettled?.();
+          await new Promise<void>(resolve => setImmediate(resolve));
+          const result = await all.tool(groupContext("group", member.provider_key)).execute("call", { category: "priority" });
+          assert.equal((result.details as { recorded: boolean }).recorded, true);
+          recorded.push(uid);
+          dispatch.replyOptions.onAgentRunTerminalOutcome("completed");
+        };
+        if (uid === "first") {
+          queuedWork = new Promise<void>(resolve => setImmediate(resolve)).then(record);
+          return { dispatched: true, dispatchResult: { deferredToActiveRun: "followup" } };
+        }
+        await record();
+        controller.abort();
+        return { dispatched: true, dispatchResult: { deliberateSilentTerminalReply: true } };
+      },
+    },
+  } });
+  await all.channel().gateway.startAccount({ account, cfg: {}, abortSignal: controller.signal, log: { info() {} } });
+  await queuedWork;
+  assert.deepEqual(recorded, ["first", "later"]);
+  assert.equal(await checkpointUid(root, chat.uid), "later");
+  const signals = await Promise.all((await signalFiles(home)).map(file => readFile(`${home}/signals/${file}`, "utf8").then(JSON.parse)));
+  assert.deepEqual(signals.map(signal => signal.text).sort(), ["Priority first", "Priority later"]);
+  assert.equal((await all.tool(groupContext("group", member.provider_key)).execute("call", { category: "priority" })).isError, true);
+});
 
 test("record_signal accepts only a category", () => {
   const all = registerAll();
@@ -151,7 +240,7 @@ for (const [label, category, sender, config, expected] of [
   all.register({ channel: {
     routing: { resolveAgentRoute: () => ({ sessionKey: "agent:main:plow:group:group" }) },
     inbound: { buildContext: async () => ({}), dispatch: async (dispatch: Dispatch) => {
-      const tool = all.tool(groupContext("group", sender.role === "owner" ? "plow-owner" : "member"));
+      const tool = all.tool(groupContext("group", sender.role === "owner" ? "plow-owner" : member.provider_key));
       // Words, a name or a chat supplied by the model are refused, never recorded.
       smuggled = await tool.execute("call", { category, text: "forged", from_name: "CEO" });
       result = await tool.execute("call", { category });

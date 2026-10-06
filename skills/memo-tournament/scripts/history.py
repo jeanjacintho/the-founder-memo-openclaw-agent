@@ -1,27 +1,17 @@
 #!/usr/bin/env python3
-"""history.py -- what this paper printed on recent days, from the wiki.
+"""history.py -- the cards the memo printed on recent nights, from the wiki.
 
-usage: history.py recent [--topic <topic_id>]
+usage: history.py recent
 
-Prints JSON, oldest first, reading the edition pages record_edition.py writes
-(projects/founder-memo/editions/<date>.md). Bare, it is the advisor's desk's
-own history: [{"date", "desk"}], the `priority` card each of the 7 days
-before today carries. With `--topic`, it is one news section's:
-[{"date", "headline", "printed": [{"claim", "url"}]}], what record_edition.py
-recorded under that topic id in the page's frontmatter, for today and the 7
-days before it -- so the next pass knows which sources it has already
-spent and which claims it has already made -- a section with no memory
-reprints the same story every morning (issue #69).
-The two windows differ on purpose. Today's own page is never the desk's
-history: a second edition the same date would otherwise read the first
-back as "yesterday". A topic's window reaches through today instead: the
-pass most likely to reprint this morning's section is an afternoon focused
-paper or a live copy later the same day, and today's page is exactly where
-that repeat would be caught.
-record_edition.py writes those pages only once a paper was delivered, so a card
-the owner never received is never history. A day with no page, or no card, is
+Prints JSON, oldest first: [{"date", "desk"}], the `priority` card each memo
+page of the 7 days before today carries (projects/founder-memo/memos/<date>.md,
+written by record_memo.py), or, for a day with no memo, the edition page an
+upgraded Founder Times install carried over (projects/founder-memo/editions/). Today's own page is never history: a second run
+the same date would otherwise read the first back as "last night".
+record_memo.py writes a page only once a memo was delivered, so a card the
+owner never received is never history. A day with no page, or no card, is
 left out. When the Mac does not answer: `error: history unavailable — <why>`,
-non-zero; the desk then writes only its stub and stops (`memo-tournament/SKILL.md`).
+non-zero.
 
 "Today" is the owner's own day (`owner_time.owner_today()`), not the
 container's -- see that module's docstring for why, and for the same
@@ -39,42 +29,30 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "memo-shared" / "scripts"))
 from latch_mcp import LatchError
 from owner_time import owner_today
-from wiki import EDITIONS, connect, split_page
+from wiki import EDITIONS, MEMOS, connect, split_page
 
 DAYS = 7
 
 
-def _desk(text):
-    """The advisor's card the page carries, or None."""
-    card = split_page(text)[0].get("priority")
-    return {"desk": card} if card else None
-
-
-def _section(text, topic):
-    """This topic's record on the page (headline and every sourced claim), or None."""
-    return split_page(text)[0].get("sections", {}).get(topic)
-
-
-def recent(wiki, today, topic=None):
+def recent(wiki, today):
     out = []
-    for back in (range(DAYS, -1, -1) if topic else range(DAYS, 0, -1)):
+    for back in range(DAYS, 0, -1):
         day = (today - timedelta(days=back)).isoformat()
-        text = wiki.read(f"{EDITIONS}/{day}.md")
-        entry = (_section(text, topic) if topic else _desk(text)) if text else None
-        if entry:
-            out.append({"date": day, **entry})
+        # A night's memo, else the edition a Founder Times install carried over (wiki_setup).
+        text = wiki.read(f"{MEMOS}/{day}.md") or wiki.read(f"{EDITIONS}/{day}.md")
+        card = split_page(text)[0].get("priority") if text else None
+        if card:
+            out.append({"date": day, "desk": card})
     return out
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="What this paper printed lately: the advisor desk's cards, or one news section's blocks.")
+    parser = argparse.ArgumentParser(description="The cards the memo printed on recent nights.")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    recent_parser = sub.add_parser("recent")
-    recent_parser.add_argument("--topic", help="a news section's topic id, instead of the desk's cards")
-    args = parser.parse_args(argv)
+    sub.add_parser("recent")
+    parser.parse_args(argv)
     try:
-        print(json.dumps(recent(connect(), owner_today(), args.topic), ensure_ascii=False))
+        print(json.dumps(recent(connect(), owner_today()), ensure_ascii=False))
     except (LatchError, OSError, ValueError, KeyError, TypeError) as exc:
         sys.exit(f"error: history unavailable — {exc}")
 

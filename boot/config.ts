@@ -9,6 +9,7 @@ export type Participant =
 export type Identity = {
   agent?: { name?: string | null; web_url?: string | null };
   line: { uid: string };
+  mailbox?: { uid: string; display_name: string } | null;
   chats: { uid: string; status: string; participants: Participant[] }[];
   mcp_url?: string | null;
 };
@@ -16,10 +17,10 @@ export type Identity = {
 type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
 
 export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
+  const threadTrust = env.PLOW_THREAD_TRUST ?? "ask";
+  if (!["ask", "trusted", "untrusted"].includes(threadTrust)) throw new Error("PLOW_THREAD_TRUST must be ask, trusted, or untrusted");
   const name = identity.agent?.name;
   if (typeof name !== "string" || !name.trim()) throw new Error(`Identity has no usable agent.name: ${JSON.stringify(name)}`);
-  const email = identity.chats.flatMap(chat => chat.participants).find(p =>
-    p.type === "agent" && p.relationship === "self" && p.line.provider_type === "email");
   // Plow serves Sol with a 1,050,000-token window and publishes no price for it.
   const plowModels: PlowModel[] = [
     { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"], contextWindow: 1050000 },
@@ -49,7 +50,8 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       request: { allowPrivateNetwork: true },
       models: plowModels,
     } } },
-    agents: { entries: { main: { identity: { name } } }, defaults: {
+    // Editions are cron-driven; idle main-session heartbeats do no useful work.
+    agents: { entries: { main: { identity: { name }, heartbeat: { every: "0m" } } }, defaults: {
       workspace: "/var/lib/plow/workspace", skipBootstrap: true,
       // The paper's AGENTS.md plus up to 8,000 characters of Latch instructions is
       // past OpenClaw's 20,000-character default; truncation drops its last rules.
@@ -68,13 +70,13 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       // The current tournament directly spawns up to six leaf critics.
       // Raise depth and width when the phase-coordinator engine lands (issue #59 Task 9).
       // Delegation stays a suggestion so owner chat turns are not pushed into sub-agents.
-      subagents: { maxChildrenPerAgent: 6, maxConcurrent: 6, maxSpawnDepth: 1, delegationMode: "suggest" },
+      subagents: { maxChildrenPerAgent: 10, maxConcurrent: 10, maxSpawnDepth: 2, delegationMode: "suggest" },
     } },
     mcp: { sessionIdleTtlMs: 300_000, ...(identity.mcp_url ? { servers: { plow: {
       url: "http://127.0.0.1:18790/mcp", transport: "streamable-http",
       // Browser reads and plow_get_result waits on the Mac outlast the 60s default.
       requestTimeoutMs: 300_000,
-      // Keep the newspaper's Latch surface explicit. MCP tools are filtered by
+      // Keep the memo's Latch surface explicit. MCP tools are filtered by
       // server-local names before the session tool profile is applied.
       toolFilter: { include: [
         "plow_browser*", "plow_get_output", "plow_get_result", "plow_read_file",
@@ -82,17 +84,18 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
       ] },
       headers: { Authorization: "Bearer ${PLOW_MCP_BRIDGE_TOKEN}" },
     } } } : {}) },
-    // The channel runs the newspaper setup gate in a before_prompt_build hook; OpenClaw
+    // The channel runs the memo's setup gate in a before_prompt_build hook; OpenClaw
     // registers conversation hooks of a non-bundled plugin only with this opt-in.
     plugins: { load: { paths: ["/opt/plow/plugin"] }, entries: { plow: { enabled: true, hooks: { allowConversationAccess: true } } } },
+    messages: { visibleReplies: "automatic", queue: { mode: "collect" } },
     channels: { plow: {
-      apiBase, lineUid: identity.line.uid,
+      apiBase, lineUid: identity.line.uid, threadTrust,
       // Groups are listen-only and anyone may join one, so in a group every
       // sender -- the owner too -- gets exactly one tool: recording a signal.
       // Any groups key turns on OpenClaw's group allowlist with mentions
       // required; "*" admits every group and the agent hears every message.
       groups: { "*": { requireMention: false, toolsBySender: { "*": { allow: ["plow_record_signal"] } } } },
-      ...(email?.type === "agent" ? { emailLineUid: email.line.uid } : {}),
+      ...(identity.mailbox ? { emailLineUid: identity.mailbox.uid, emailName: identity.mailbox.display_name } : {}),
     } },
     session: { dmScope: "per-account-channel-peer", groupScope: "per-group" },
     bindings: [
@@ -107,18 +110,20 @@ export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute 
     skills: { load: { extraDirs: ["/opt/plow/skills"] }, allowBundled: ["plow-no-bundled-skills"] },
     // Keep workspace and durable memory writes local instead of routing them through the Mac relay.
     tools: {
+      message: { crossContext: { allowWithinProvider: false, allowAcrossProviders: false } },
       // Keep configured research tools visible as direct model tools. OpenClaw
       // Code Mode catalogs every eligible tool behind exec/wait and has no
       // per-tool visibility allowlist.
       profile: "messaging", toolSearch: false, codeMode: { enabled: false }, sessions: { visibility: "tree" }, alsoAllow: [
         "read", "write", "edit", "exec", "process", "plow_start_thread", "plow_record_signal",
+        "plow_set_thread_trust", "plow_reply_to", "plow_send_email",
         // Google and Slack through Plow; each call first checks the owner's Mac
         // (plugin/connectors.ts) and steps aside while Latch answers.
         "plow_google", "plow_slack", "plow_connect",
         "plow__plow_browser*", "plow__plow_get_output", "plow__plow_get_result", "plow__plow_read_file",
         "plow__plow_read_skill", "plow__plow_run_applescript", "plow__plow_run_command", "plow__plow_write_file",
       ], deny: ["ask_user", "secrets"],
-      // The newspaper scripts' python3 is the image's 3.13 venv, never the system 3.11.
+      // The memo-* scripts' python3 is the image's 3.13 venv, never the system 3.11.
       exec: { pathPrepend: ["/opt/plow/pt-venv/bin"] },
     },
   };
@@ -133,7 +138,10 @@ const ownedPaths = [
   ["plugin-load", ["plugins", "load"]],
   ["tools", ["tools"]],
   ["commands", ["commands"]],
+  ["visible-replies", ["messages", "visibleReplies"]],
+  ["message-queue", ["messages", "queue"]],
   ["identity", ["agents", "entries", "main", "identity"]],
+  ["heartbeat", ["agents", "entries", "main", "heartbeat"]],
   // The paper's model, bootstrap budget and advisor sub-agents, and the skills
   // it runs, ship with the image: an owner edit here would break the edition.
   ["agent-defaults", ["agents", "defaults"]],

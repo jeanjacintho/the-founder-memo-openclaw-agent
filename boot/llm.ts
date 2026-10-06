@@ -55,7 +55,7 @@ export function llmRoute(env: NodeJS.ProcessEnv = process.env, marker = readLlmM
 }
 
 // The memo tournament's writer and critic, passed per child at spawn time.
-// Both or neither: without them every child runs on the chat's own model. Each
+// Both roles are required when boot renders the memo prompt. Each
 // is a Plow model carrying its USD-per-million-token price, so run_cost can price
 // each child's transcript usage calls and check the nightly dollar ceiling; a critic
 // from the writer's own provider would share the writer's blind spots.
@@ -84,7 +84,8 @@ export function memoRoles(env: NodeJS.ProcessEnv = process.env): MemoRoles | und
 }
 
 /** The `{{writer_model}}` / `{{critic_model}}` the prompt names, when the roles are set. */
-export function roleModels(env: NodeJS.ProcessEnv = process.env): { writer: string; critic: string } | undefined {
+export function roleModels(env: NodeJS.ProcessEnv = process.env): { writer: string; critic: string } {
   const roles = memoRoles(env);
-  return roles && { writer: roles.writer.ref, critic: roles.critic.ref };
+  if (!roles) throw new Error("the memo requires MEMO_MODEL_WRITER and MEMO_MODEL_CRITIC with prices; set both before starting the agent");
+  return { writer: roles.writer.ref, critic: roles.critic.ref };
 }
