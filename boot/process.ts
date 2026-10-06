@@ -42,7 +42,9 @@ export async function startGateway(captureOutput = false, mcpUrl?: string, write
     });
     return child;
   };
-  const startBridge = () => launch("bridge", ["/opt/plow/boot/mcp-bridge.js"], {
+  // An event install's "Mac" is local (local-latch.ts); every other install proxies the owner's.
+  const bridgeScript = process.env.MEMO_EVENT ? "/opt/plow/boot/local-latch.js" : "/opt/plow/boot/mcp-bridge.js";
+  const startBridge = () => launch("bridge", [bridgeScript], {
     stdio: captureOutput ? ["ignore", "inherit", "inherit", "ipc"] : ["ignore", "pipe", "pipe", "ipc"],
     env: { PLOW_MCP_URL: mcpUrl!, PLOW_AGENT_TOKEN: process.env.PLOW_AGENT_TOKEN, PLOW_MCP_BRIDGE_TOKEN: process.env.PLOW_MCP_BRIDGE_TOKEN },
   });

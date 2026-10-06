@@ -29,7 +29,7 @@ value with a space needs its own quoting, e.g. `printer.name="HP LaserJet 4"`.
 It prints two lines:
 
     DRAFT:<fields already recorded>
-    NEXT_QUESTION=<hour|printer|awake|close>
+    NEXT_QUESTION=<hour|printer|awake|connect|close>
 
 **Send exactly the one message `NEXT_QUESTION` calls for, then stop.**
 Not that question plus the probe for the one after it. Not that question
@@ -108,12 +108,27 @@ confirm in one line. No cron changes: the night reads the switches itself.
 ## An event install
 
 An event build of this image sets `MEMO_EVENT` (a code in
-`memo-setup/assets/events.json`). `record_setup.py` then fills the printer (the
-event's shared printer line, 72 mm) and the Mac fields itself, so
-`NEXT_QUESTION` goes from `hour` straight to `close`: never ask about a printer
-or a Mac. At close, `finalize_setup.py` queues the first memo now instead of the
-bootstrap (`queued: memo-now`). Tell the owner, in one line, that their first
-memo is running and will print at the event's printer.
+`memo-setup/assets/events.json`). There is no Mac: the memo's wiki lives on this
+machine, and mail, calendar and Slack come only through the owner's Plow
+connections. `record_setup.py` fills the start hour (the event's), the printer (the
+event's shared printer line, 72 mm) and the Mac fields itself, so the first
+`NEXT_QUESTION` is `connect`: never ask about an hour, a printer, a Mac or a city.
+
+**connect** — call `plow_connect` once for `google` and once for `slack`, and send
+the owner one message, in their language: one line on what connecting gives their
+memo (it reads their mail, calendar and Slack to pick their priority), the two
+links as returned, and "reply done when you've connected". Then stop. When they
+reply, check `plow_google ["accounts"]` and `plow_slack ["status"]`. Once at least
+one is connected, or they say they don't want to connect, run
+`record_setup.py /var/lib/plow/pt/config.json connected=true`. If they say done but
+neither shows connected, or a link expired, call `plow_connect` again for that
+provider and send the new link, nothing else.
+
+**close** — skip step 1 (location): the zone is the event's. Step 2 is the bare
+`finalize_setup.py /var/lib/plow/pt/config.json` without `--owner-tz`; it queues
+the first memo now instead of the bootstrap (`queued: memo-now`). The gate, crons
+and `--done` after it are as usual. Instead of the "All set" line, tell the owner
+in one line that their first memo is running and will print at the event's printer.
 
 ## The questions, in order
 

@@ -16,6 +16,13 @@ export type Identity = {
 
 type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
 
+// An event install has no owner Mac: the memo's "Mac" is local-latch.ts, which keeps
+// its wiki on this machine. Never the owner's relay, so nothing reaches anyone's Mac.
+export const LOCAL_LATCH_URL = "http://127.0.0.1:18790/mcp";
+export function withEvent<T extends { mcp_url?: string | null }>(identity: T, env: NodeJS.ProcessEnv = process.env): T {
+  return env.MEMO_EVENT ? { ...identity, mcp_url: LOCAL_LATCH_URL } : identity;
+}
+
 export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
   const threadTrust = env.PLOW_THREAD_TRUST ?? "ask";
   if (!["ask", "trusted", "untrusted"].includes(threadTrust)) throw new Error("PLOW_THREAD_TRUST must be ask, trusted, or untrusted");

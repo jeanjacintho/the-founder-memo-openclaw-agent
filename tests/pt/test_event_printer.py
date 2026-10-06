@@ -19,12 +19,17 @@ pe = load_module("print_edition", "memo-print/scripts/print_edition.py")
 LINE = json.loads((ROOT / "memo-setup" / "assets" / "events.json").read_text())["EV-PLOW"]["printer_line"]
 
 
-def test_an_event_install_never_asks_about_a_printer_or_a_mac(tmp_path, monkeypatch, capsys):
+def test_an_event_install_asks_only_for_its_connections(tmp_path, monkeypatch, capsys):
+    # No hour, printer, Mac or time-zone question at the event: the first thing the
+    # attendee sees is the Google/Slack connect links, and their "done" closes setup.
     monkeypatch.setenv("MEMO_EVENT", "ev-plow")
-    assert record.main(["record_setup.py", str(tmp_path / "config.json"), "start=01:00"]) == 0
+    config = str(tmp_path / "config.json")
+    assert record.main(["record_setup.py", config, "owner.language=English"]) == 0
     draft = json.loads((tmp_path / ".setup-draft.json").read_text())
     assert draft["printer"] == {"configured": True, "line": LINE, "paper": "72mm"}
-    assert draft["mac"] == {"awake": False} and draft["event"] == "EV-PLOW"
+    assert draft["mac"] == {"awake": False} and draft["event"] == "EV-PLOW" and draft["start"] == "01:00"
+    assert "NEXT_QUESTION=connect" in capsys.readouterr().out
+    assert record.main(["record_setup.py", config, "connected=true"]) == 0
     assert "NEXT_QUESTION=close" in capsys.readouterr().out
 
 
@@ -39,12 +44,13 @@ def test_without_an_event_the_interview_is_unchanged_and_an_unknown_code_is_refu
 def test_finalize_runs_an_event_installs_first_memo_now_instead_of_the_bootstrap(tmp_path, monkeypatch):
     monkeypatch.setenv("PT_HOME", str(tmp_path))
     (tmp_path / ".setup-draft.json").write_text(json.dumps({
-        "start": "01:00", "event": "EV-PLOW", "mac": {"awake": False},
+        "start": "01:00", "event": "EV-PLOW", "mac": {"awake": False}, "connected": True,
         "printer": {"configured": True, "line": LINE, "paper": "72mm"}}))
     backend = FakeScheduler()
-    assert finalize.main(["finalize_setup.py", str(tmp_path / "config.json"), "--owner-tz", "America/Los_Angeles"],
-                         backend=backend) == 0
+    # No --owner-tz: an event install never asks for a city, it takes the event's zone.
+    assert finalize.main(["finalize_setup.py", str(tmp_path / "config.json")], backend=backend) == 0
     config = json.loads((tmp_path / "config.json").read_text())
+    assert config["owner"]["timezone"] == "America/Los_Angeles"
     assert config["printer"] == {"configured": True, "name": None, "line": LINE, "paper": "72mm"}
     assert [j["name"] for j in backend.created] == ["memo-now"]
 

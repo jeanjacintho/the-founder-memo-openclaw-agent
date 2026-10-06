@@ -1,3 +1,3 @@
 {
-  "EV-PLOW": {"printer_line": "+16502819584", "paper": "72mm"}
+  "EV-PLOW": {"printer_line": "+16502819584", "paper": "72mm", "timezone": "America/Los_Angeles", "start": "01:00"}
 }
