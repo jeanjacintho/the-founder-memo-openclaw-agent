@@ -85,8 +85,8 @@ test("provider and optional MCP use environment references, never credential val
 });
 
 for (const [label, env] of [["without", {}], ["with", {
-  MEMO_MODEL_WRITER: "plow/anthropic/claude-opus-5-5", MEMO_MODEL_WRITER_PRICE: "5,25",
-  MEMO_MODEL_CRITIC: "plow/openai/gpt-6-sol", MEMO_MODEL_CRITIC_PRICE: "1.25,10",
+  MEMO_MODEL_WRITER: "plow/anthropic/claude-opus-5-5", MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25",
+  MEMO_MODEL_CRITIC: "plow/openai/gpt-6-sol", MEMO_MODEL_CRITIC_PRICE: "1.25,10,0.125,1.25",
 }]] as const) test(`rendered config ${label} role models passes OpenClaw's config validate command`, async t => {
   const dir = await mkdtemp(join(tmpdir(), "plow-openclaw-config-validate-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
@@ -175,17 +175,17 @@ test("the current tournament allows six leaf children without chat turns preferr
 });
 
 const ROLES = {
-  MEMO_MODEL_WRITER: "plow/anthropic/claude-opus-5-5", MEMO_MODEL_WRITER_PRICE: "5,25",
-  MEMO_MODEL_CRITIC: "plow/openai/gpt-6-sol", MEMO_MODEL_CRITIC_PRICE: "1.25,10",
+  MEMO_MODEL_WRITER: "plow/anthropic/claude-opus-5-5", MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25",
+  MEMO_MODEL_CRITIC: "plow/openai/gpt-6-sol", MEMO_MODEL_CRITIC_PRICE: "1.25,10,0.125,1.25",
 };
 
 test("writer and critic models join the Plow provider with their prices", () => {
   const cfg = renderConfig(identity, "http://api:8000", undefined, ROLES);
   const byId = Object.fromEntries(cfg.models.providers.plow.models.map((m: { id: string }) => [m.id, m]));
-  assert.deepEqual(byId["anthropic/claude-opus-5-5"].cost, { input: 5, output: 25 });
+  assert.deepEqual(byId["anthropic/claude-opus-5-5"].cost, { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 });
   // A role model Plow already lists keeps its entry and gains the price for its listed tokens.
   assert.deepEqual(byId["openai/gpt-6-sol"], { id: "openai/gpt-6-sol", name: "GPT-6 Sol", input: ["text", "image"],
-    contextWindow: 1050000, cost: { input: 1.25, output: 10 } });
+    contextWindow: 1050000, cost: { input: 1.25, output: 10, cacheRead: 0.125, cacheWrite: 1.25 } });
   assert.equal(cfg.models.providers.plow.models.length, 3);
   assert.deepEqual(roleModels(ROLES), { writer: "plow/anthropic/claude-opus-5-5", critic: "plow/openai/gpt-6-sol" });
 });
@@ -200,9 +200,10 @@ test("role models are refused at boot unless both are priced Plow models on diff
   const refuse = (env: Record<string, string>, why: RegExp) =>
     assert.throws(() => renderConfig(identity, "http://api:8000", undefined, env), why);
   refuse({ ...ROLES, MEMO_MODEL_CRITIC: "plow/anthropic/claude-sonnet-5" }, /critic must be a different provider than writer/);
-  refuse({ MEMO_MODEL_WRITER: ROLES.MEMO_MODEL_WRITER, MEMO_MODEL_WRITER_PRICE: "5,25" }, /set both MEMO_MODEL_WRITER and MEMO_MODEL_CRITIC/);
+  refuse({ MEMO_MODEL_WRITER: ROLES.MEMO_MODEL_WRITER, MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25" }, /set both MEMO_MODEL_WRITER and MEMO_MODEL_CRITIC/);
   refuse({ ...ROLES, MEMO_MODEL_CRITIC_PRICE: "" }, /MEMO_MODEL_CRITIC_PRICE/);
-  refuse({ ...ROLES, MEMO_MODEL_WRITER_PRICE: "cheap" }, /MEMO_MODEL_WRITER_PRICE/);
+  for (const price of ["cheap", "5,25", "5,25,-1,6", "5,25,NaN,6"])
+    refuse({ ...ROLES, MEMO_MODEL_WRITER_PRICE: price }, /MEMO_MODEL_WRITER_PRICE/);
   refuse({ ...ROLES, MEMO_MODEL_WRITER: "openai/gpt-6-sol" }, /MEMO_MODEL_WRITER must be a plow\/<provider>\/<model> id/);
 });
 

@@ -13,7 +13,7 @@ export type Identity = {
   mcp_url?: string | null;
 };
 
-type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number } };
+type PlowModel = { id: string; name: string; input: string[]; contextWindow?: number; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } };
 
 export function renderConfig(identity: Identity, apiBase: string, llm: LlmRoute = PLOW_ROUTE, env: NodeJS.ProcessEnv = process.env) {
   const name = identity.agent?.name;

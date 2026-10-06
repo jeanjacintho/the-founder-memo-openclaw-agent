@@ -59,7 +59,7 @@ export function llmRoute(env: NodeJS.ProcessEnv = process.env, marker = readLlmM
 // is a Plow model carrying its USD-per-million-token price, so run_cost can price
 // each child's transcript usage calls and check the nightly dollar ceiling; a critic
 // from the writer's own provider would share the writer's blind spots.
-export type RoleModel = { ref: string; id: string; cost: { input: number; output: number } };
+export type RoleModel = { ref: string; id: string; cost: { input: number; output: number; cacheRead: number; cacheWrite: number } };
 export type MemoRoles = { writer: RoleModel; critic: RoleModel };
 
 function roleModel(env: NodeJS.ProcessEnv, role: "WRITER" | "CRITIC"): RoleModel {
@@ -67,11 +67,11 @@ function roleModel(env: NodeJS.ProcessEnv, role: "WRITER" | "CRITIC"): RoleModel
   const match = /^plow\/([^/]+\/.+)$/.exec(ref);
   if (!match) throw new Error(`MEMO_MODEL_${role} must be a plow/<provider>/<model> id, got ${JSON.stringify(ref)}`);
   const price = (env[`MEMO_MODEL_${role}_PRICE`] ?? "").split(",").map(part => part.trim());
-  const [input, output] = price.map(Number);
-  if (price.length !== 2 || price.some(part => part === "") || ![input, output].every(n => Number.isFinite(n) && n >= 0)) {
-    throw new Error(`MEMO_MODEL_${role}_PRICE must be "<input>,<output>" USD per million tokens`);
+  const [input, output, cacheRead, cacheWrite] = price.map(Number);
+  if (price.length !== 4 || price.some(part => part === "") || ![input, output, cacheRead, cacheWrite].every(n => Number.isFinite(n) && n >= 0)) {
+    throw new Error(`MEMO_MODEL_${role}_PRICE must be "<input>,<output>,<cacheRead>,<cacheWrite>" USD per million tokens`);
   }
-  return { ref, id: match[1], cost: { input, output } };
+  return { ref, id: match[1], cost: { input, output, cacheRead, cacheWrite } };
 }
 
 export function memoRoles(env: NodeJS.ProcessEnv = process.env): MemoRoles | undefined {

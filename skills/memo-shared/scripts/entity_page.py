@@ -90,7 +90,10 @@ def merge(existing, dossier, kind, title, today):
 
     sources = list(meta.get("sources") or [])
     seen = {s["resource"] for s in sources}
-    sources += [s for s in dossier.get("sources", []) if s["resource"] not in seen]
+    for source in dossier.get("sources", []):
+        if source["resource"] not in seen:
+            sources.append(source)
+            seen.add(source["resource"])
     meta.update({
         "type": TYPES[kind], "title": meta.get("title", title),
         "description": dossier.get("description") or meta.get("description", title),

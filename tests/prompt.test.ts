@@ -12,8 +12,8 @@ const maxChars = renderConfig(probeIdentity, "http://api").agents.defaults.boots
 
 test("the tournament dispatch contract uses the configured writer and critic routes", async () => {
   const roles = roleModels({
-    MEMO_MODEL_WRITER: "plow/anthropic/writer-fixture", MEMO_MODEL_WRITER_PRICE: "5,25",
-    MEMO_MODEL_CRITIC: "plow/openai/critic-fixture", MEMO_MODEL_CRITIC_PRICE: "1,10",
+    MEMO_MODEL_WRITER: "plow/anthropic/writer-fixture", MEMO_MODEL_WRITER_PRICE: "5,25,0.5,6.25",
+    MEMO_MODEL_CRITIC: "plow/openai/critic-fixture", MEMO_MODEL_CRITIC_PRICE: "1,10,0.1,1",
   })!;
   const rendered = prompt.replaceAll("{{writer_model}}", roles.writer).replaceAll("{{critic_model}}", roles.critic);
   assert.match(rendered, /writer model is `plow\/anthropic\/writer-fixture`/);

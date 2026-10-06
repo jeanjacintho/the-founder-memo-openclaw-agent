@@ -97,7 +97,7 @@ def test_unreadable_usage_fails_without_a_partial_total(stores, capsys, monkeypa
 
 
 @pytest.mark.parametrize("spent, longest, maximum, code", [
-    (10, 20, 100, 0), (80, 20, 100, 0), (85, 20, 100, 1), ("null", 20, 100, 1),
+    (0.1, 0.2, 0.3, 0), (0.1, 0.20001, 0.3, 1), (10, 20, 100, 0), (80, 20, 100, 0), (85, 20, 100, 1), ("null", 20, 100, 1),
 ])
 def test_cli_can_start_respects_the_ceiling(spent, longest, maximum, code):
     assert rc.main(["can-start", "--spent", str(spent), "--longest", str(longest), "--max", str(maximum)]) == code

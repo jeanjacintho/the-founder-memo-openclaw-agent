@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing
+from decimal import Decimal, InvalidOperation
 import importlib.util
 import json
-import math
 import os
 from pathlib import Path
 import sqlite3
@@ -74,14 +74,20 @@ def cost(row, table):
     price = table.get(row.get("model")) if row.get("provider") == "plow" else None
     if price is None:
         return None
-    amount = 0
+    amount = Decimal(0)
     for field in TOKEN_FIELDS:
         tokens = row["usage"].get(field, 0 if field.startswith("cache") else None)
-        rate = price.get(field)
-        if not isinstance(tokens, (int, float)) or not math.isfinite(tokens) or tokens < 0:
+        if not isinstance(tokens, (int, float, Decimal)):
+            return None
+        tokens = Decimal(str(tokens))
+        if not tokens.is_finite() or tokens < 0:
             return None
         if tokens:
-            if not isinstance(rate, (int, float)) or not math.isfinite(rate) or rate < 0:
+            rate = price.get(field)
+            if not isinstance(rate, (int, float, Decimal)):
+                return None
+            rate = Decimal(str(rate))
+            if not rate.is_finite() or rate < 0:
                 return None
             amount += tokens * rate / 1_000_000
     return amount
@@ -90,12 +96,22 @@ def cost(row, table):
 def summary(rows, table):
     amounts = [cost(row, table) for row in rows]
     unknown = {row["session"] for row, amount in zip(rows, amounts) if amount is None}
-    return {"usd": sum(amounts) if amounts and not unknown else None,
+    return {"usd": float(sum(amounts)) if amounts and not unknown else None,
             "sessions": len({r["session"] for r in rows}), "unpriced": len(unknown)}
 
 
 def can_start(spent, longest_generation_usd, max_usd):
-    return spent is not None and spent + longest_generation_usd <= max_usd
+    return spent is not None and Decimal(str(spent)) + Decimal(str(longest_generation_usd)) <= Decimal(str(max_usd))
+
+
+def _usd(value):
+    try:
+        number = Decimal(value)
+    except InvalidOperation:
+        raise argparse.ArgumentTypeError("expected a non-negative USD amount") from None
+    if not number.is_finite() or number < 0:
+        raise argparse.ArgumentTypeError("expected a finite non-negative USD amount")
+    return number
 
 
 def main(argv=None):
@@ -104,8 +120,9 @@ def main(argv=None):
     t = sub.add_parser("total")
     t.add_argument("--since-minutes", type=int, required=True)
     c = sub.add_parser("can-start")
-    for flag in ("--spent", "--longest", "--max"):
-        c.add_argument(flag, type=lambda v: None if v == "null" else float(v), required=True)
+    c.add_argument("--spent", type=lambda v: None if v == "null" else _usd(v), required=True)
+    for flag in ("--longest", "--max"):
+        c.add_argument(flag, type=_usd, required=True)
     a = p.parse_args(argv)
     if a.cmd == "can-start":
         return 0 if can_start(a.spent, a.longest, a.max) else 1
@@ -113,10 +130,10 @@ def main(argv=None):
         if a.since_minutes <= 0:
             raise ValueError("--since-minutes must be positive")
         with open(PROVIDER_CONFIG, encoding="utf-8") as f:
-            table = prices(json.load(f))
+            table = prices(json.load(f, parse_float=Decimal))
         until = int(time.time() * 1000)
         out = summary(events(until - a.since_minutes * 60_000, until), table)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError, sqlite3.Error) as exc:
+    except (OSError, ValueError, KeyError, TypeError, RuntimeError, InvalidOperation, sqlite3.Error) as exc:
         print(f"run_cost: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(out))

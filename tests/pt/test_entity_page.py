@@ -67,6 +67,13 @@ def test_timeline_caps_at_twenty_newest():
     assert body.count(" · {i") == 20 and "{i25}" in body and "{i5}" not in body
 
 
+def test_refresh_unions_repeated_new_sources_once():
+    page = ep.merge(None, D, "people", "Jane", "2026-10-01")
+    refresh = {**D, "sources": D["sources"] + [{"resource": "gmail:me:t2"}] * 2}
+    meta, _ = wiki.split_page(ep.merge(page, refresh, "people", "Jane", "2026-10-02"))
+    assert [source["resource"] for source in meta["sources"]] == ["gmail:me:t1", "gmail:me:t2"]
+
+
 def test_owner_canonical_timeline_wins_over_refresh_and_survives_cap():
     page = ep.merge(None, D, "people", "Jane", "2026-10-01")
     owner_line = "- 2026-09-30 · Owner corrected this fact · {gmail:me:t1}"

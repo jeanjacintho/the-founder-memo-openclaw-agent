@@ -161,13 +161,13 @@ changing them, restart and run `plow-llm sync` to move the scheduled jobs.
 
 The nightly tournament can run its writers and its critics on two models from
 different providers. Set both, each with its USD price per million tokens
-(`input,output`), in `plow-credentials`:
+(`input,output,cacheRead,cacheWrite`), in `plow-credentials`:
 
 ```sh
 MEMO_MODEL_WRITER=plow/<provider>/<model>
-MEMO_MODEL_WRITER_PRICE=<input>,<output>
+MEMO_MODEL_WRITER_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
 MEMO_MODEL_CRITIC=plow/<another provider>/<model>
-MEMO_MODEL_CRITIC_PRICE=<input>,<output>
+MEMO_MODEL_CRITIC_PRICE=<input>,<output>,<cacheRead>,<cacheWrite>
 ```
 
 The prices register the role models for OpenClaw's usage accounting. The
