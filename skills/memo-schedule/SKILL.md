@@ -10,7 +10,7 @@ Every row is derived from `/var/lib/plow/pt/config.json` at run time:
 | job | schedule | notes |
 |---|---|---|
 | `memo-nightly` | `<min> <hour> * * *` from `memo.start` (default `01:00`) in `owner.timezone` | the night's run; its budget (`--timeout-seconds`) is `memo.window_minutes` (default 240) plus a 60-minute publish margin |
-| `memo-deliver` | every minute | a **no-agent command job** (`--command-argv` running `post_to_chat.py --flush-outbox` with the venv's python; no model, no tokens). Resumes a posted memo's print or record that failed, without posting it again. The sweep never removes it; it drifts only on its command |
+| `memo-deliver` | every minute | a **no-agent command job** (`--command-argv` running `post_to_chat.py --recover` with the venv's python; no model, no tokens). Resumes a posted memo's print or record that failed, without posting it again. The sweep never removes it; it drifts only on its command |
 | `memo-now` | one-shot, a minute out | `register_crons.py --now`: tonight's run on demand, same prompt as `memo-nightly`; the next `--now` replaces it unless one is running (then nothing is queued); the sweep never removes it |
 
 The job is an agent turn in an **isolated** session, on the chat's own model

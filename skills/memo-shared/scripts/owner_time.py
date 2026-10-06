@@ -2,15 +2,9 @@
 """owner_time.py -- the owner's own clock, from pt/config.json, not the
 container's.
 
-register_crons.py no longer requires the container's TZ to equal
-owner.timezone (see its module docstring): memo-setup converts the owner's
-stated local time into the container's local hour once, at write time, but
-never touches the container's own TZ. A page named for the owner's day, or
-a heading stamped with the owner's own hour, can therefore land a day (or
-an hour) off whatever the container's clock reads. Two callers need the
-owner's own now -- history.py's seven-day window, record_memo.py's
-`## HH:MM edition` heading and `created`/`updated` -- so this is their one
-shared source instead of two.
+Nightly scheduling, run windows, delivery ordering and memo history use
+owner.timezone. This is their shared clock; the container's TZ does not
+change the owner's day or timestamps.
 
 owner_now()/owner_today() fall back to the container's own clock only when
 the config file or the owner.timezone key is genuinely absent. A config
@@ -20,8 +14,6 @@ would read as valid.
 
 CLI:
 
-    owner_time.py minutes-until HH:MM   whole minutes from now until HH:MM today on the
-                                        owner's clock -- negative once passed, never tomorrow
     owner_time.py now                   the owner's now, ISO-8601 with its offset
                                         (memo-tournament records it as the run's start)
     owner_time.py minutes-since ISO     whole minutes since that instant (the run's window)
@@ -31,8 +23,6 @@ Bad usage: exit 2.
 from __future__ import annotations
 
 import json
-import os
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -69,19 +59,6 @@ def owner_today(config_path=CONFIG):
     return owner_now(config_path).date()
 
 
-HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
-
-
-def minutes_until(hhmm, config_path=CONFIG):
-    """Whole minutes from the owner's now until HH:MM of the owner's today."""
-    match = HHMM.match(hhmm)
-    if not match:
-        raise ValueError(f"not an HH:MM time: {hhmm!r}")
-    now = owner_now(config_path)
-    target = now.replace(hour=int(match.group(1)), minute=int(match.group(2)), second=0, microsecond=0)
-    return int((target - now).total_seconds() // 60)
-
-
 def minutes_since(iso, config_path=CONFIG):
     """Whole minutes from an aware ISO-8601 instant until the owner's now."""
     then = datetime.fromisoformat(iso)
@@ -90,7 +67,7 @@ def minutes_since(iso, config_path=CONFIG):
     return int((owner_now(config_path) - then).total_seconds() // 60)
 
 
-USAGE = "usage: owner_time.py minutes-until HH:MM | now | minutes-since ISO-8601"
+USAGE = "usage: owner_time.py now | minutes-since ISO-8601"
 
 
 def main(argv=None):
@@ -98,8 +75,6 @@ def main(argv=None):
     try:
         if argv == ["now"]:
             print(owner_now().isoformat(timespec="seconds"))
-        elif len(argv) == 2 and argv[0] == "minutes-until":
-            print(minutes_until(argv[1]))
         elif len(argv) == 2 and argv[0] == "minutes-since":
             print(minutes_since(argv[1]))
         else:

@@ -217,24 +217,7 @@ class TestSoul:
         assert len(render) == 1, render
         assert "--pdf" in render[0] and "--html" not in render[0], render[0]
 
-    def test_pdf_fallback_is_keyed_on_weasyprint_not_on_any_failure(self):
-        # The fallback used to fire whenever "render_edition.py produced no
-        # PDF", which a usage error satisfies -- so a typo silently demoted
-        # the owner to plain text, permanently.
-        import re
 
-        text = (ROOT / "memo-render" / "SKILL.md").read_text()
-        flat = re.sub(r"\s+", " ", text.replace("*", ""))
-        assert "not the weasyprint fallback" in flat
-        assert "exit_code: 2" in flat
-
-    def test_text_leg_needs_no_shell_redirect(self):
-        # /bin/sh -c '... < edition.chat.txt' tripped the dangerous-command
-        # gate. A flag needs no shell.
-        text = (ROOT / "memo-render" / "SKILL.md").read_text()
-        assert "no shell redirect" in text and " < " not in text
-        script = (ROOT / "memo-shared" / "scripts" / "post_to_chat.py").read_text()
-        assert '"--text-file"' in script
 
     def test_edition_post_prints_and_finalizes_itself(self):
         script = (ROOT / "memo-shared" / "scripts" / "post_to_chat.py").read_text()

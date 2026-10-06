@@ -142,5 +142,5 @@ def test_setup_choice_is_the_registered_start(tmp_path):
     crons = load_module("setup_crons", "memo-schedule/scripts/register_crons.py")
     config = seed(tmp_path, dict(COMPLETE, local_hour="23:30", priority={"configured": True}))
     assert finalize.main(["finalize_setup.py", str(config), "--owner-tz", "UTC"]) == 0
-    start, window = crons.load_memo(config)
+    start, window = crons.normalize_memo(json.loads((config).read_text()))[:2]
     assert crons.nightly_job(start, window, "UTC")["schedule"] == "30 23 * * *"

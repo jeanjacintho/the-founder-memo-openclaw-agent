@@ -13,7 +13,8 @@ the owner's Mac decides which sources exist, so nothing here names a channel's q
 2. Resolve identity to handles first: contacts, the entity's own page under `entities/people/` or
    `entities/orgs/` (read it first: the owner's edits there win), the summary in `RUN_PAGE`, and
    the owner's customer pages when they exist.
-3. Search every published source that could hold this entity, by handle *and* by name, and
+3. Follow `memo-tournament`'s Source choices invariant; record owner-disabled sources as
+   disabled without opening them. Search every permitted published source that could hold this entity, by handle *and* by name, and
    bound each search by recency. Follow leads: a doc link leads to the doc and its versions,
    and a notification leads to the conversation it notifies about.
 4. Read snippets first. Open a thread only to settle a fact. A conversation's state comes from

@@ -69,7 +69,7 @@ NOW_NAME = "memo-now"
 # job's PATH is the gateway's.
 DELIVER_NAME = "memo-deliver"
 DELIVER_ARGV = ["/opt/plow/pt-venv/bin/python3",
-                "/opt/plow/skills/memo-shared/scripts/post_to_chat.py", "--flush-outbox"]
+                "/opt/plow/skills/memo-shared/scripts/post_to_chat.py", "--recover"]
 DEFAULT_START = "01:00"
 DEFAULT_WINDOW_MINUTES = 240
 # Render, print, post and record after the window closes.
@@ -138,28 +138,27 @@ def _config(config_path):
         raise SystemExit(f"refusing to register: malformed {path} ({exc!r}).") from exc
 
 
-def load_owner_zone(config_path=CONFIG_FILE):
+def owner_zone(config):
     """owner.timezone, or refuse: every schedule here is written against it."""
-    path, config = _config(config_path)
     try:
         owner = config["owner"]["timezone"]
     except (KeyError, TypeError) as exc:
-        raise SystemExit(f"refusing to register: could not read owner.timezone from {path} ({exc!r}).") from exc
+        raise SystemExit(f"refusing to register: could not read owner.timezone from config ({exc!r}).") from exc
     if not str(owner or "").strip():
-        raise SystemExit(f"refusing to register: {path} has a blank owner.timezone.")
+        raise SystemExit(f"refusing to register: config has a blank owner.timezone.")
     return owner
 
 
-def load_memo(config_path=CONFIG_FILE):
-    """(memo.start, memo.window_minutes) with their defaults, or refuse a bad value."""
-    path, config = _config(config_path)
+def normalize_memo(config):
+    """Normalize in memory; return (start, window, changed), without writing."""
     memo = config.get("memo")
+    changed = memo is None or "delivery" in config
     if memo is None:
         delivery = config.get("delivery") or {}
         hour = delivery.get("hour")
         lead = delivery.get("lead_minutes", 0)
         if not isinstance(hour, str) or not _START_RE.fullmatch(hour):
-            raise SystemExit(f"refusing to register: {path} has no valid memo.start or legacy delivery.hour.")
+            raise SystemExit(f"refusing to register: config has no valid memo.start or legacy delivery.hour.")
         if isinstance(lead, bool) or not isinstance(lead, int) or lead < 0:
             raise SystemExit("refusing to register: delivery.lead_minutes must be a non-negative integer.")
         h, m = map(int, hour.split(":"))
@@ -167,24 +166,17 @@ def load_memo(config_path=CONFIG_FILE):
         memo = {"start": f"{minutes // 60:02d}:{minutes % 60:02d}",
                 "window_minutes": DEFAULT_WINDOW_MINUTES, "max_usd": 100}
         config["memo"] = memo
-        config.pop("delivery", None)
-        try:
-            failures = _gate.gate(config)
-        except _gate.GateError as exc:
-            raise SystemExit(f"refusing to migrate: {exc}") from exc
-        if failures:
-            raise SystemExit(f"refusing to migrate: {failures}")
-        _write_json(path, config)
+    config.pop("delivery", None)
     if not isinstance(memo, dict):
-        raise SystemExit(f"refusing to register: {path} has memo={memo!r}; it must be an object.")
+        raise SystemExit(f"refusing to register: config has memo={memo!r}; it must be an object.")
     start = memo.get("start", DEFAULT_START)
     window = memo.get("window_minutes", DEFAULT_WINDOW_MINUTES)
     if not isinstance(start, str) or not _START_RE.fullmatch(start):
-        raise SystemExit(f'refusing to register: {path} has memo.start={start!r}; it must be "HH:MM".')
+        raise SystemExit(f'refusing to register: config has memo.start={start!r}; it must be "HH:MM".')
     if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
-        raise SystemExit(f"refusing to register: {path} has memo.window_minutes={window!r}; "
+        raise SystemExit(f"refusing to register: config has memo.window_minutes={window!r}; "
                          "it must be a positive integer.")
-    return start, window
+    return start, window, changed
 
 
 def nightly_job(start, window_minutes, owner_tz):
@@ -285,29 +277,29 @@ def main(argv=None, backend=None, config_path=CONFIG_FILE):
             raise SystemExit(f"{OPENCLAW[1]} not found -- run this inside the agent container")
         backend = CronBackend()
 
-    owner_tz = load_owner_zone(config_path)
-    start, window = load_memo(config_path)
-    if args.start is not None or args.enabled is not None:
-        path, config = _config(config_path)
-        if args.start is not None:
-            config["memo"]["start"] = args.start
-        if args.enabled is not None:
-            config["priority"] = {**(config.get("priority") or {}), "configured": args.enabled == "on"}
-        try:
-            failures = _gate.gate(config)
-        except _gate.GateError as exc:
-            raise SystemExit(f"refusing to change memo: {exc}") from exc
-        if failures:
-            raise SystemExit(f"refusing to change memo: {failures}")
-        _write_json(path, config)
-        start, window = load_memo(config_path)
-        print(f"saved: memo.start={start} priority.configured={(config.get('priority') or {}).get('configured', False)}")
+    path, config = _config(config_path)
+    owner_tz = owner_zone(config)
+    start, window, changed = normalize_memo(config)
+    if args.start is not None:
+        config["memo"]["start"] = start = args.start
+        changed = True
+    if args.enabled is not None:
+        config["priority"] = {**(config.get("priority") or {}), "configured": args.enabled == "on"}
+        changed = True
+    try:
+        failures = _gate.gate(config)
+    except _gate.GateError as exc:
+        raise SystemExit(f"refusing to change memo: {exc}") from exc
+    if failures:
+        raise SystemExit(f"refusing to change memo: {failures}")
     listing = backend.list()
     for job in listing:
         if _is_legacy_paper_job(job.name) and job.running:
             raise SystemExit(f"refusing to retire running legacy job {job.name}; retry after it finishes")
     registered = registered_jobs(listing)
-    _, config = _config(config_path)
+    if changed:
+        _write_json(path, config)
+        print(f"saved: memo.start={start} priority.configured={(config.get('priority') or {}).get('configured', False)}")
     enabled = (config.get("priority") or {}).get("configured", False)
     desired = desired_jobs(start, window, owner_tz) if enabled else [deliver_job()]
     paused = []

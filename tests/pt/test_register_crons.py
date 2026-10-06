@@ -14,7 +14,6 @@ TZ = "America/Los_Angeles"
 FUTURE = "2099-01-01T07:03:00-03:00"
 CONFIG = {
     "owner": {"timezone": TZ},
-    "delivery": {"hour": "07:00"},
     "printer": {"configured": False, "name": None},
     "priority": {"configured": True},
     "memo": {"start": "01:00", "window_minutes": 240},
@@ -94,8 +93,8 @@ class TestNightlyJob:
         assert "--no-deliver" in nightly and "--exact" in nightly
 
     def test_legacy_hour_is_preserved_without_restarting_setup(self, tmp_path):
-        path = write_config(tmp_path, {k: v for k, v in CONFIG.items() if k != "memo"})
-        assert crons.load_memo(path) == ("07:00", 240)
+        path = write_config(tmp_path, {**{k: v for k, v in CONFIG.items() if k != "memo"}, "delivery": {"hour": "07:00"}})
+        assert crons.normalize_memo(json.loads((path).read_text()))[:2] == ("07:00", 240)
 
     def test_the_run_budget_covers_the_window_and_the_publish(self):
         job = crons.nightly_job("23:30", 240, TZ)
@@ -112,7 +111,7 @@ class TestNightlyJob:
     ])
     def test_a_bad_memo_config_is_refused(self, tmp_path, memo, why):
         with pytest.raises(SystemExit, match=why):
-            crons.load_memo(write_config(tmp_path, {**CONFIG, "memo": memo}))
+            crons.normalize_memo(json.loads((write_config(tmp_path, {**CONFIG, "memo": memo})).read_text()))[:2]
 
     def test_deliver_job_is_a_command_with_no_agent(self, tmp_path, monkeypatch):
         sched = FakeScheduler()
@@ -201,15 +200,15 @@ class TestListing:
 
 class TestLoadOwnerZone:
     def test_names_the_owner_zone(self, tmp_path):
-        assert crons.load_owner_zone(write_config(tmp_path)) == TZ
+        assert crons.owner_zone(json.loads((write_config(tmp_path)).read_text())) == TZ
 
     def test_blank_owner_timezone_refuses(self, tmp_path):
         with pytest.raises(SystemExit, match="blank owner.timezone"):
-            crons.load_owner_zone(write_config(tmp_path, {**CONFIG, "owner": {"timezone": " "}}))
+            crons.owner_zone(json.loads((write_config(tmp_path, {**CONFIG, "owner": {"timezone": " "}})).read_text()))
 
     def test_missing_config_refuses(self, tmp_path):
         with pytest.raises(SystemExit, match="is missing"):
-            crons.load_owner_zone(tmp_path / "nope.json")
+            crons._config(tmp_path / "nope.json")
 
 
 def run_main(tmp_path, monkeypatch, sched, argv=None, config=CONFIG):
@@ -376,25 +375,31 @@ def test_priority_opt_out_registers_no_nightly_and_queues_no_manual_run(tmp_path
 
 
 def test_legacy_config_migration_preserves_preferences_and_research_start(tmp_path):
-    config = {k: v for k, v in CONFIG.items() if k != "memo"}
+    config = {**{k: v for k, v in CONFIG.items() if k != "memo"}, "delivery": {"hour": "07:00"}}
     config.update(delivery={"hour": "07:30", "lead_minutes": 150}, signals={"email": True}, priority={"configured": False})
     path = write_config(tmp_path, config)
-    assert crons.load_memo(path) == ("05:00", 240)
+    assert crons.normalize_memo(json.loads((path).read_text()))[:2] == ("05:00", 240)
+    assert crons.main([], backend=FakeScheduler().backend(), config_path=path) == 0
     assert json.loads(path.read_text()) == {**{k: v for k, v in config.items() if k != "delivery"}, "memo": {"start": "05:00", "window_minutes": 240, "max_usd": 100}}
 
 
-def test_running_legacy_job_refuses_cutover_before_any_scheduler_write(tmp_path, monkeypatch):
+@pytest.mark.parametrize("legacy_config", [False, True])
+def test_running_legacy_job_refuses_cutover_before_config_or_scheduler_write(tmp_path, monkeypatch, legacy_config):
     legacy = row("pt-daily-edition", jid="legacy")
     legacy["state"] = {"runningAtMs": 1790620326000}
     sched = FakeScheduler([legacy])
+    config = {**{k: v for k, v in CONFIG.items() if k != "memo"}, "delivery": {"hour": "07:00"}} if legacy_config else CONFIG
     with pytest.raises(SystemExit, match="running legacy job"):
-        run_main(tmp_path, monkeypatch, sched)
+        run_main(tmp_path, monkeypatch, sched, config=config)
     assert sched.writes == []
+    assert json.loads((tmp_path / "pt/config.json").read_text()) == config
 
 
 @pytest.mark.parametrize("legacy", [True, False])
 def test_absent_priority_preserves_opt_out(tmp_path, monkeypatch, legacy):
     config = {k: v for k, v in CONFIG.items() if k != "priority" and (not legacy or k != "memo")}
+    if legacy:
+        config["delivery"] = {"hour": "07:00"}
     sched = FakeScheduler()
     assert run_main(tmp_path, monkeypatch, sched, config=config) == 0
     assert [w[w.index("--name") + 1] for w in sched.writes if w[0] == "add"] == [crons.DELIVER_NAME]
@@ -434,3 +439,26 @@ def test_failed_reconciliation_reports_saved_preference_without_claiming_schedul
     assert json.loads((tmp_path / "pt/config.json").read_text())["memo"]["start"] == "02:30"
     out = capsys.readouterr().out
     assert "saved: memo.start=02:30" in out and "registered:" not in out
+
+
+def test_legacy_migration_and_owner_change_are_saved_once(tmp_path, monkeypatch):
+    config = {**{k: v for k, v in CONFIG.items() if k != "memo"}, "delivery": {"hour": "07:00"}}
+    saved = []
+    write = crons._write_json
+    def capture(path, data):
+        saved.append(json.loads(json.dumps(data)))
+        write(path, data)
+    monkeypatch.setattr(crons, "_write_json", capture)
+    assert run_main(tmp_path, monkeypatch, FakeScheduler(), argv=["--start", "03:15", "--enabled", "off"], config=config) == 0
+    assert len(saved) == 1
+    assert saved[0]["memo"]["start"] == "03:15"
+    assert saved[0]["priority"]["configured"] is False and "delivery" not in saved[0]
+
+
+def test_invalid_owner_change_does_not_partially_migrate_legacy_config(tmp_path, monkeypatch):
+    config = {**{k: v for k, v in CONFIG.items() if k != "memo"}, "delivery": {"hour": "07:00"}}
+    sched = FakeScheduler()
+    with pytest.raises(SystemExit, match="memo.start"):
+        run_main(tmp_path, monkeypatch, sched, argv=["--start", "25:00"], config=config)
+    assert json.loads((tmp_path / "pt/config.json").read_text()) == config
+    assert sched.writes == []
