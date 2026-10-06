@@ -345,7 +345,7 @@ for (const failure of ["incomplete", "throws"] as const) test(`a turn that ${fai
       if (recovering && message.uid === "later") controller.abort();
       return "completed";
     });
-    assert.deepEqual([...calls].sort(), recovering ? ["unfinished"] : ["later", "other-reply", "unfinished"]);
+    assert.deepEqual([...calls].sort(), recovering ? [] : ["later", "other-reply", "unfinished"]);
     if (!recovering) assert.ok(calls.indexOf("unfinished") < calls.indexOf("later"));
     assert.deepEqual(priorCheckpoints, recovering ? [] : ["later"]);
     assert.equal(await checkpointUid(`${root}/plow-checkpoints/home`), "later");

@@ -223,9 +223,6 @@ export async function listen(account: Account, signal: AbortSignal, log: (text: 
 
   const consume = async (chatUid: string, message: Message, recovering = false) => {
     if (signal.aborted || seen.has(message.uid) || checkpoints.get(chatUid) === message.uid || recent.get(chatUid)?.has(message.uid) || pending.has(message.uid)) return;
-    const checkpointUid = checkpoints.get(chatUid)?.replace(/^first:/, "");
-    if (!recovering && checkpointUid && checkpointUid !== message.uid &&
-      (await recover(account, chatUid, message.uid)).some(newer => newer.uid === checkpointUid)) return;
     const chat = await request<Chat>(account, `/chats/${chatUid}`);
     if (!accepts(account, chat)) return;
     discovered.set(chat.uid, chat);
