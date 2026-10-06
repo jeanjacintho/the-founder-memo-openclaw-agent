@@ -244,10 +244,14 @@ test("the turn note appears only when the Mac does not answer", async t => {
 test("the transport hands a connectors.changed frame to the channel and dispatches no turn", async t => {
   const { server, apiBase, abortAfter } = await websocketFixture(t);
   const controller = abortAfter();
-  t.mock.method(globalThis, "fetch", async (url: string) => Response.json(url.endsWith("/chats") ? { data: [], has_more: false } : { ticket: "ticket" }));
+  // The home chat is a chat the agent serves, so a frame naming it would be dispatched if it were read as a message.
+  const home = { uid: "home", status: "active", participants: [{ type: "agent", relationship: "self", line: { uid: "line" } }, { type: "member", uid: "owner", role: "owner" }] };
+  t.mock.method(globalThis, "fetch", async (url: string) => Response.json(
+    url.endsWith("/chats") ? { data: [home], has_more: false } : url.endsWith("/chats/home") ? home :
+    url.includes("/messages") ? { data: [], has_more: false } : { ticket: "ticket" }));
   server.on("connection", socket => setTimeout(() => socket.send(JSON.stringify({
-    // The frame exactly as Plow sends it (connectors/events.py): a chat event with no chat_id.
-    event_id: "evt_1", event_type: "connectors.changed", created_at: "2026-10-06T06:00:00Z", data: { type: "connectors.changed" },
+    // The frame exactly as Plow sends it (connectors/events.py): a chat event addressed to the owner's home chat.
+    event_id: "evt_1", event_type: "connectors.changed", chat_id: "home", created_at: "2026-10-06T06:00:00Z", data: { type: "connectors.changed" },
   })), 50));
   let changed = 0;
   let turns = 0;
