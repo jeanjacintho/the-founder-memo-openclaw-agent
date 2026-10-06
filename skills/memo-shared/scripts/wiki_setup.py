@@ -59,6 +59,9 @@ def _copy_legacy(wiki, toml):
     roots = tomllib.loads(toml).get("roots", {})
     if ROOT in roots or LEGACY_ROOT not in roots:
         return []
+    code, out = wiki.run("validate", "--writer", roots[LEGACY_ROOT]["writer"])
+    if code != 0:
+        raise LatchError(f"legacy wiki validate: {out.strip()}")
     # A recorded edition can predate a failed index update; enumerate a fresh index.
     code, out = wiki.run("index", write=True)
     if code != 0:
