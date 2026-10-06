@@ -24,11 +24,6 @@ const groupInbox = (shared.plowGroupInbox ??= new GroupInbox());
 // back as its no-reply fallback, which on email means there is nothing for the owner.
 const NO_REPLY_FALLBACK = "⚠️ OpenClaw couldn't produce or deliver a reply.";
 
-function ownerDmRequester(context: OpenClawPluginToolContext): boolean {
-  return context.senderIsOwner === true && context.messageChannel === "plow"
-    && context.agentAccountId === "chat" && context.sessionKey === "agent:main:main";
-}
-
 function normalizedHandle(handle: string): string {
   const compact = handle.trim().replace(/[\s().-]/g, "");
   return /^\+\d{10,15}$/.test(compact) ? compact : handle.trim().toLowerCase();
