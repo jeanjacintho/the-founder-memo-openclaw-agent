@@ -127,10 +127,13 @@ lists it beside its siblings. Paths come from `pt_paths.py`, never a literal.
   (`acquired` / `stale-takeover` / `held`) and always exits 0 on acquire.
 - `scripts/run_attempts.py` — counts a day's paper starts so a paper that keeps failing stops
   re-running. Called bare, after the paper lock is held: `.../run_attempts.py begin [--key KEY] [--scheduled]`
- prints `proceed`, `stop` (spent, and the owner has been told: release and stop) or `stop-untold`
-  (spent, the notice could not be posted: release and stop; the next start tries again). It posts the
+ prints `proceed`, `stop` (cooling down or spent, and the owner has been told: release and stop) or `stop-untold`
+  (blocked, the notice could not be posted: release and stop; the next start tries again). It posts the
   notice itself, in the owner's language from the fixed phrases, so the run writes nothing to the
   owner. `post_to_chat.py --clear-attempts` starts the count over once the memo is posted. Three undelivered starts spend the owner's day.
+  Retries wait at least two hours after the first start and four after the second; checks during the wait spend no attempts.
+  Stop without research or waiting in the session. The notice states an earliest retry time,
+  not a delivery promise. An explicit owner ask grants one start past either the cap or the cooldown.
 - `scripts/prepare_daily_run.py` — immediately after any paper lock is acquired,
   archives prior dated and desk scratch beside `run/` and prints `READY`.
   Every paper passes `--preserve-priority` (desks.md decides which advisor checkpoint

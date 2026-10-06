@@ -101,10 +101,17 @@ The conductor does these in order, each a bare command, before any phase:
 
 1. `/opt/plow/skills/memo-shared/scripts/run_lock.py acquire --name paper-workspace --stale-minutes <the prompt's stale-lock minutes>`;
    on `held`, another run owns the night: stop, writing nothing to the owner.
-2. `/opt/plow/skills/memo-shared/scripts/run_attempts.py begin`, adding `--scheduled` when the prompt
-   says the run is scheduled. On `proceed` go on; on `stop` or `stop-untold` the day's attempts are
-   spent and `begin` has told the owner, or tried to, itself — release the lock and stop, writing
-   nothing to the owner.
+2. Refresh the owner's fixed phrases before any notice can be sent: run bare
+   `/opt/plow/skills/memo-shared/scripts/owner_phrases.py status`. On `PHRASES:missing`,
+   read `owner.language` from `/var/lib/plow/pt/config.json`, run bare
+   `/opt/plow/skills/memo-shared/scripts/owner_phrases.py template`, translate every value into
+   that language preserving each `{placeholder}`, and pipe `{"phrases": {...}}` into
+   `/opt/plow/skills/memo-shared/scripts/owner_phrases.py record` until it prints `PHRASES:ready`.
+   Then run `/opt/plow/skills/memo-shared/scripts/run_attempts.py begin`, adding `--scheduled` when the prompt
+   says the run is scheduled. On `proceed` go on; on `stop` or `stop-untold` the run is cooling down or the day's attempts
+   are spent, and `begin` has told the owner, or tried to, itself — release with
+   `run_lock.py release --name paper-workspace` and stop without research or waiting in this
+   session, writing nothing to the owner.
 3. `/opt/plow/skills/memo-shared/scripts/owner_time.py now`; keep its output as `RUN_STARTED`.
    Every "minutes so far" below is `owner_time.py minutes-since <RUN_STARTED>`.
 4. `/opt/plow/skills/memo-shared/scripts/run_gate.py wait --started <RUN_STARTED> --window <the prompt's window>`;

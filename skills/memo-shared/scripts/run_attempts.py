@@ -16,10 +16,11 @@ spends another model call -- and tells the owner, once, itself.
               the main paper's day, nor the other way round.
               Prints one word:
                 proceed       attempt N of MAX_ATTEMPTS; go on
-                stop          the day's attempts are spent and the owner has been
+                stop          a retry is cooling down or the day's attempts are spent,
+                              and the owner has been
                               told (now, by this call, or on an earlier start):
                               release the lock and stop
-                stop-untold   spent, but the notice could not be posted: release
+                stop-untold   blocked, but the notice could not be posted: release
                               the lock and stop; the owner is still untold, so the
                               next start tries again (and the failure-notice hook
                               still tells them the edition did not arrive)
@@ -30,7 +31,11 @@ falls between the send and the mark, and no model-written text reaches a
 shell. --scheduled says the job runs again on its own tomorrow, for the line
 that says when the next try is; without it the line says to ask again later.
 
-An explicit owner ask lifts that cap once: queue_now (register_crons.py --now)
+Retries wait at least two hours after the first start and four after the second.
+Cooldown checks do not consume attempts; deadlines are UTC elapsed time, displayed
+on the owner's clock. Existing counters without retry_at keep their spent starts.
+
+An explicit owner ask lifts the cap or cooldown once: queue_now (register_crons.py --now)
 calls grant(), and the paper's next start proceeds past a spent day, consuming
 the grant, so a retry of the same job is capped again.
 The count starts over when post_to_chat.py --clear-attempts [KEY] confirms a
@@ -47,22 +52,24 @@ import json
 import re
 import sys
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 
 from owner_chat import post_owner_text
 from owner_phrases import phrase
-from owner_time import owner_today
+from owner_time import owner_now, owner_today
 from pt_paths import pt_home
 
 MAX_ATTEMPTS = 3
+RETRY_SECONDS = (2 * 3600, 4 * 3600)
 DEFAULT_KEY = "paper"
 KEY_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
-def _path(key=DEFAULT_KEY):
+def _path(key=DEFAULT_KEY, day=None):
     if not KEY_RE.fullmatch(key):
         sys.exit(f"error: --key {key!r} has characters not allowed in an attempts key")
     suffix = "" if key == DEFAULT_KEY else f"-{key}"
-    return pt_home() / f"paper-attempts-{owner_today().isoformat()}{suffix}.json"
+    return pt_home() / f"paper-attempts-{(day or owner_today()).isoformat()}{suffix}.json"
 
 
 @contextmanager
@@ -106,13 +113,32 @@ def grant():
 def begin(key=DEFAULT_KEY, scheduled=False):
     path = _path(key)
     with _locked():
+        now = owner_now()
         data = json.loads(path.read_text()) if path.exists() else {"starts": 0, "told": False}
+        # A delay is at most four hours: only yesterday can overlap this owner's day.
+        previous = _path(key, owner_today() - timedelta(days=1))
+        if not path.exists() and previous.exists():
+            prior = json.loads(previous.read_text())
+            if prior.get("retry_at") and now.astimezone(timezone.utc) < datetime.fromisoformat(prior["retry_at"]):
+                data.update(retry_at=prior["retry_at"], told=prior["told"])
         # Any start of the paper consumes the grant, so none lingers to lift a later retry.
         granted = key == DEFAULT_KEY and _grant_path().exists()
         if granted:
             _grant_path().unlink()
-        if data["starts"] < MAX_ATTEMPTS or granted:
+        retry_at = datetime.fromisoformat(data["retry_at"]) if data.get("retry_at") else None
+        if not granted and data["starts"] < MAX_ATTEMPTS and retry_at and now.astimezone(timezone.utc) < retry_at:
+            if not data["told"]:
+                try:
+                    post_owner_text(phrase("attempts.cooldown", time=retry_at.astimezone(now.tzinfo).strftime("%Y-%m-%d %H:%M %Z")))
+                    data["told"] = True
+                except SystemExit as exc:
+                    print(f"run_attempts: the cooldown notice was not posted: {exc}", file=sys.stderr)
+            word = "stop" if data["told"] else "stop-untold"
+        elif data["starts"] < MAX_ATTEMPTS or granted:
             data["starts"] += 1
+            data["told"] = False
+            if data["starts"] < MAX_ATTEMPTS:
+                data["retry_at"] = (now.astimezone(timezone.utc) + timedelta(seconds=RETRY_SECONDS[data["starts"] - 1])).isoformat()
             word = "proceed"
         else:
             if not data["told"]:
@@ -131,6 +157,7 @@ def clear(key=DEFAULT_KEY):
     """The edition is out: the owner's day starts over."""
     with _locked():
         _path(key).unlink(missing_ok=True)
+        _path(key, owner_today() - timedelta(days=1)).unlink(missing_ok=True)
 
 
 def main(argv=None):

@@ -40,7 +40,7 @@ def test_the_closed_set_covers_every_fixed_line():
     assert set(phrases.SOURCE) == {
         "chat.busy", "chat.busy_still",
         "print.lede", "print.retry", "print.timeout", "print.no_pdf",
-        "edition.failed", "attempts.spent_scheduled", "attempts.spent_on_demand",
+        "edition.failed", "attempts.cooldown", "attempts.spent_scheduled", "attempts.spent_on_demand",
         "page.first_step", "page.questions", "page.could_not_source",
         "page.advice_from", "page.priority_band", "page.cost", "page.cost_unknown",
     }

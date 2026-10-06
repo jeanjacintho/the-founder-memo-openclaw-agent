@@ -105,8 +105,9 @@ function callIds(messages: unknown[], subcommand: string): Set<string> {
 
 // A run that stopped because the day's attempts are spent did so on purpose, and `begin` owns the
 // notice: it answered `stop` (the owner is told, now or on an earlier start). A generic failure
-// notice on top would repeat it. `stop-untold` (the notice could not be posted) is not a deliberate
-// quiet, so the generic notice still goes out. Only the script's own result counts: the tool result
+// notice on top would repeat it. A cooldown returns the same confirmed-notice result.
+// `stop-untold` means the post failed, so the generic notice still goes out.
+// Only the script's own result counts: the tool result
 // paired with the call that ran it, never text the model or another tool produced.
 function stoppedOnPurpose(messages: unknown[] | undefined): boolean {
   const all = messages ?? [];
