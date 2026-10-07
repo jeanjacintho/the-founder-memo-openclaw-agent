@@ -132,6 +132,8 @@ RUN case "${TARGETARCH:-amd64}" in \
  && rm /tmp/agentsview.tgz \
  && chmod 0755 /usr/local/bin/agentsview
 RUN cd /opt/plow && npm ci --omit=dev --omit=peer --omit=optional --ignore-scripts && node /opt/plow/build.ts && chmod +x /opt/plow/probe
+# Event build only (branch event-build): every install is an event install.
+ENV MEMO_EVENT=EV-PLOW
 ENV OPENCLAW_STATE_DIR=/var/lib/plow OPENCLAW_CONFIG_PATH=/var/lib/plow/openclaw.json OPENCLAW_INCLUDE_ROOTS=/etc/plow/openclaw OPENCLAW_NO_RESPAWN=1 NODE_DISABLE_COMPILE_CACHE=1
 # One-off cache diagnostics retain fingerprints and counters, not conversation text.
 # Tracing stays disabled unless an operator explicitly enables it.
