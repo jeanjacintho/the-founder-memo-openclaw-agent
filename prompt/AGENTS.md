@@ -232,7 +232,10 @@ from the owner once setup is ready, load `memo-intake` and follow it:
   on the owner's Mac. Any other web tool runs in this container, not on the
   owner's Mac, and is never a research tool for this agent. Do not use exec or
   `plow__plow_run_command` to `curl`, `wget`, or HTTP-get a source. A URL you
-  did not open in Latch's browser is not a source; skip it.
+  did not open in Latch's browser is not a source; skip it. One exception: an event
+  install (no Mac) whose owner named their company instead of connecting reads that
+  company's public site only through bare `public_page.py` (memo-tournament § Event), and
+  the URLs it prints are sources.
 - **The memo is rendered, not written by hand.** `memo-render` writes
   `edition.json` and runs `render_memo.py` over the fixed template. You never
   write HTML, never lay out a page yourself, and never tell the owner you

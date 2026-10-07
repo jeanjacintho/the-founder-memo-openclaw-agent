@@ -122,12 +122,19 @@ the attendee's own message is clearly in that language (`record_owner_language.p
 **connect** — call `plow_connect` once for `google` and once for `slack`, and send
 the owner one message, in their language: one line on what connecting gives their
 memo (it reads their mail, calendar and Slack to pick their priority), the two
-links as returned, and "reply done when you've connected". Then stop. When they
-reply, check `plow_google ["accounts"]` and `plow_slack ["status"]`. Once at least
-one is connected, or they say they don't want to connect, run
-`record_setup.py /var/lib/plow/pt/config.json connected=true`. If they say done but
-neither shows connected, or a link expired, call `plow_connect` again for that
-provider and send the new link, nothing else.
+links as returned, "reply done when you've connected", and one more line: "or just
+reply with your company's name and website and I'll read what's public instead".
+Then stop. When they reply:
+- **a company name with no website**: send one line asking for its website, then stop
+  (the memo reads the company's public site, so a name alone is not enough).
+- **a company website** (with or without its name, in any form): run
+  `record_setup.py /var/lib/plow/pt/config.json company.name='<name>' company.website='<site>' connected=true`
+  with each value in single quotes and any `'` inside it written `'\''` (their words go
+  through a shell); leave out what they didn't give; a website without a scheme is fine.
+- **done**: check `plow_google ["accounts"]` and `plow_slack ["status"]`. Once at
+  least one is connected, run `record_setup.py /var/lib/plow/pt/config.json connected=true`.
+  If neither shows connected, send one line asking for their company's name and website
+  instead (no new links); a link that expired is the one case for a fresh `plow_connect`.
 
 **close** — skip step 1 (location): the zone is the event's. Step 2 is the bare
 `finalize_setup.py /var/lib/plow/pt/config.json` without `--owner-tz`; it queues

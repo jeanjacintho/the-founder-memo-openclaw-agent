@@ -145,3 +145,53 @@ def test_an_event_install_speaks_english_until_the_attendee_writes_otherwise(tmp
     assert gate.language_line(config) == "LANG:English"
     assert record.main(["record_setup.py", str(config), "owner.language=Portuguese"]) == 0
     assert gate.language_line(config) == "LANG:Portuguese", "the attendee's own language still wins"
+
+
+def test_an_attendee_who_connects_nothing_names_their_company_and_it_reaches_the_config(tmp_path, monkeypatch):
+    # 10-06 event: 13 installs, no attendee completed a Google/Slack connection. Their
+    # company (name + website) is the no-sign-in path, read from the public web.
+    monkeypatch.setenv("MEMO_EVENT", "EV-PLOW")
+    monkeypatch.setenv("PT_HOME", str(tmp_path))
+    config = tmp_path / "config.json"
+    assert record.main(["record_setup.py", str(config), 'company.name=Acme Labs', "company.website=acme.example", "connected=true"]) == 0
+    assert finalize.main(["finalize_setup.py", str(config)], backend=FakeScheduler()) == 0
+    assert json.loads(config.read_text())["company"] == {"name": "Acme Labs", "website": "acme.example"}
+
+
+def test_public_page_never_fetches_a_private_or_local_address(monkeypatch):
+    page = load_module("public_page", "memo-tournament/scripts/public_page.py")
+    for url in ("http://127.0.0.1:18790/mcp", "http://localhost:3000", "http://10.0.0.5/", "http://169.254.169.254/latest", "file:///etc/passwd"):
+        with pytest.raises(ValueError):
+            page.checked(url)
+    monkeypatch.setattr(page.socket, "getaddrinfo", lambda host, port: [(None, None, None, None, ("93.184.216.34", 0))])
+    assert page.checked("acme.example") == "https://acme.example"
+    title, text, links = page.page_text('<html><head><title>Acme</title><script>evil()</script></head><body><h1>We build &amp; ship</h1>'
+                                        '<a href="/about">About</a><a href="https://other.example/x">x</a></body></html>', "https://acme.example/")
+    assert title == "Acme" and text == "We build & ship About x" and links == ["https://acme.example/about"]
+
+
+def test_public_page_takes_no_url_from_anyone_and_reads_only_the_recorded_company_site(tmp_path, monkeypatch, capsys):
+    # srosro #111: a page-derived URL in a shell command can run $(...); the reader
+    # takes no arguments and follows only same-site links itself.
+    page = load_module("public_page", "memo-tournament/scripts/public_page.py")
+    assert page.main(["https://evil.example/$(id)"]) == 2
+    monkeypatch.setenv("PT_HOME", str(tmp_path))
+    assert page.main([]) == 1 and "no company.website recorded" in capsys.readouterr().out
+    (tmp_path / "config.json").write_text(json.dumps({"company": {"name": "Acme", "website": "acme.example"}}))
+    fetched = []
+    def fake_fetch(url):
+        fetched.append(url)
+        return (url if url.startswith("http") else "https://" + url + "/"), ('<title>Acme</title><a href="/about">a</a><a href="/careers">c</a><a href="https://x.example/blog">x</a>'
+                     if len(fetched) == 1 else "<title>About Acme</title>We sell anvils.")
+    monkeypatch.setattr(page, "fetch", fake_fetch)
+    assert page.main([]) == 0
+    assert fetched == ["acme.example", "https://acme.example/about"]
+    assert "We sell anvils." in capsys.readouterr().out
+    # srosro #111 re-review: a page that fails is reported, not silently dropped.
+    def failing(url):
+        if url == "acme.example":
+            return "https://acme.example/", '<title>Acme</title><a href="/pricing">p</a>'
+        raise OSError("HTTP Error 403: Forbidden")
+    monkeypatch.setattr(page, "fetch", failing)
+    assert page.main([]) == 0
+    assert "UNREADABLE: https://acme.example/pricing (HTTP Error 403: Forbidden)" in capsys.readouterr().out
