@@ -125,7 +125,9 @@ memo (it reads their mail, calendar and Slack to pick their priority), the two
 links as returned, "reply done when you've connected", and one more line: "or just
 reply with your company's name and website and I'll read what's public instead".
 Then stop. When they reply:
-- **a company** (a name and/or a website, in any form): run
+- **a company name with no website**: send one line asking for its website, then stop
+  (the memo reads the company's public site, so a name alone is not enough).
+- **a company website** (with or without its name, in any form): run
   `record_setup.py /var/lib/plow/pt/config.json company.name='<name>' company.website='<site>' connected=true`
   with each value in single quotes and any `'` inside it written `'\''` (their words go
   through a shell); leave out what they didn't give; a website without a scheme is fine.

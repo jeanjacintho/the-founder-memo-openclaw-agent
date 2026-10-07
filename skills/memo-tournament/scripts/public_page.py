@@ -8,7 +8,7 @@ config.json (setup records it from the attendee), so nothing a fetched page says
 reaches a shell. It reads the home page, then up to four of the same site's pages whose
 address names what a memo needs (about, product, pricing, customers, blog/news), and
 prints one block per page: `URL:`, `TITLE:`, then its visible text (at most 6,000
-characters). Only a public http(s) address is fetched: a host that resolves to a
+characters), or `UNREADABLE: <url> (<why>)` for a page that failed. Only a public http(s) address is fetched: a host that resolves to a
 private, loopback or link-local address is refused, on every redirect too, because this
 machine runs local services (the gateway, the wiki stand-in). At most 1 MB a page, 15 s.
 Exit 1 prints `error: <why>` when no page could be read.
@@ -113,7 +113,8 @@ def main(argv=None) -> int:
     for link in [l for l in links if any(w in l.lower() for w in MEMO_WORDS)][:4]:
         try:
             url, raw = fetch(link)
-        except (ValueError, OSError):
+        except (ValueError, OSError) as exc:
+            blocks.append(f"UNREADABLE: {link} ({exc})")
             continue
         title, text, _ = page_text(raw, url)
         blocks.append(f"URL: {url}\nTITLE: {title}\n\n{text}")

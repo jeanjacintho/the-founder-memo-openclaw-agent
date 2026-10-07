@@ -187,3 +187,11 @@ def test_public_page_takes_no_url_from_anyone_and_reads_only_the_recorded_compan
     assert page.main([]) == 0
     assert fetched == ["acme.example", "https://acme.example/about"]
     assert "We sell anvils." in capsys.readouterr().out
+    # srosro #111 re-review: a page that fails is reported, not silently dropped.
+    def failing(url):
+        if url == "acme.example":
+            return "https://acme.example/", '<title>Acme</title><a href="/pricing">p</a>'
+        raise OSError("HTTP Error 403: Forbidden")
+    monkeypatch.setattr(page, "fetch", failing)
+    assert page.main([]) == 0
+    assert "UNREADABLE: https://acme.example/pricing (HTTP Error 403: Forbidden)" in capsys.readouterr().out
