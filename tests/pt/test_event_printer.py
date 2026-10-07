@@ -145,3 +145,26 @@ def test_an_event_install_speaks_english_until_the_attendee_writes_otherwise(tmp
     assert gate.language_line(config) == "LANG:English"
     assert record.main(["record_setup.py", str(config), "owner.language=Portuguese"]) == 0
     assert gate.language_line(config) == "LANG:Portuguese", "the attendee's own language still wins"
+
+
+def test_an_attendee_who_connects_nothing_names_their_company_and_it_reaches_the_config(tmp_path, monkeypatch):
+    # 10-06 event: 13 installs, no attendee completed a Google/Slack connection. Their
+    # company (name + website) is the no-sign-in path, read from the public web.
+    monkeypatch.setenv("MEMO_EVENT", "EV-PLOW")
+    monkeypatch.setenv("PT_HOME", str(tmp_path))
+    config = tmp_path / "config.json"
+    assert record.main(["record_setup.py", str(config), 'company.name=Acme Labs', "company.website=acme.example", "connected=true"]) == 0
+    assert finalize.main(["finalize_setup.py", str(config)], backend=FakeScheduler()) == 0
+    assert json.loads(config.read_text())["company"] == {"name": "Acme Labs", "website": "acme.example"}
+
+
+def test_public_page_never_fetches_a_private_or_local_address(monkeypatch):
+    page = load_module("public_page", "memo-tournament/scripts/public_page.py")
+    for url in ("http://127.0.0.1:18790/mcp", "http://localhost:3000", "http://10.0.0.5/", "http://169.254.169.254/latest", "file:///etc/passwd"):
+        with pytest.raises(ValueError):
+            page.checked(url)
+    monkeypatch.setattr(page.socket, "getaddrinfo", lambda host, port: [(None, None, None, None, ("93.184.216.34", 0))])
+    assert page.checked("acme.example") == "https://acme.example"
+    title, text, links = page.page_text('<html><head><title>Acme</title><script>evil()</script></head><body><h1>We build &amp; ship</h1>'
+                                        '<a href="/about">About</a><a href="https://other.example/x">x</a></body></html>', "https://acme.example/")
+    assert title == "Acme" and text == "We build & ship About x" and links == ["https://acme.example/about"]

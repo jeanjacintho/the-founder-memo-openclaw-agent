@@ -67,6 +67,8 @@ def build(draft, owner_tz):
         "priority": {"configured": True},
         # Every source starts off; the owner turns one on later (memo-intake).
         "signals": {source: False for source in _record.SIGNAL_SOURCES},
+        # An event attendee who connected nothing names their company instead.
+        **({"company": draft["company"]} if isinstance(draft.get("company"), dict) else {}),
     }
 
 
