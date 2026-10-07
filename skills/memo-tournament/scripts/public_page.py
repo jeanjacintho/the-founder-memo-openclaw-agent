@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""public_page.py -- one public web page as plain text, for an event memo with no connections.
+"""public_page.py -- the company's public site as plain text, for an event memo with no connections.
 
-    public_page.py <http(s) URL>
+    public_page.py
 
-Prints `URL: <final url>`, `TITLE: <title>`, then the page's visible text (at most
-6,000 characters) and, under `LINKS:`, up to 12 links on the same site. Only a public
-http(s) address is fetched: a host that resolves to a private, loopback or link-local
-address is refused, because this machine runs local services (the gateway, the wiki
-stand-in) that a page must never reach. At most 1 MB is read, 15 s timeout.
-Exit 1 prints `error: <why>`.
+Run bare: it takes NO arguments. The site is `company.website` from the install's
+config.json (setup records it from the attendee), so nothing a fetched page says ever
+reaches a shell. It reads the home page, then up to four of the same site's pages whose
+address names what a memo needs (about, product, pricing, customers, blog/news), and
+prints one block per page: `URL:`, `TITLE:`, then its visible text (at most 6,000
+characters). Only a public http(s) address is fetched: a host that resolves to a
+private, loopback or link-local address is refused, on every redirect too, because this
+machine runs local services (the gateway, the wiki stand-in). At most 1 MB a page, 15 s.
+Exit 1 prints `error: <why>` when no page could be read.
 """
 from __future__ import annotations
 
 import html
+import json
 import ipaddress
 import re
 import socket
@@ -78,18 +82,42 @@ def fetch(url: str) -> tuple[str, str]:
         return response.geturl(), raw
 
 
+MEMO_WORDS = ("about", "product", "pricing", "customer", "blog", "news", "team", "company")
+
+
+def company_site(config_path) -> str:
+    try:
+        company = json.loads(open(config_path, encoding="utf-8").read()).get("company") or {}
+    except (OSError, ValueError):
+        company = {}
+    site = company.get("website") if isinstance(company, dict) else None
+    if not isinstance(site, str) or not site.strip():
+        raise ValueError("no company.website recorded")
+    return site.strip()
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    if len(argv) != 1:
-        print("usage: public_page.py <http(s) URL>", file=sys.stderr)
+    if argv:
+        print("usage: public_page.py   (no arguments: it reads company.website from config.json)", file=sys.stderr)
         return 2
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2] / "memo-shared" / "scripts"))
+    from pt_paths import config_file  # noqa: PLC0415
     try:
-        final, raw = fetch(argv[0])
+        final, raw = fetch(company_site(config_file()))
     except (ValueError, OSError) as exc:
-        print(f"error: {exc}")
+        print(f"error: the company's site could not be read: {exc}")
         return 1
     title, text, links = page_text(raw, final)
-    print(f"URL: {final}\nTITLE: {title}\n\n{text}\n\nLINKS:\n" + "\n".join(links))
+    blocks = [f"URL: {final}\nTITLE: {title}\n\n{text}"]
+    for link in [l for l in links if any(w in l.lower() for w in MEMO_WORDS)][:4]:
+        try:
+            url, raw = fetch(link)
+        except (ValueError, OSError):
+            continue
+        title, text, _ = page_text(raw, url)
+        blocks.append(f"URL: {url}\nTITLE: {title}\n\n{text}")
+    print("\n\n---\n\n".join(blocks))
     return 0
 
 

@@ -168,3 +168,22 @@ def test_public_page_never_fetches_a_private_or_local_address(monkeypatch):
     title, text, links = page.page_text('<html><head><title>Acme</title><script>evil()</script></head><body><h1>We build &amp; ship</h1>'
                                         '<a href="/about">About</a><a href="https://other.example/x">x</a></body></html>', "https://acme.example/")
     assert title == "Acme" and text == "We build & ship About x" and links == ["https://acme.example/about"]
+
+
+def test_public_page_takes_no_url_from_anyone_and_reads_only_the_recorded_company_site(tmp_path, monkeypatch, capsys):
+    # srosro #111: a page-derived URL in a shell command can run $(...); the reader
+    # takes no arguments and follows only same-site links itself.
+    page = load_module("public_page", "memo-tournament/scripts/public_page.py")
+    assert page.main(["https://evil.example/$(id)"]) == 2
+    monkeypatch.setenv("PT_HOME", str(tmp_path))
+    assert page.main([]) == 1 and "no company.website recorded" in capsys.readouterr().out
+    (tmp_path / "config.json").write_text(json.dumps({"company": {"name": "Acme", "website": "acme.example"}}))
+    fetched = []
+    def fake_fetch(url):
+        fetched.append(url)
+        return (url if url.startswith("http") else "https://" + url + "/"), ('<title>Acme</title><a href="/about">a</a><a href="/careers">c</a><a href="https://x.example/blog">x</a>'
+                     if len(fetched) == 1 else "<title>About Acme</title>We sell anvils.")
+    monkeypatch.setattr(page, "fetch", fake_fetch)
+    assert page.main([]) == 0
+    assert fetched == ["acme.example", "https://acme.example/about"]
+    assert "We sell anvils." in capsys.readouterr().out

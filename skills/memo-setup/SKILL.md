@@ -126,8 +126,9 @@ links as returned, "reply done when you've connected", and one more line: "or ju
 reply with your company's name and website and I'll read what's public instead".
 Then stop. When they reply:
 - **a company** (a name and/or a website, in any form): run
-  `record_setup.py /var/lib/plow/pt/config.json company.name="<name>" company.website=<site> connected=true`
-  (leave out what they didn't give; a website without a scheme is fine).
+  `record_setup.py /var/lib/plow/pt/config.json company.name='<name>' company.website='<site>' connected=true`
+  with each value in single quotes and any `'` inside it written `'\''` (their words go
+  through a shell); leave out what they didn't give; a website without a scheme is fine.
 - **done**: check `plow_google ["accounts"]` and `plow_slack ["status"]`. Once at
   least one is connected, run `record_setup.py /var/lib/plow/pt/config.json connected=true`.
   If neither shows connected, send one line asking for their company's name and website
