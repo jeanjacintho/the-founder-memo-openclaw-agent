@@ -76,18 +76,18 @@ def run(latch, *argv):
     ("maya@acme.com", None),
 ])
 def test_email_filter(sender, reason):
-    assert scan.email_drop_reason(mail("t1", sender, "Renovação Acme")) == reason
+    assert scan.email_drop_reason(mail("t1", sender, "Acme renewal")) == reason
 
 
 @pytest.mark.parametrize("row, reason", [
-    (text(1, "+5511999999999", "oi", is_from_me=1), "from-owner"),
-    (text(2, "28273", "Promo imperdível!"), "short-code"),
+    (text(1, "+5511999999999", "hi", is_from_me=1), "from-owner"),
+    (text(2, "28273", "Can't-miss deal!"), "short-code"),
     (text(3, "+5511988887777", "Seu código de verificação é 482913"), "verification-code"),
     (text(4, "+5511988887777", "Your login code: 1234"), "verification-code"),
     (text(5, "+5511988887777", "   "), "empty"),
-    (text(6, "urn:biz:abc", "Pedido enviado"), "business"),
-    (text(7, "+5511988887777", "Consegue ver o contrato hoje?"), None),
-    (text(8, "maya@acme.com", "A Acme quer renovar"), None),
+    (text(6, "urn:biz:abc", "Order shipped"), "business"),
+    (text(7, "+5511988887777", "Can you look at the contract today?"), None),
+    (text(8, "maya@acme.com", "Acme wants to renew"), None),
 ])
 def test_imessage_filter(row, reason):
     assert scan.imessage_drop_reason(row) == reason
@@ -98,26 +98,26 @@ def test_spam_never_becomes_a_candidate(pt_home):
     latch = FakeLatch(
         gmail(mail("t1", "Newsletter <noreply@substack.com>", "Weekly"),
               mail("t2", "GitHub <notifications@github.com>", "PR"),
-              mail("t3", "Maya <maya@acme.com>", "Renovação Acme")),
+              mail("t3", "Maya <maya@acme.com>", "Acme renewal")),
         messages(text(1, "28273", "Promo"), text(2, "+5511988887777", "Seu código é 482913"),
-                 text(3, "+5511977776666", "Consegue ver o contrato hoje?")))
+                 text(3, "+5511977776666", "Can you look at the contract today?")))
     code, out = run(latch, "scan")
     result = json.loads(out)
     assert code == 0 and result["degraded"] == []
-    assert [c["text"] for c in result["candidates"]] == ["Consegue ver o contrato hoje?", "Renovação Acme"]
+    assert [c["text"] for c in result["candidates"]] == ["Can you look at the contract today?", "Acme renewal"]
     assert result["dropped"] == {"email": {"automated-sender": 2}, "imessage": {"short-code": 1, "verification-code": 1}}
 
 
 def test_candidates_carry_the_signal_contract_minus_category(pt_home):
     enable(pt_home, email=True, imessage=True)
-    latch = FakeLatch(gmail(mail("t3", "Maya <maya@acme.com>", "Renovação Acme", date="2026-09-24 11:00")),
-                      messages(text(3, "+5511977776666", "Contrato?", at="2026-09-24T09:30:00-03:00")))
+    latch = FakeLatch(gmail(mail("t3", "Maya <maya@acme.com>", "Acme renewal", date="2026-09-24 11:00")),
+                      messages(text(3, "+5511977776666", "Contract?", at="2026-09-24T09:30:00-03:00")))
     candidates = json.loads(run(latch, "scan")[1])["candidates"]
     assert candidates == [
         {"source": "imessage", "from_name": "+5511977776666", "chat_or_thread_id": "iMessage;-;+5511988887777",
-         "text": "Contrato?", "received_at": "2026-09-24T12:30:00Z", "item": "imessage:3"},
+         "text": "Contract?", "received_at": "2026-09-24T12:30:00Z", "item": "imessage:3"},
         {"source": "email", "from_name": "Maya", "chat_or_thread_id": "t3",
-         "text": "Renovação Acme", "received_at": "2026-09-24T11:00:00Z", "item": "gmail:me@x.com:t3@2026-09-24 11:00"},
+         "text": "Acme renewal", "received_at": "2026-09-24T11:00:00Z", "item": "gmail:me@x.com:t3@2026-09-24 11:00"},
     ]
 
 
@@ -185,7 +185,7 @@ def test_candidates_are_capped_newest_first(pt_home):
 def test_rescan_after_a_crash_does_not_duplicate_a_signal(pt_home):
     enable(pt_home, imessage=True)
     intake = load_module("signal_intake", "memo-shared/scripts/signal_intake.py")
-    latch = FakeLatch(messages_result=messages(text(5, "+5511977776666", "Contrato até sexta?")))
+    latch = FakeLatch(messages_result=messages(text(5, "+5511977776666", "Contract by Friday?")))
     for _ in range(2):  # the run dies after intake, before commit, and runs again
         [candidate] = json.loads(run(latch, "scan")[1])["candidates"]
         code, _ = intake.intake(json.dumps({**candidate, "category": "priority"}))
@@ -200,7 +200,7 @@ def test_rescan_after_a_crash_does_not_duplicate_a_signal(pt_home):
 ])
 def test_unreadable_imessage_is_degraded_never_empty(pt_home, failure, expected):
     enable(pt_home, email=True, imessage=True)
-    latch = FakeLatch(gmail(mail("t3", "Maya <maya@acme.com>", "Renovação Acme")), failure)
+    latch = FakeLatch(gmail(mail("t3", "Maya <maya@acme.com>", "Acme renewal")), failure)
     code, out = run(latch, "scan")
     result = json.loads(out)
     assert code == 0
@@ -210,7 +210,7 @@ def test_unreadable_imessage_is_degraded_never_empty(pt_home, failure, expected)
 
 def test_gmail_degraded_accounts_are_reported(pt_home):
     enable(pt_home, email=True)
-    latch = FakeLatch(gmail(mail("t3", "Maya <maya@acme.com>", "Oi"), degraded=[{"account": "work@x.com", "error": "token expired"}]))
+    latch = FakeLatch(gmail(mail("t3", "Maya <maya@acme.com>", "Hi"), degraded=[{"account": "work@x.com", "error": "token expired"}]))
     result = json.loads(run(latch, "scan")[1])
     assert result["degraded"] == ["email: work@x.com: token expired"]
     assert len(result["candidates"]) == 1

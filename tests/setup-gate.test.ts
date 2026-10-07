@@ -58,7 +58,7 @@ for (const [label, ctx, injects] of [
   let hook: ((event: object, ctx: object) => Promise<{ prependContext?: string } | undefined>) | undefined;
   entry.register({ registrationMode: "full", registerTool() {}, logger: { info() {} }, registerChannel() {}, runtime: {},
     on(name: string, handler: typeof hook) { if (name === "before_prompt_build") hook = handler; } } as never);
-  const result = await hook!({ prompt: "oi", messages: [] }, ctx);
+  const result = await hook!({ prompt: "hi", messages: [] }, ctx);
   if (injects === "listen") {
     assert.match(result!.prependContext!, /GROUP LISTENING/);
     assert.doesNotMatch(result!.prependContext!, /READY/);
