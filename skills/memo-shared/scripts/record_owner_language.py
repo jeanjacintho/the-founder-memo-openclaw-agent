@@ -2,7 +2,8 @@
 """record_owner_language.py — the only way live chat updates owner.language.
 
 Measured live (2026-09-18): setup and the first papers ran in English.
-One Portuguese request ("Quero uma nova versão do jornal") patched
+One Portuguese request ("Quero uma nova versão do jornal", "I want a new
+version of the paper") patched
 pt/config.json to Portuguese by a free-form edit. Two later English
 requests ("Yes, I want a version to read now") left it Portuguese:
 memo-intake said "update if it differs" but that was a hand-edit, and

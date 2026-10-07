@@ -33,10 +33,10 @@ def record(**over):
 @pytest.fixture
 def three_signals(pt_home):
     signals.write(record(), now=NOW)
-    signals.write(record(source="email", from_name="Maya", chat_or_thread_id="t3", text="Renovação Acme",
+    signals.write(record(source="email", from_name="Maya", chat_or_thread_id="t3", text="Acme renewal",
                          item="gmail:me@x.com:t3@2026-09-24 11:00", received_at="2026-09-24T11:00:00Z"), now=NOW)
     signals.write(record(source="imessage", from_name="+5511977776666", chat_or_thread_id="iMessage;-;+5511977776666",
-                         text="Consegue ver o contrato hoje?", item="imessage:3", received_at="2026-09-24T12:30:00Z"), now=NOW)
+                         text="Can you look at the contract today?", item="imessage:3", received_at="2026-09-24T12:30:00Z"), now=NOW)
 
 
 def recent(*argv):
@@ -63,7 +63,7 @@ def test_refs_open_the_signal_files(three_signals, pt_home):
 
 def test_no_private_words_leave_the_files(three_signals):
     blob = json.dumps(recent(), ensure_ascii=False)
-    for private in ("Acme", "contrato", "Maya", "+5511977776666", "me@x.com", "cht_1", "t3"):
+    for private in ("Acme", "contract", "Maya", "+5511977776666", "me@x.com", "cht_1", "t3"):
         assert private not in blob
 
 
